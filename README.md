@@ -48,6 +48,8 @@ L'application démarre avec un modèle de démonstration. Pour votre classeur :
 
 Dans **Flux de calcul**, choisissez un périmètre, une zone centrale puis **Analyser**. Le périmètre classeur/feuille utilise les cellules capturées ; une sélection Excel inclut aussi ses cellules vides. Le menu des vues distingue rôles de calcul et flux traversant la zone centrale. Un avertissement de dépendance rend ces résultats partiels.
 
+![Analyse des rôles de calcul](docs/flow-preview.png)
+
 Pour ajouter le ruban à Excel :
 
 ```powershell

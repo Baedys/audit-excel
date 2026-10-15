@@ -12,6 +12,7 @@ Les résultats de cette section remplacent le diagnostic COM de la base 0.1 cons
 - Contexte UI Excel : sélection multizone de cellules et cellule active restaurées ; sélection d'une forme restaurée. Les tests ne modifient que leurs classeurs jetables.
 - Complément : activation réelle dans un processus Excel `/x` identifié, `OnConnection`, objet d'automatisation, véritable callback `RibbonOnLoad`, XML du ruban, deux fenêtres simultanées, retour et fermeture globale. Les actions sont invoquées via IDispatch sur les callbacks ; aucun clic physique n'est revendiqué.
 - Test du complément exécuté avec Windows PowerShell 5.1 et PowerShell 7.6.5 ; registre temporaire et processus propres au test nettoyés.
+- Interface réellement contrôlée dans sa fenêtre : sélections des trois menus de flux visibles, 7 rôles dans le modèle de démonstration ; avec zone centrale limitée à la feuille Résultat, 3 antécédents extérieurs et 2 entrées intérieures. La [capture de fenêtre](flow-preview.png) provient de ce contrôle. Le processus lancé a été fermé.
 
 Le défaut COM initial provenait d'une signature `ref Array` qui ne spécifiait pas le contrat natif `SAFEARRAY(VARIANT)* [In]` des callbacks `IDTExtensibility2`. Le fait que l'activation COM directe fonctionnait ne prouvait pas le chargement dans Excel.
 
