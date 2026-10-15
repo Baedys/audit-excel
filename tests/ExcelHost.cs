@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -11,6 +12,7 @@ public static class ExcelHost
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumWindow callback, IntPtr parameter);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int length);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder name, int length);
     [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object nativeObject);
 
     public static object FindWindowObject(int processId)
@@ -38,5 +40,22 @@ public static class ExcelHost
     public static int ProcessId(int window)
     {
         uint result; GetWindowThreadProcessId(new IntPtr(window), out result); return (int)result;
+    }
+    public static int ThreadId(int window)
+    {
+        uint process; return (int)GetWindowThreadProcessId(new IntPtr(window), out process);
+    }
+    public static int[] WindowThreadIds(int processId, string titlePrefix)
+    {
+        var result = new List<int>();
+        EnumWindows(delegate(IntPtr window, IntPtr unused)
+        {
+            uint process; uint thread = GetWindowThreadProcessId(window, out process);
+            if (process != (uint)processId) return true;
+            var title = new StringBuilder(512); GetWindowText(window, title, title.Capacity);
+            if (title.ToString().StartsWith(titlePrefix, StringComparison.Ordinal)) result.Add((int)thread);
+            return true;
+        }, IntPtr.Zero);
+        return result.ToArray();
     }
 }

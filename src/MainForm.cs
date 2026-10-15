@@ -30,7 +30,7 @@ namespace FormulaExplorer
         public MainForm(ExcelBridge excel)
         {
             bridge = excel;
-            Text = "Clair — Explorateur Excel · 0.3 en développement";
+            Text = "Clair — Explorateur Excel · 0.4 en développement";
             Size = new Size(1160, 820); MinimumSize = new Size(940, 640);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(246, 248, 250);
@@ -85,12 +85,12 @@ namespace FormulaExplorer
             sheets.SelectedIndexChanged += delegate { ShowMap(); };
             map.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) { SetRoot((Cell)map.Rows[e.RowIndex].Tag, true); tabs.SelectedIndex = 0; } };
 
-            TableLayoutPanel flowLayout = PageLayout(flowTab, 118);
+            TableLayoutPanel flowLayout = PageLayout(flowTab, 188);
             FlowLayoutPanel flowBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
             flowBar.Controls.Add(ActionButton("En amont : entrées", delegate { ShowFlow(false); }));
             flowBar.Controls.Add(ActionButton("En aval : impacts", delegate { ShowFlow(true); }));
             InitializeFlow(flowBar);
-            flowLayout.Controls.Add(flowBar, 0, 0); flowLayout.Controls.Add(flow, 0, 1);
+            flowLayout.Controls.Add(flowBar, 0, 0); flowLayout.Controls.Add(CreateFlowBody(), 0, 1);
             flow.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) { SetRoot((Cell)flow.Rows[e.RowIndex].Tag, true); tabs.SelectedIndex = 0; } };
 
             TableLayoutPanel compareLayout = PageLayout(compareTab, 100);

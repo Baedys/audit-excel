@@ -1,5 +1,23 @@
 # Revue et validation
 
+## Livraison 0.4 — 15 octobre 2026
+
+- Compilation application et DLL : réussite sans avertissement. Les tests purs comprennent 51 groupes, dont 182 assertions de palette flux et 110 de composition, en plus des corpus 0.3 conservés.
+- Suite finale `test.ps1 -Excel` : **68 groupes réussis, 0 échec**, dont **110 assertions de composition** (les 67 initiales puis activation ciblée sans réordonner les autres cellules).
+- **95 contrôles de couleurs dans Excel 16.0** : inventaire strict des couches, découverte après SaveAs/renommage, retrait de plusieurs couches avec prévalidation globale, maintien des règles utilisateur et des propriétés effectives. Échec injecté lors de la deuxième suppression : la première règle supprimée est recréée dans l'ordre relatif correct, sans renuméroter les règles utilisateur.
+- Plages disjointes : 50 zones espacées sont construites via des objets Range et `Application.Union`. L'échec injecté pendant leur retrait vérifie aussi la restauration de cette règle ; l'adresse de sauvegarde ne rajoute pas de `$` superflus.
+- Palette carte et flux : stockage strict et atomique mutualisé, schéma carte v1 conservé. Éditeur partagé ; import et défaut remplacent les styles dans le dictionnaire référencé par la sauvegarde, sans changer la palette active si le dialogue est annulé.
+- **36 contrôles de fenêtres de flux** : activation par cellule/groupe et état mixte, fond/police sur une cellule à deux rôles, fenêtres indépendantes, fermeture après SaveAs, connexion périmée suivie d'une connexion encore valide, conservation puis retrait ultérieur, carte préservée. Une feuille protégée de notes sans rôle ne bloque pas les couleurs d'une autre feuille.
+- Restauration de sélection : chemin plage via `Application.Goto`, chemin forme conservé. 50 cycles entre deux classeurs et sélections multizones, soit **500 assertions** dans la suite finale ; deux séquences isolées supplémentaires ont été exécutées en STA. Fenêtre, feuille, sélection, cellule active et flags sont vérifiés.
+- Observations CIL dans [FLOW-EVIDENCE.md](FLOW-EVIDENCE.md) : deux propriétés de couleur simultanées, deux rôles possibles par cellule, activation par blocs/parents, ordre des couches, distinction entre fermeture conservant et commande rendant permanent. Ces observations ne constituent pas une exécution du produit original.
+- Interface native 0.4 contrôlée à **1160 × 820 et 940 × 640** : analyse de démonstration 7 rôles/7 actifs, case individuelle décochée puis 6 actifs et groupe partiel 2/3. Palette de 8 catégories, fond/police et 8 boutons visibles. À la taille minimale, commandes accessibles et listes défilantes. Processus de contrôle fermé ; aucun classeur ou réglage persistant modifié. Les écritures de couleurs Excel sont couvertes par les tests de callbacks ci-dessus, sans clic physique revendiqué sur un classeur réel.
+- Complément : correction du marshaling par `StandardOleMarshalObject`. Avant correction, le test automation créait une fenêtre Clair sur un thread différent du thread UI Excel ; une attente SendMessage bloquait Excel. Rapport local ClrMD/WCT conservé dans `work/diagnostics/hang-0.4.md`. La correction suit le [contrat Microsoft des objets de complément exposés hors processus](https://learn.microsoft.com/en-us/visualstudio/vsto/calling-code-in-vsto-add-ins-from-other-office-solutions?view=visualstudio). Le test contrôle désormais aussi les threads natifs des deux fenêtres.
+- Validation finale du complément depuis **PowerShell 7 en MTA** puis **Windows PowerShell 5.1 en STA** : activation, véritable callback du ruban, deux explorateurs sur le thread UI Excel, retour et fermeture globale réussis. Enregistrement temporaire supprimé à la fin des deux exécutions.
+
+Pendant la mise au point, des échecs intermittents ont concerné `Range.Select`, les flags d'application et un contrôle de format numérique après réouverture. La restauration des plages utilise désormais Goto ; les diagnostics par étape et les assertions ont été conservés. Les deux séquences STA et la suite finale passent, sans cause externe établie pour les écarts de flags/format : ces résultats ne prouvent pas leur absence sur tous les hôtes ou timings.
+
+Le regroupement exact en rectangles, la commande Arixcel qui promeut une couche en nouvelle base, la progression et l'annulation d'analyse restent ouverts. Clair active les catégories et cellules et utilise ses propres règles conditionnelles ; aucune identité exhaustive des formats, interactions et écrans avec Arixcel n'est revendiquée.
+
 ## Livraison 0.3 — 15 octobre 2026
 
 - Compilation de l'application et de la DLL .NET Framework : réussite sans avertissement.

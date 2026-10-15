@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("0.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.4.0.0")]
 [assembly: ComVisible(false)]
 
 namespace FormulaExplorer
@@ -25,7 +25,10 @@ namespace FormulaExplorer
         [DispId(1)] [return: MarshalAs(UnmanagedType.BStr)] string GetCustomUI([MarshalAs(UnmanagedType.BStr)] string ribbonId);
     }
     [ComVisible(true), Guid("A230F44E-6C1B-49DA-8798-7BA554B85D52"), ProgId("Clair.ExcelAddIn"), ClassInterface(ClassInterfaceType.AutoDispatch)]
-    public sealed class ExcelAddIn : IDTExtensibility2, IRibbonExtensibility
+    // Keep COM callbacks on the creating Excel STA. The CLR's default
+    // free-threaded marshaler can otherwise create a WinForms window on an RPC
+    // thread while Excel's UI waits for that window's synchronous messages.
+    public sealed class ExcelAddIn : StandardOleMarshalObject, IDTExtensibility2, IRibbonExtensibility
     {
         object application;
         readonly List<MainForm> windows = new List<MainForm>();
@@ -49,11 +52,11 @@ namespace FormulaExplorer
         {
             application = app; ((dynamic)addIn).Object = this;
         }
-        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(); application = null; ribbonLoaded = false; }
+        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(true); application = null; ribbonLoaded = false; }
         public void OnAddInsUpdate(ref Array custom) { }
         public void OnStartupComplete(ref Array custom) { }
-        public void OnBeginShutdown(ref Array custom) { CloseWindows(); }
-        public string Status() { return application == null ? "Disconnected" : "Clair 0.3 connected"; }
+        public void OnBeginShutdown(ref Array custom) { CloseWindows(true); }
+        public string Status() { return application == null ? "Disconnected" : "Clair 0.4 connected"; }
         public void RibbonOnLoad([MarshalAs(UnmanagedType.IDispatch)] object ribbon) { ribbonLoaded = true; }
         public bool IsRibbonLoaded() { return ribbonLoaded; }
         public int OpenWindowCount() { return windows.Count; }
@@ -85,10 +88,15 @@ namespace FormulaExplorer
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "Clair"); }
         }
-        void CloseWindows()
+        void CloseWindows(bool hostClosing = false)
         {
-            foreach (MainForm window in windows.ToArray()) { window.Close(); window.Dispose(); }
-            windows.Clear(); currentWindow = null;
+            foreach (MainForm window in windows.ToArray())
+            {
+                if (hostClosing) window.CloseFromHost(); else window.Close();
+                // FormClosed maintains the list. A failed color cleanup can cancel
+                // an ordinary close; keep that window alive for corrective action.
+                if (window.IsDisposed) window.Dispose();
+            }
         }
         sealed class ExcelWindow : IWin32Window
         {

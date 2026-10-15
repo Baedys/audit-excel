@@ -93,8 +93,15 @@ namespace FormulaExplorer
         }
         void EditMapPalette()
         {
-            using (PaletteDialog dialog = new PaletteDialog(mapPalette, PalettePath))
-                if (dialog.ShowDialog(this) == DialogResult.OK) { mapPalette = dialog.Palette; paletteLoadWarning = null; ShowMap(); }
+            HighlightPalette edited = mapPalette.Clone();
+            using (var dialog = new PaletteEditor<FormulaMapKind>(edited.Entries,
+                delegate { return HighlightPalette.Default().Entries; },
+                delegate(string path) { return HighlightPalette.Load(path).Entries; },
+                delegate(string path) { edited.Save(path); },
+                delegate(FormulaMapKind kind) { return MapLabels[(int)kind]; }, PalettePath,
+                "Palette de la carte",
+                "Cliquez une couleur pour la choisir. Désactiver une catégorie ou choisir « Aucun » conserve le format existant. Les changements seront appliqués au prochain clic sur « Colorer dans Excel »."))
+                if (dialog.ShowDialog(this) == DialogResult.OK) { mapPalette = edited; paletteLoadWarning = null; ShowMap(); }
         }
         void ExportMap()
         {
@@ -111,92 +118,6 @@ namespace FormulaExplorer
                     File.WriteAllText(dialog.FileName, report.ToString(), new System.Text.UTF8Encoding(true));
                     status.Text = "Rapport carte exporté : " + dialog.FileName;
                 }
-        }
-        sealed class PaletteDialog : Form
-        {
-            public HighlightPalette Palette { get; private set; }
-            readonly DataGridView grid = new DataGridView();
-            readonly string defaultPath;
-            public PaletteDialog(HighlightPalette palette, string path)
-            {
-                Palette = palette.Clone(); defaultPath = path;
-                Text = "Palette de la carte"; Size = new Size(800, 650); MinimumSize = new Size(740, 600);
-                Font = new Font("Segoe UI", 10); StartPosition = FormStartPosition.CenterParent;
-                TableLayoutPanel panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 3 };
-                panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 62)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 120)); Controls.Add(panel);
-                panel.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Cliquez une couleur pour la choisir. Désactiver une catégorie ou choisir « Aucun » conserve le format existant. Les changements seront appliqués au prochain clic sur « Colorer dans Excel »." }, 0, 0);
-                grid.Dock = DockStyle.Fill; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.RowHeadersVisible = false;
-                grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.MultiSelect = false;
-                grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Enabled", HeaderText = "Active", FillWeight = 45 });
-                grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Category", HeaderText = "Catégorie", ReadOnly = true, FillWeight = 210 });
-                grid.Columns.Add(new DataGridViewButtonColumn { Name = "Fill", HeaderText = "Fond", FillWeight = 75 });
-                grid.Columns.Add(new DataGridViewButtonColumn { Name = "Font", HeaderText = "Police", FillWeight = 75 });
-                grid.CurrentCellDirtyStateChanged += delegate { if (grid.IsCurrentCellDirty) grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
-                grid.CellContentClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0 && e.ColumnIndex >= 2) ChooseColor(e.RowIndex, e.ColumnIndex); };
-                panel.Controls.Add(grid, 0, 1);
-                FlowLayoutPanel bar = new FlowLayoutPanel { Dock = DockStyle.Fill };
-                bar.Controls.Add(Button("Sans fond", delegate { ClearColor(true); })); bar.Controls.Add(Button("Sans police", delegate { ClearColor(false); }));
-                bar.Controls.Add(Button("Défaut", delegate { Palette = HighlightPalette.Default(); Populate(); }));
-                bar.Controls.Add(Button("Importer…", Import)); bar.Controls.Add(Button("Exporter…", Export));
-                bar.Controls.Add(Button("Enregistrer par défaut", delegate { ReadEnabled(); Directory.CreateDirectory(Path.GetDirectoryName(defaultPath)); Palette.Save(defaultPath); MessageBox.Show(this, "Palette enregistrée pour les prochaines fenêtres Clair.", "Clair"); }));
-                Button ok = Button("Utiliser", delegate { ReadEnabled(); DialogResult = DialogResult.OK; }); bar.Controls.Add(ok);
-                Button cancel = Button("Annuler", delegate { DialogResult = DialogResult.Cancel; }); bar.Controls.Add(cancel);
-                AcceptButton = ok; CancelButton = cancel; panel.Controls.Add(bar, 0, 2); Populate();
-            }
-            Button Button(string caption, Action action)
-            {
-                Button button = new Button { Text = caption, AutoSize = true, Height = 34 };
-                button.Click += delegate { try { action(); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Palette", MessageBoxButtons.OK, MessageBoxIcon.Information); } }; return button;
-            }
-            void Populate()
-            {
-                grid.Rows.Clear();
-                foreach (FormulaMapKind kind in Enum.GetValues(typeof(FormulaMapKind)))
-                {
-                    HighlightStyle style = Palette.Entries[kind]; int index = grid.Rows.Add(style.Enabled, MapLabels[(int)kind], Hex(style.FillRgb), Hex(style.FontRgb));
-                    grid.Rows[index].Tag = kind; PaintRow(index);
-                }
-            }
-            static string Hex(int? color) { return color.HasValue ? "#" + color.Value.ToString("X6") : "Aucun"; }
-            void PaintRow(int index)
-            {
-                HighlightStyle style = Palette.Entries[(FormulaMapKind)grid.Rows[index].Tag];
-                for (int col = 2; col <= 3; col++)
-                {
-                    int? value = col == 2 ? style.FillRgb : style.FontRgb; DataGridViewCell cell = grid.Rows[index].Cells[col];
-                    cell.Value = Hex(value); cell.Style.BackColor = value.HasValue ? Rgb(value.Value) : Color.White;
-                    Color color = cell.Style.BackColor; cell.Style.ForeColor = color.GetBrightness() < 0.45 ? Color.White : Color.Black;
-                }
-            }
-            void ReadEnabled()
-            {
-                grid.EndEdit(); foreach (DataGridViewRow row in grid.Rows) Palette.Entries[(FormulaMapKind)row.Tag].Enabled = Convert.ToBoolean(row.Cells[0].Value);
-            }
-            void ChooseColor(int index, int column)
-            {
-                HighlightStyle style = Palette.Entries[(FormulaMapKind)grid.Rows[index].Tag]; int? value = column == 2 ? style.FillRgb : style.FontRgb;
-                using (ColorDialog dialog = new ColorDialog { FullOpen = true, Color = value.HasValue ? Rgb(value.Value) : Color.White })
-                    if (dialog.ShowDialog(this) == DialogResult.OK)
-                    {
-                        int rgb = dialog.Color.ToArgb() & 0xffffff;
-                        if (column == 2) style.FillRgb = rgb; else style.FontRgb = rgb; PaintRow(index);
-                    }
-            }
-            void ClearColor(bool fill)
-            {
-                if (grid.CurrentRow == null) return; HighlightStyle style = Palette.Entries[(FormulaMapKind)grid.CurrentRow.Tag];
-                if (fill) style.FillRgb = null; else style.FontRgb = null; PaintRow(grid.CurrentRow.Index);
-            }
-            void Import()
-            {
-                using (OpenFileDialog dialog = new OpenFileDialog { Filter = "Palette XML (*.xml)|*.xml" })
-                    if (dialog.ShowDialog(this) == DialogResult.OK) { Palette = HighlightPalette.Load(dialog.FileName); Populate(); }
-            }
-            void Export()
-            {
-                using (SaveFileDialog dialog = new SaveFileDialog { Filter = "Palette XML (*.xml)|*.xml", FileName = "clair-palette.xml" })
-                    if (dialog.ShowDialog(this) == DialogResult.OK) { ReadEnabled(); Palette.Save(dialog.FileName); }
-            }
         }
     }
 }

@@ -62,7 +62,7 @@ try {
     if (-not $addin.Connect) { throw 'Excel rejected the add-in.' }
     $automation = $addin.Object
     $status = $automation.Status()
-    if ($status -ne 'Clair 0.3 connected') { throw "Unexpected add-in status: $status" }
+    if ($status -ne 'Clair 0.4 connected') { throw "Unexpected add-in status: $status" }
     if (-not $automation.IsRibbonLoaded()) { throw 'Excel did not invoke the ribbon onLoad callback.' }
     [xml]$ribbon = $automation.GetCustomUI('Microsoft.Excel.Workbook')
     if ($ribbon.OuterXml -notmatch 'ClairTab') { throw 'Ribbon XML missing ClairTab.' }
@@ -73,6 +73,13 @@ try {
     if ($automation.OpenWindowCount() -ne 1) { throw 'Precedents ribbon callback did not open an explorer.' }
     $automation.ExploreDependents($excel)
     if ($automation.OpenWindowCount() -ne 2) { throw 'Dependents callback did not preserve the first explorer.' }
+    $excelUiThread = [ExcelHost]::ThreadId([int]$excel.Hwnd)
+    $windowThreads = @([ExcelHost]::WindowThreadIds($ownedProcess.Id, 'Clair '))
+    if ($windowThreads.Count -ne 2) { throw 'Expected two native explorer windows in the owned Excel process.' }
+    foreach ($windowThread in $windowThreads) {
+        if ($windowThread -ne $excelUiThread) { throw 'Explorer window was created outside the Excel UI thread.' }
+    }
+    'PASS two explorer HWNDs share the Excel UI thread'
     $automation.GoBack($excel)
     $automation.CloseAll($excel)
     if ($automation.OpenWindowCount() -ne 0) { throw 'Close All left explorer windows open.' }

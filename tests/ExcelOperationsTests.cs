@@ -10,13 +10,29 @@ public static class ExcelOperationsTests
     static dynamic Keep(object value) { objects.Add(value); return value; }
     static void Equal(object actual, object expected) { if (!Object.Equals(actual, expected)) throw new Exception("Expected " + expected + ", got " + actual); }
     static void Reject(Action action) { try { action(); } catch (InvalidOperationException) { return; } throw new Exception("Expected rejection"); }
+    static void EqualFlag(bool actual, bool expected, string label)
+    {
+        if (actual != expected) throw new Exception(label + ": expected " + expected + ", got " + actual);
+    }
+    static ExpressionValue EvaluateChecked(object application, ExcelBridge bridge, Book book, Cell cell, string expression)
+    {
+        dynamic app = application;
+        bool eventsBefore = app.EnableEvents, screenBefore = app.ScreenUpdating;
+        Console.WriteLine("CHECK Evaluate " + expression + " before: EnableEvents=" + eventsBefore + " ScreenUpdating=" + screenBefore);
+        ExpressionValue result = bridge.Evaluate(book, cell, expression);
+        bool eventsAfter = app.EnableEvents, screenAfter = app.ScreenUpdating;
+        Console.WriteLine("CHECK Evaluate " + expression + " after: EnableEvents=" + eventsAfter + " ScreenUpdating=" + screenAfter);
+        EqualFlag(eventsAfter, eventsBefore, expression + " EnableEvents restoration");
+        EqualFlag(screenAfter, screenBefore, expression + " ScreenUpdating restoration");
+        return result;
+    }
     static object Format(object range, string value)
     {
         return range.GetType().InvokeMember("NumberFormat", value == null ? BindingFlags.GetProperty : BindingFlags.SetProperty, null, range, value == null ? new object[0] : new object[] { value }, CultureInfo.GetCultureInfo("en-US"));
     }
     public static void Run()
     {
-        object application = null, workbook = null;
+        object application = null, workbook = null, secondWorkbook = null;
         try
         {
             application = Activator.CreateInstance(Type.GetTypeFromProgID("Excel.Application", true)); dynamic app = application;
@@ -30,14 +46,46 @@ public static class ExcelOperationsTests
             ExcelBridge bridge = new ExcelBridge(application); Book book = bridge.Capture(workbook); Cell cell = book.Get("Values", "B5");
             bool eventsBefore = app.EnableEvents, screenBefore = app.ScreenUpdating;
             Console.WriteLine("CHECK evaluation initial flags: events=" + eventsBefore + " screen=" + screenBefore);
-            Equal(bridge.Evaluate(book, cell, "SUM(A1:A2)").Text, "10");
-            Equal(bridge.Evaluate(book, cell, "ROW()").Text, "5");
-            Equal(bridge.Evaluate(book, cell, "COLUMN()").Text, "2");
-            Equal(bridge.Evaluate(book, cell, "1/0").Text, "#DIV/0!");
-            Equal(bridge.Evaluate(book, cell, "{1,2;3,4}").Text, "1\t2" + Environment.NewLine + "3\t4");
-            var range = bridge.Evaluate(book, cell, "A1:A2"); Equal(range.Rows, 2L); Equal(range.Text, "7" + Environment.NewLine + "3");
+            Equal(EvaluateChecked(application, bridge, book, cell, "SUM(A1:A2)").Text, "10");
+            Equal(EvaluateChecked(application, bridge, book, cell, "ROW()").Text, "5");
+            Equal(EvaluateChecked(application, bridge, book, cell, "COLUMN()").Text, "2");
+            Equal(EvaluateChecked(application, bridge, book, cell, "1/0").Text, "#DIV/0!");
+            Equal(EvaluateChecked(application, bridge, book, cell, "{1,2;3,4}").Text, "1\t2" + Environment.NewLine + "3\t4");
+            var range = EvaluateChecked(application, bridge, book, cell, "A1:A2"); Equal(range.Rows, 2L); Equal(range.Text, "7" + Environment.NewLine + "3");
             Equal((string)Keep(app.ActiveSheet).Name, "Other"); Equal((string)Keep(app.Selection).Address, "$D$9:$E$10"); Equal((string)Keep(app.ActiveCell).Address, "$E$10");
-            Equal((bool)app.EnableEvents, eventsBefore); Equal((bool)app.ScreenUpdating, screenBefore);
+            Console.WriteLine("CHECK after selection reads: EnableEvents=" + app.EnableEvents + " ScreenUpdating=" + app.ScreenUpdating);
+            EqualFlag((bool)app.EnableEvents, eventsBefore, "Six-call EnableEvents preservation");
+            EqualFlag((bool)app.ScreenUpdating, screenBefore, "Six-call ScreenUpdating preservation");
+            // Alternate the prior selection between books and between a range
+            // and disjoint areas. Evaluation must restore the exact window,
+            // sheet, selection, active cell and application flags each time.
+            secondWorkbook = Keep(app.Workbooks).Add();
+            dynamic secondSheet = Keep(Keep(((dynamic)secondWorkbook).Worksheets).Item[1]); secondSheet.Name = "Other book";
+            for (int iteration = 0; iteration < 50; iteration++)
+            {
+                dynamic selectionSheet = iteration % 2 == 0 ? other : secondSheet;
+                dynamic selection = Keep(selectionSheet.Range["D9:E10"]);
+                if (iteration % 3 != 0) selection = Keep(app.Union(selection, Keep(selectionSheet.Range["G11:H12"])));
+                app.Goto(selection, false); Keep(selectionSheet.Range["E10"]).Activate();
+                string priorWorkbookName = (string)Keep(app.ActiveWorkbook).FullName;
+                string priorSheetName = (string)Keep(app.ActiveSheet).Name, priorAddress = (string)Keep(app.Selection).Address;
+                int priorWindowHandle = (int)Keep(app.ActiveWindow).Hwnd, priorAreaCount = (int)Keep(Keep(app.Selection).Areas).Count;
+                app.EnableEvents = iteration % 2 == 0; app.ScreenUpdating = iteration % 3 == 0;
+                bool iterationEvents = app.EnableEvents, iterationScreen = app.ScreenUpdating;
+                var evaluatedRange = bridge.Evaluate(book, cell, "A1:A2");
+                Equal(evaluatedRange.Rows, 2L); Equal(evaluatedRange.Text, "7" + Environment.NewLine + "3");
+                Equal((string)Keep(app.ActiveWorkbook).FullName, priorWorkbookName);
+                Equal((int)Keep(app.ActiveWindow).Hwnd, priorWindowHandle);
+                Equal((string)Keep(app.ActiveSheet).Name, priorSheetName);
+                Equal((string)Keep(app.Selection).Address, priorAddress);
+                Equal((int)Keep(Keep(app.Selection).Areas).Count, priorAreaCount);
+                Equal((string)Keep(app.ActiveCell).Address, "$E$10");
+                EqualFlag((bool)app.EnableEvents, iterationEvents, "Cycle " + iteration + " EnableEvents restoration");
+                EqualFlag((bool)app.ScreenUpdating, iterationScreen, "Cycle " + iteration + " ScreenUpdating restoration");
+            }
+            Console.WriteLine("PASS 50 evaluation restoration cycles across two books and disjoint selections (500 assertions)");
+            ((dynamic)secondWorkbook).Close(false); ExcelBridge.Release(secondWorkbook); secondWorkbook = null;
+            app.EnableEvents = eventsBefore; app.ScreenUpdating = screenBefore;
             FormulaChange change = bridge.EditFormula(book, cell, "=SUM(A1:A2)*3"); Equal((double)b5.Value2, 30.0);
             Reject(delegate { bridge.Evaluate(book, cell, "A1+1"); });
             bridge.UndoFormula(change); Equal((string)b5.Formula, "=SUM(A1:A2)*2"); Equal((double)b5.Value2, 20.0);
@@ -82,10 +130,11 @@ public static class ExcelOperationsTests
         }
         finally
         {
+            if (secondWorkbook != null) { try { ((dynamic)secondWorkbook).Close(false); } catch { } }
             if (workbook != null) { try { ((dynamic)workbook).Close(false); } catch { } }
             if (application != null) { try { ((dynamic)application).Quit(); } catch { } }
             for (int i = objects.Count - 1; i >= 0; i--) ExcelBridge.Release(objects[i]); objects.Clear();
-            ExcelBridge.Release(workbook); ExcelBridge.Release(application);
+            ExcelBridge.Release(secondWorkbook); ExcelBridge.Release(workbook); ExcelBridge.Release(application);
         }
     }
 }

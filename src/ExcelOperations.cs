@@ -76,7 +76,7 @@ namespace FormulaExplorer
                 }
                 if (workbook == null) throw new InvalidOperationException("Classeur fermé ou renommé : rechargez la sélection.");
                 sheets = ((dynamic)workbook).Worksheets; sheet = ((dynamic)sheets).Item[sheetName];
-                range = ((dynamic)sheet).Range[address];
+                range = RangeAt(sheet, address);
                 return action(sheet, range);
             }
             finally { Release(range); Release(sheet); Release(sheets); Release(workbook); Release(books); }
@@ -118,9 +118,19 @@ namespace FormulaExplorer
                     try
                     {
                         if (priorWindow != null) ((dynamic)priorWindow).Activate();
-                        if (priorSheet != null) ((dynamic)priorSheet).Activate();
-                        if (priorSelection != null) ((dynamic)priorSelection).Select();
-                        if (priorRange && priorActive != null) ((dynamic)priorActive).Activate();
+                        if (priorRange && priorSelection != null)
+                        {
+                            // Range.Select requires its sheet to remain active. Goto
+                            // restores the actual range's workbook/sheet as one step,
+                            // including a multi-area selection in another workbook.
+                            app.Goto(priorSelection, false);
+                            if (priorActive != null) ((dynamic)priorActive).Activate();
+                        }
+                        else
+                        {
+                            if (priorSheet != null) ((dynamic)priorSheet).Activate();
+                            if (priorSelection != null) ((dynamic)priorSelection).Select();
+                        }
                     }
                     finally
                     {

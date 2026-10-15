@@ -25,7 +25,7 @@ namespace FormulaExplorer
         {
             public string Sheet, Address, Formula;
             public int? Fill, Font;
-            public int Priority;
+            public int Priority, Rank;
             public bool Stop, Deleted;
             public object Rule;
         }
@@ -37,7 +37,12 @@ namespace FormulaExplorer
         }
         static bool OwnedHighlight(string formula, string layer)
         {
-            return Regex.IsMatch(formula ?? "", "\\A=N\\(\"" + Regex.Escape(HighlightPrefix + layer + "|") + "[a-f0-9]{32}\"\\)=0\\z", RegexOptions.CultureInvariant);
+            return String.Equals(HighlightFormulaLayer(formula), layer, StringComparison.Ordinal);
+        }
+        static string HighlightFormulaLayer(string formula)
+        {
+            Match match = Regex.Match(formula ?? "", "\\A=N\\(\"" + Regex.Escape(HighlightPrefix) + "([a-z][a-z0-9_-]{0,31})\\|[a-f0-9]{32}\"\\)=0\\z", RegexOptions.CultureInvariant);
+            return match.Success ? match.Groups[1].Value : null;
         }
         static void HighlightColor(int? color)
         {
@@ -125,22 +130,30 @@ namespace FormulaExplorer
                         try
                         {
                             cells = ((dynamic)ws).Cells; rules = ((dynamic)cells).FormatConditions;
+                            List<int> priorities = new List<int>();
+                            int firstResult = result.Count;
                             for (int i = 1; i <= (int)((dynamic)rules).Count; i++)
                             {
                                 object rule = ((dynamic)rules).Item[i], area = null, interior = null, font = null;
                                 try
                                 {
+                                    int priority = (int)((dynamic)rule).Priority;
+                                    priorities.Add(priority);
                                     if ((int)((dynamic)rule).Type != 2) continue;
                                     string formula = Convert.ToString(OfficeCall(rule, "Formula1", BindingFlags.GetProperty), CultureInfo.InvariantCulture);
                                     if (!OwnedHighlight(formula, layer)) continue;
                                     area = ((dynamic)rule).AppliesTo; interior = ((dynamic)rule).Interior; font = ((dynamic)rule).Font;
-                                    result.Add(new HighlightRule { Sheet = sheet, Formula = formula, Address = (string)((dynamic)area).Address,
-                                        Fill = OptionalHighlightColor(interior), Font = OptionalHighlightColor(font), Priority = (int)((dynamic)rule).Priority,
+                                    // Absolute '$' markers can expand a valid 200-character
+                                    // union beyond Excel's Range[string] limit during rollback.
+                                    result.Add(new HighlightRule { Sheet = sheet, Formula = formula, Address = (string)((dynamic)area).Address[false, false, 1, false],
+                                        Fill = OptionalHighlightColor(interior), Font = OptionalHighlightColor(font), Priority = priority,
                                         Stop = (bool)((dynamic)rule).StopIfTrue, Rule = rule });
                                     rule = null; // Retain only owned rules until transaction completion.
                                 }
                                 finally { Release(font); Release(interior); Release(area); Release(rule); }
                             }
+                            for (int i = firstResult; i < result.Count; i++)
+                                result[i].Rank = 1 + priorities.Count(priority => priority < result[i].Priority);
                             return 0;
                         }
                         finally { Release(rules); Release(cells); }
@@ -186,6 +199,88 @@ namespace FormulaExplorer
             try { return rules.Count != 0; }
             finally { foreach (HighlightRule rule in rules) Release(rule.Rule); }
         }
+        public List<string> GetHighlightSheets(Book book, string layer)
+        {
+            if (book == null) throw new ArgumentNullException("book");
+            layer = HighlightLayer(layer);
+            List<HighlightRule> rules = ReadHighlightRules(book, book.Sheets, layer);
+            try { return rules.Select(rule => rule.Sheet).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(sheet => sheet, StringComparer.OrdinalIgnoreCase).ToList(); }
+            finally { foreach (HighlightRule rule in rules) Release(rule.Rule); }
+        }
+        public List<string> HighlightLayers(Book book)
+        {
+            if (book == null) throw new ArgumentNullException("book");
+            HashSet<string> layers = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string sheet in book.Sheets)
+                AtCell(book.FullName, sheet, "A1", delegate(object ws, object unused)
+                {
+                    object cells = null, rules = null;
+                    try
+                    {
+                        cells = ((dynamic)ws).Cells; rules = ((dynamic)cells).FormatConditions;
+                        for (int i = 1; i <= (int)((dynamic)rules).Count; i++)
+                        {
+                            object rule = null;
+                            try
+                            {
+                                rule = ((dynamic)rules).Item[i];
+                                if ((int)((dynamic)rule).Type != 2) continue;
+                                string layer = HighlightFormulaLayer(Convert.ToString(OfficeCall(rule, "Formula1", BindingFlags.GetProperty), CultureInfo.InvariantCulture));
+                                if (layer != null) layers.Add(layer);
+                            }
+                            finally { Release(rule); }
+                        }
+                        return 0;
+                    }
+                    finally { Release(rules); Release(cells); }
+                });
+            return layers.OrderBy(layer => layer, StringComparer.Ordinal).ToList();
+        }
+        public List<Book> FindHighlightBooks(string layer)
+        {
+            layer = HighlightLayer(layer);
+            List<Book> found = new List<Book>();
+            object books = null;
+            try
+            {
+                books = ((dynamic)application).Workbooks;
+                for (int i = 1; i <= (int)((dynamic)books).Count; i++)
+                {
+                    object workbook = null, sheets = null;
+                    try
+                    {
+                        workbook = ((dynamic)books).Item[i]; sheets = ((dynamic)workbook).Worksheets;
+                        Book book = new Book { Name = (string)((dynamic)workbook).Name, FullName = (string)((dynamic)workbook).FullName };
+                        for (int j = 1; j <= (int)((dynamic)sheets).Count; j++)
+                        {
+                            object sheet = null;
+                            try { sheet = ((dynamic)sheets).Item[j]; book.Sheets.Add((string)((dynamic)sheet).Name); }
+                            finally { Release(sheet); }
+                        }
+                        if (GetHighlightSheets(book, layer).Count != 0) found.Add(book);
+                    }
+                    finally { Release(sheets); Release(workbook); }
+                }
+                return found;
+            }
+            finally { Release(books); }
+        }
+        public void RemoveHighlightLayers(Book book, IEnumerable<string> layers)
+        {
+            if (book == null) throw new ArgumentNullException("book");
+            if (layers == null) throw new ArgumentNullException("layers");
+            List<string> names = layers.Select(HighlightLayer).Distinct(StringComparer.Ordinal).ToList();
+            List<HighlightRule> old = new List<HighlightRule>();
+            List<string> sheets;
+            try
+            {
+                foreach (string layer in names) old.AddRange(ReadHighlightRules(book, book.Sheets, layer));
+                sheets = old.Select(rule => rule.Sheet).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                RequireHighlightSheets(book, sheets);
+            }
+            catch { foreach (HighlightRule rule in old) Release(rule.Rule); throw; }
+            ReplaceHighlights(book, sheets, null, new List<HighlightBatch>(), old);
+        }
         public void ApplyHighlights(Book book, IEnumerable<CellHighlight> highlights, string layer, IEnumerable<string> replaceSheets = null)
         {
             layer = HighlightLayer(layer);
@@ -208,10 +303,10 @@ namespace FormulaExplorer
             RequireHighlightSheets(book, targets);
             ReplaceHighlights(book, targets, layer, new List<HighlightBatch>());
         }
-        void ReplaceHighlights(Book book, List<string> sheets, string layer, List<HighlightBatch> batches)
+        void ReplaceHighlights(Book book, List<string> sheets, string layer, List<HighlightBatch> batches, List<HighlightRule> previous = null)
         {
             if (sheets.Count == 0) return;
-            List<HighlightRule> old = ReadHighlightRules(book, sheets, layer), created = new List<HighlightRule>();
+            List<HighlightRule> old = previous ?? ReadHighlightRules(book, sheets, layer), created = new List<HighlightRule>();
             if (old.Count == 0 && batches.Count == 0) return;
             bool updating = true, events = true, flagsRead = false;
             try
@@ -237,7 +332,39 @@ namespace FormulaExplorer
                         try
                         {
                             object restoredRule = AddHighlightRule(book, new HighlightBatch { Sheet = rule.Sheet, Address = rule.Address, Fill = rule.Fill, Font = rule.Font }, rule.Formula, restored);
-                            ((dynamic)restoredRule).StopIfTrue = rule.Stop; ((dynamic)restoredRule).Priority = rule.Priority;
+                            ((dynamic)restoredRule).StopIfTrue = rule.Stop;
+                            AtCell(book.FullName, rule.Sheet, "A1", delegate(object ws, object unused)
+                            {
+                                object cells = null, rules = null;
+                                try
+                                {
+                                    cells = ((dynamic)ws).Cells; rules = ((dynamic)cells).FormatConditions;
+                                    // Excel keeps numeric gaps, and accepts a Priority greater
+                                    // than Count. Bound the ordinal rank, then use the current
+                                    // predecessor's actual priority. A Count-bounded number
+                                    // can incorrectly move this rule above another layer.
+                                    int ownPriority = (int)((dynamic)restoredRule).Priority;
+                                    List<int> priorities = new List<int>();
+                                    for (int i = 1; i <= (int)((dynamic)rules).Count; i++)
+                                    {
+                                        object current = null;
+                                        try
+                                        {
+                                            current = ((dynamic)rules).Item[i];
+                                            int priority = (int)((dynamic)current).Priority;
+                                            if (priority != ownPriority) priorities.Add(priority);
+                                        }
+                                        finally { Release(current); }
+                                    }
+                                    priorities.Sort();
+                                    int rank = Math.Max(1, Math.Min(rule.Rank, priorities.Count + 1));
+                                    if (rank == 1) ((dynamic)restoredRule).SetFirstPriority();
+                                    else if (rank == priorities.Count + 1) ((dynamic)restoredRule).SetLastPriority();
+                                    else ((dynamic)restoredRule).Priority = checked(priorities[rank - 2] + 1);
+                                    return 0;
+                                }
+                                finally { Release(rules); Release(cells); }
+                            });
                         }
                         catch (Exception error) { rollbackErrors.Add(error); }
                 }
