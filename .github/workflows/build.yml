@@ -1,0 +1,20 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test core
+        shell: pwsh
+        run: ./test.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clair-windows-prototype
+          path: |
+            bin/Clair.exe
+            bin/Clair.AddIn.dll
+            LICENSE
+            README.md
