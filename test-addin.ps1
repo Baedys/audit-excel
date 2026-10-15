@@ -62,7 +62,7 @@ try {
     if (-not $addin.Connect) { throw 'Excel rejected the add-in.' }
     $automation = $addin.Object
     $status = $automation.Status()
-    if ($status -ne 'Clair 0.4 connected') { throw "Unexpected add-in status: $status" }
+    if ($status -ne 'Clair 0.5 connected') { throw "Unexpected add-in status: $status" }
     if (-not $automation.IsRibbonLoaded()) { throw 'Excel did not invoke the ribbon onLoad callback.' }
     [xml]$ribbon = $automation.GetCustomUI('Microsoft.Excel.Workbook')
     if ($ribbon.OuterXml -notmatch 'ClairTab') { throw 'Ribbon XML missing ClairTab.' }

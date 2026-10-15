@@ -13,6 +13,7 @@ namespace FormulaExplorer
         readonly ComboBox flowScope = new ComboBox(), flowFocus = new ComboBox(), flowView = new ComboBox();
         readonly CheckedListBox flowGroups = new CheckedListBox();
         readonly CheckBox keepFlowColors = new CheckBox();
+        readonly CheckBox flowCellDetails = new CheckBox();
         readonly List<FlowCategory> flowGroupCategories = new List<FlowCategory>();
         readonly List<FlowCategory> flowActivationOrder = Enum.GetValues(typeof(FlowCategory)).Cast<FlowCategory>().ToList();
         readonly List<FlowActivation> flowActivations = new List<FlowActivation>();
@@ -21,6 +22,7 @@ namespace FormulaExplorer
         readonly string flowLayer = "flow_" + Guid.NewGuid().ToString("N").Substring(0, 20);
         FlowPalette flowPalette = FlowPalette.Default();
         FlowAnalysisResult flowResult;
+        IList<FlowBlock> flowBlocks;
         bool updatingFlowControls, flowColorsApplied, hostIsClosing;
         string flowPaletteWarning;
         static readonly string[] FlowLabels = { "Entrées", "Calculs", "Sorties", "Formules isolées", "Antécédents extérieurs", "Entrées dans la zone", "Sorties de la zone", "Dépendants extérieurs" };
@@ -36,8 +38,11 @@ namespace FormulaExplorer
             flowView.Items.AddRange(new object[] { "Rôles de calcul", "Flux de la zone centrale" }); flowView.SelectedIndex = 0;
             bar.Controls.Add(new Label { Text = "Périmètre", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }); bar.Controls.Add(flowScope);
             bar.Controls.Add(new Label { Text = "Zone centrale", AutoSize = true, Padding = new Padding(8, 5, 0, 0) }); bar.Controls.Add(flowFocus);
-            Button analyze = ActionButton("Analyser et colorer", AnalyzeFlow); bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true);
+            Button analyze = ActionButton("Analyser", AnalyzeFlow); bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true);
             bar.Controls.Add(flowView);
+            flowCellDetails.Text = "Détail par cellule"; flowCellDetails.AutoSize = true; flowCellDetails.Padding = new Padding(0, 6, 0, 0);
+            bar.Controls.Add(flowCellDetails);
+            flowCellDetails.CheckedChanged += delegate { if (flowResult != null) ShowFlowCategories(); };
             bar.Controls.Add(ActionButton("Retirer tous les flux", RemoveFlowColors));
             bar.Controls.Add(ActionButton("Palette flux…", EditFlowPalette));
             Button report = ActionButton("Rapport flux", ExportFlow); bar.Controls.Add(report); bar.SetFlowBreak(report, true);
@@ -54,7 +59,7 @@ namespace FormulaExplorer
             SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 230 };
             TableLayoutPanel left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 70)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            left.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Couleurs par groupe.\nCases de la grille : activer une cellule.\nUne cellule peut porter deux rôles." }, 0, 0);
+            left.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Couleurs par groupe.\nCases de la grille : activer un bloc.\nUne cellule peut porter deux rôles." }, 0, 0);
             flowGroups.Dock = DockStyle.Fill; flowGroups.CheckOnClick = true; flowGroups.IntegralHeight = false; flowGroups.HorizontalScrollbar = true;
             left.Controls.Add(flowGroups, 0, 1); split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
             flowGroups.ItemCheck += delegate(object sender, ItemCheckEventArgs e)
@@ -80,6 +85,12 @@ namespace FormulaExplorer
         }
         void AnalyzeFlow()
         {
+            var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (flowResult != null)
+                foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
+                    foreach (Cell cell in flowResult.Cells(category))
+                        if (FlowRoleEnabled(category, cell)) selected.Add(FlowHighlightPlan.RoleKey(category, cell));
+            var history = flowActivations.ToList();
             if (bridge != null)
             {
                 Book fresh = bridge.Refresh(book, root); string sheet = root.Sheet, address = root.Address;
@@ -91,7 +102,28 @@ namespace FormulaExplorer
             List<Cell> area = scope.ToList();
             IEnumerable<Cell> focus = flowFocus.SelectedIndex == 2 ? selection :
                 flowFocus.SelectedIndex == 1 ? area.Where(c => String.Equals(c.Sheet, root.Sheet, StringComparison.OrdinalIgnoreCase)) : area;
-            flowResult = FlowAnalysis.Analyze(engine, area, focus); flowExcludedRoles.Clear(); flowActivations.Clear();
+            flowResult = FlowAnalysis.Analyze(engine, area, focus); flowBlocks = FlowBlocks.Build(flowResult); flowExcludedRoles.Clear(); flowActivations.Clear();
+            var members = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
+            foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
+                foreach (Cell cell in flowResult.Cells(category))
+                {
+                    string key = FlowHighlightPlan.RoleKey(category, cell); members.Add(key, cell);
+                    if (!selected.Contains(key)) flowExcludedRoles.Add(key);
+                }
+            foreach (FlowActivation activation in history)
+            {
+                if (activation.Cells == null) flowActivations.Add(new FlowActivation(activation.Category));
+                else
+                {
+                    var targets = new List<Cell>();
+                    foreach (Cell cell in activation.Cells)
+                    {
+                        Cell member;
+                        if (members.TryGetValue(FlowHighlightPlan.RoleKey(activation.Category, cell), out member)) targets.Add(member);
+                    }
+                    if (targets.Count > 0) flowActivations.Add(FlowActivation.ForCells(activation.Category, targets.AsReadOnly()));
+                }
+            }
             ShowFlowCategories();
             if (bridge != null) ApplyFlowColors();
         }
@@ -112,24 +144,26 @@ namespace FormulaExplorer
         void ShowFlowCategories()
         {
             if (flowResult == null) return;
-            flow.Columns.Clear(); flow.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Highlight", HeaderText = "Colorer", FillWeight = 50 });
-            flow.Columns.Add("Category", "Rôle"); flow.Columns.Add("Location", "Cellule"); flow.Columns.Add("Value", "Valeur"); flow.Columns.Add("Formula", "Formule"); flow.Columns[4].FillWeight = 180;
+            flow.Columns.Clear(); flow.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Highlight", HeaderText = "Colorer", FillWeight = 50, ThreeState = true });
+            flow.Columns.Add("Category", "Rôle"); flow.Columns.Add("Location", flowCellDetails.Checked ? "Cellule" : "Bloc"); flow.Columns.Add("Value", "Cellules / valeur"); flow.Columns.Add("Formula", "Formule (première cellule)"); flow.Columns[4].FillWeight = 180;
+            FlowCategory[] visible = VisibleFlowCategories().ToArray();
             int total = 0, enabled = 0, shown = 0; updatingFlowControls = true;
             try
             {
                 flowGroups.Items.Clear(); flowGroupCategories.Clear();
-                foreach (FlowCategory category in VisibleFlowCategories())
+                foreach (FlowCategory category in visible)
                 {
                     var cells = flowResult.Cells(category); int active = cells.Count(c => FlowRoleEnabled(category, c));
-                    flowGroupCategories.Add(category);
-                    int group = flowGroups.Items.Add(FlowLabels[(int)category] + " (" + active + "/" + cells.Count + ")");
-                    flowGroups.SetItemCheckState(group, active == 0 ? CheckState.Unchecked : active == cells.Count ? CheckState.Checked : CheckState.Indeterminate);
+                    var blocks = flowBlocks.Where(b => b.Category == category).ToList();
+                    AddFlowGroup(category, cells, blocks.Count);
                     HighlightStyle style = flowPalette.Entries[category]; total += cells.Count; enabled += active;
-                    foreach (Cell cell in cells)
+                    IEnumerable<FlowBlock> rows = flowCellDetails.Checked ? cells.Select(c => new FlowBlock(category, new List<Cell> { c })) : blocks;
+                    foreach (FlowBlock block in rows)
                     {
                         if (shown >= 20000) break;
-                        int row = flow.Rows.Add(FlowRoleEnabled(category, cell), FlowLabels[(int)category], cell.Location, cell.Value, cell.Formula);
-                        flow.Rows[row].Tag = cell; flow.Rows[row].Cells[0].Tag = category;
+                        Cell cell = block.Cells[0]; int selected = block.Cells.Count(c => FlowRoleEnabled(category, c));
+                        int row = flow.Rows.Add(FlowCheckState(selected, block.Cells.Count), FlowLabels[(int)category], block.Location, block.Cells.Count == 1 ? cell.Value : block.Cells.Count + " cellules", cell.Formula);
+                        flow.Rows[row].Tag = block; flow.Rows[row].Cells[0].Tag = category;
                         if (style.FillRgb.HasValue) flow.Rows[row].DefaultCellStyle.BackColor = Rgb(style.FillRgb.Value);
                         if (style.FontRgb.HasValue) flow.Rows[row].DefaultCellStyle.ForeColor = Rgb(style.FontRgb.Value);
                         shown++;
@@ -137,27 +171,45 @@ namespace FormulaExplorer
                 }
             }
             finally { updatingFlowControls = false; }
-            status.Text = total + " rôles · " + enabled + " actifs · " + flowResult.Scope.Count + " cellules dans le périmètre · " + flowResult.Focus.Count + " dans la zone centrale · " + flowResult.Links.Count + " liens directs" +
-                (total > shown ? " · liste limitée à 20 000 rôles" : "") + (flowResult.Incomplete ? " · résultat partiel" : "") +
+            int rowCount = flowCellDetails.Checked ? total : flowBlocks.Count(b => visible.Contains(b.Category));
+            status.Text = total + " rôles · " + enabled + " actifs · " + rowCount + (flowCellDetails.Checked ? " lignes" : " blocs") + " · " + flowResult.Scope.Count + " cellules dans le périmètre · " + flowResult.Focus.Count + " dans la zone centrale · " + flowResult.Links.Count + " liens directs" +
+                (rowCount > shown ? " · liste limitée à 20 000 lignes" : "") + (flowResult.Incomplete ? " · résultat partiel" : "") +
                 (flowView.SelectedIndex == 1 && !flowResult.HasFocusBoundary ? " · zone centrale = périmètre : aucun flux de frontière" : "");
-            warnings.Text = "Flux calculés sur une capture. Analyser et colorer actualise le même classeur ; les cases et la palette modifient les couleurs de cette analyse.\r\n" +
+            warnings.Text = "Flux calculés sur une capture. Analyser actualise le même classeur et conserve les rôles encore sélectionnés. Cochez les groupes ou blocs pour les colorer.\r\n" +
                 (flowPaletteWarning ?? "") + (flowResult.Incomplete ? String.Join("\r\n", flowResult.Warnings.Take(200)) : "Aucune référence non résolue détectée dans la capture.");
+        }
+        static CheckState FlowCheckState(int active, int total)
+        { return active == 0 ? CheckState.Unchecked : active == total ? CheckState.Checked : CheckState.Indeterminate; }
+        void AddFlowGroup(FlowCategory category, IList<Cell> cells, int blocks)
+        {
+            int active = cells.Count(c => FlowRoleEnabled(category, c));
+            flowGroupCategories.Add(category);
+            int index = flowGroups.Items.Add(FlowLabels[(int)category] + " (" + active + "/" + cells.Count + ") · " + blocks + " blocs");
+            flowGroups.SetItemCheckState(index, FlowCheckState(active, cells.Count));
+        }
+        void SetFlowCells(FlowCategory category, IList<Cell> cells, bool enabled)
+        {
+            if (!flowPalette.Entries[category].Enabled)
+            {
+                if (!enabled) return;
+                flowPalette.Entries[category].Enabled = true;
+                foreach (Cell other in flowResult.Cells(category)) flowExcludedRoles.Add(FlowHighlightPlan.RoleKey(category, other));
+            }
+            var keys = new HashSet<string>(cells.Select(c => c.Key), StringComparer.OrdinalIgnoreCase);
+            foreach (Cell cell in cells)
+            {
+                string key = FlowHighlightPlan.RoleKey(category, cell);
+                if (enabled) flowExcludedRoles.Remove(key); else flowExcludedRoles.Add(key);
+            }
+            flowActivations.RemoveAll(a => a.Category == category && a.Cells != null && a.Cells.All(c => keys.Contains(c.Key)));
+            flowActivations.Add(FlowActivation.ForCells(category, cells.ToList().AsReadOnly()));
         }
         void ToggleFlowRole(int row)
         {
             if (flowResult == null) return;
-            Cell cell = flow.Rows[row].Tag as Cell;
-            if (cell == null || !(flow.Rows[row].Cells[0].Tag is FlowCategory)) return;
-            FlowCategory category = (FlowCategory)flow.Rows[row].Cells[0].Tag;
-            if (!flowPalette.Entries[category].Enabled)
-            {
-                flowPalette.Entries[category].Enabled = true;
-                foreach (Cell other in flowResult.Cells(category)) flowExcludedRoles.Add(FlowHighlightPlan.RoleKey(category, other));
-            }
-            string key = FlowHighlightPlan.RoleKey(category, cell);
-            if (!flowExcludedRoles.Remove(key)) flowExcludedRoles.Add(key);
-            flowActivations.RemoveAll(a => a.Category == category && a.Cell != null && String.Equals(a.Cell.Key, cell.Key, StringComparison.OrdinalIgnoreCase));
-            flowActivations.Add(new FlowActivation(category, cell));
+            FlowBlock block = flow.Rows[row].Tag as FlowBlock;
+            if (block == null) return;
+            SetFlowCells(block.Category, block.Cells, block.Cells.Any(c => !FlowRoleEnabled(block.Category, c)));
             ShowFlowCategories(); if (flowColorsApplied) ApplyFlowColors();
         }
         void ApplyFlowColors()
@@ -175,7 +227,13 @@ namespace FormulaExplorer
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour retirer les flux.");
             List<string> layers = bridge.HighlightLayers(book).Where(IsFlowLayer).ToList();
-            bridge.RemoveHighlightLayers(book, layers); flowColorsApplied = false;
+            bridge.RemoveHighlightLayers(book, layers); flowColorsApplied = flowResult != null;
+            if (flowResult != null)
+            {
+                foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
+                    foreach (Cell cell in flowResult.Cells(category)) flowExcludedRoles.Add(FlowHighlightPlan.RoleKey(category, cell));
+                flowActivations.Clear(); ShowFlowCategories();
+            }
             status.Text = "Toutes les couleurs de flux Clair retirées du classeur chargé. Carte conservée.";
         }
         static bool IsFlowLayer(string layer) { return layer == "flow" || layer.StartsWith("flow_", StringComparison.Ordinal); }

@@ -1,5 +1,17 @@
 # Revue et validation
 
+## Livraison 0.5 — 15 octobre 2026
+
+- Scanner de rectangles original identifié statiquement dans Arixcel.Common.dll. Segments horizontaux ancrés sur leur premier point ; prolongement vertical seulement à largeur/X identiques, avec comparaison à l'origine du rectangle. R1C1 comparé uniquement pour deux formules dans la vue rôles. Preuves, cas non transitifs et limites dans [FLOW-EVIDENCE.md](FLOW-EVIDENCE.md).
+- Nouveau corpus indépendant : **753 assertions** sur rectangles, L/T/escaliers, trous, largeurs différentes, feuilles distinctes, limites de grille, copies R1C1, casse, données manquantes, ancrages non transitifs, doubles rôles et activation ciblée d'un bloc. Un invariant de couverture vérifie chaque cellule par rôle exactement une fois et l'absence de trous, sans recopier l'algorithme.
+- Suite de régression `test.ps1 -Excel` : **69 groupes réussis, 0 échec**, dont 52 sans Excel, 95 contrôles de couches et 500 assertions de restauration. Cette exécution précède le dernier ajustement d'état initial/reprise ; la session de fenêtres concernée a ensuite été rejouée séparément avec les cas supplémentaires ci-dessous.
+- **71 contrôles de fenêtres Excel** sur le code ajusté : première analyse sans couleur, activation de tout un bloc, détail individuel, retour à un bloc mixte, nouvelles cellules non sélectionnées après actualisation, extension puis réduction d'un bloc avec remappage de l'historique, retrait puis réactivation. Les contrôles précédents de doubles rôles, fenêtres indépendantes, SaveAs et carte préservée passent aussi.
+- Revue indépendante en lecture seule du diff, puis du remappage et de l'état initial : aucun constat actionnable restant. Aucun test runtime du logiciel original n'a été exécuté.
+- Interface native contrôlée à **1160 × 820 et 940 × 640** : démonstration 7 rôles/0 actif/5 blocs, groupe Entrées activé puis détail individuel, état mixte au retour aux blocs et activation de tout le bloc. Double-clic sur son texte : exploration de sa première cellule ; ancien parcours aval et double-clic de sa première colonne également vérifiés. Au minimum, commandes Flux accessibles, listes défilantes ; une seule ligne de groupe visible simultanément. Parcours amont non contrôlé dans cette séance. Processus de contrôle fermé, aucun Excel ni réglage persistant modifié.
+- Compilation finale application/DLL 0.5.0.0 sans avertissement, puis **52 groupes sans Excel réussis**. Test final du complément depuis PowerShell 7 MTA : chargement, ruban, deux explorateurs sur le thread UI Excel, retour et fermeture globale réussis ; enregistrement temporaire supprimé. Le client STA avait été vérifié en 0.4, sans nouvelle vérification de ce client pour 0.5.
+
+Le regroupement par catégorie/feuille/adresse de Clair conserve un ordre stable propre au projet ; il ne reproduit pas l'ordre d'émission du scanner original. L'arbre hiérarchique par feuille, les commandes globales de retrait/permanence, la progression et le graphe complet demeurent ouverts. La version ne revendique pas l'identité exhaustive avec Arixcel.
+
 ## Livraison 0.4 — 15 octobre 2026
 
 - Compilation application et DLL : réussite sans avertissement. Les tests purs comprennent 51 groupes, dont 182 assertions de palette flux et 110 de composition, en plus des corpus 0.3 conservés.

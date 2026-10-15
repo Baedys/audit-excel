@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace FormulaExplorer
@@ -11,16 +12,27 @@ namespace FormulaExplorer
         public int? FontRgb { get; internal set; }
     }
 
-    /// <summary>A chronological color activation. Null Cell targets the whole category.</summary>
+    /// <summary>A chronological color activation. Null Cells targets the whole category.</summary>
     public sealed class FlowActivation
     {
         public FlowCategory Category { get; private set; }
         public Cell Cell { get; private set; }
+        public ReadOnlyCollection<Cell> Cells { get; private set; }
         public FlowActivation(FlowCategory category, Cell cell = null)
         {
             if (!Enum.IsDefined(typeof(FlowCategory), category)) throw new ArgumentOutOfRangeException("category");
             if (cell != null) FlowHighlightPlan.RoleKey(category, cell);
             Category = category; Cell = cell;
+            Cells = cell == null ? null : new List<Cell> { cell }.AsReadOnly();
+        }
+        public static FlowActivation ForBlock(FlowBlock block)
+        {
+            if (block == null) throw new ArgumentNullException("block");
+            return ForCells(block.Category, block.Cells);
+        }
+        internal static FlowActivation ForCells(FlowCategory category, ReadOnlyCollection<Cell> cells)
+        {
+            return new FlowActivation(category) { Cells = cells, Cell = cells.Count == 1 ? cells[0] : null };
         }
     }
 
@@ -61,10 +73,9 @@ namespace FormulaExplorer
                 {
                     if (activation == null || !Enum.IsDefined(typeof(FlowCategory), activation.Category))
                         throw new ArgumentException("An activation must identify a valid flow category.", "activations");
-                    Cell canonical = null;
-                    if (activation.Cell != null)
+                    var canonical = new List<Cell>();
+                    if (activation.Cells != null)
                     {
-                        string key = RoleKey(activation.Category, activation.Cell);
                         Dictionary<string, Cell> members;
                         if (!roleCells.TryGetValue(activation.Category, out members))
                         {
@@ -72,10 +83,16 @@ namespace FormulaExplorer
                             foreach (Cell member in result.Cells(activation.Category)) members[RoleKey(activation.Category, member)] = member;
                             roleCells.Add(activation.Category, members);
                         }
-                        if (!members.TryGetValue(key, out canonical))
-                            throw new ArgumentException("The activated cell does not have this role in the analysis.", "activations");
+                        foreach (Cell cell in activation.Cells)
+                        {
+                            Cell member;
+                            if (!members.TryGetValue(RoleKey(activation.Category, cell), out member))
+                                throw new ArgumentException("The activated cell does not have this role in the analysis.", "activations");
+                            canonical.Add(member);
+                        }
                     }
-                    history.Add(new FlowActivation(activation.Category, canonical));
+                    if (activation.Cells == null) history.Add(new FlowActivation(activation.Category));
+                    else history.Add(FlowActivation.ForCells(activation.Category, canonical.AsReadOnly()));
                 }
             }
             var combined = new Dictionary<string, FlowCellStyle>(StringComparer.OrdinalIgnoreCase);
@@ -87,7 +104,7 @@ namespace FormulaExplorer
             foreach (FlowActivation activation in history)
             {
                 if (BoundaryCategory(activation.Category) != boundary) continue;
-                IEnumerable<Cell> cells = activation.Cell == null ? (IEnumerable<Cell>)result.Cells(activation.Category) : new[] { activation.Cell };
+                IEnumerable<Cell> cells = activation.Cells == null ? (IEnumerable<Cell>)result.Cells(activation.Category) : activation.Cells;
                 Apply(activation.Category, cells, snapshot.Entries[activation.Category], excluded, combined);
             }
             return combined.Values.OrderBy(s => s.Cell.Sheet, StringComparer.OrdinalIgnoreCase)

@@ -154,6 +154,7 @@ static class Tests
         Check("Highlight palette serialization and validation", delegate { Console.WriteLine("PALETTE_ASSERTIONS " + HighlightPaletteTests.Run()); });
         Check("Flow palette serialization and validation", delegate { Console.WriteLine("FLOW_PALETTE_ASSERTIONS " + FlowPaletteTests.Run()); });
         Check("Flow highlight composition and role activation", delegate { Console.WriteLine("FLOW_HIGHLIGHT_ASSERTIONS " + FlowHighlightPlanTests.Run()); });
+        Check("Flow rectangles and block activation", delegate { Console.WriteLine("FLOW_BLOCK_ASSERTIONS " + FlowBlocksTests.Run()); });
         if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run); }
         Console.WriteLine("RESULT " + passed + " passed; " + failed + " failed");
         return failed == 0 ? 0 : 1;

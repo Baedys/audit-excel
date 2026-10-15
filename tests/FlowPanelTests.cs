@@ -28,6 +28,11 @@ public static class FlowPanelTests
         try { typeof(MainForm).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance).Invoke(form, args); Application.DoEvents(); }
         catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
     }
+    static void SelectGroups(MainForm form)
+    {
+        CheckedListBox groups = Field<CheckedListBox>(form, "flowGroups");
+        for (int i = 0; i < groups.Items.Count; i++) { groups.SetItemChecked(i, true); Application.DoEvents(); }
+    }
     static int OLE(int rgb) { return ColorTranslator.ToOle(Color.FromArgb(255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255)); }
     static int Fill(dynamic cell) { return Convert.ToInt32(Keep(Keep(cell.DisplayFormat).Interior).Color); }
     static int FontColor(dynamic cell) { return Convert.ToInt32(Keep(Keep(cell.DisplayFormat).Font).Color); }
@@ -58,13 +63,51 @@ public static class FlowPanelTests
             ExcelBridge bridge = new ExcelBridge(application); Book captured = bridge.Capture(workbook);
             bridge.ApplyHighlights(captured, new[] { new CellHighlight { Cell = captured.Get("Flow", "A1"), FillColor = OLE(0x556677) }, new CellHighlight { Cell = captured.Get("Flow", "B1"), FillColor = OLE(0x667788) } }, "map");
             first = Open(bridge); Invoke(first, "AnalyzeFlow");
+            Equal(FontColor(a), OLE(0x112233)); Equal(Fill(b), OLE(0x667788));
+            Equal(bridge.HasHighlights(captured, "Flow", Field<string>(first, "flowLayer")), false);
+            Equal(Field<CheckedListBox>(first, "flowGroups").GetItemCheckState(0), CheckState.Unchecked);
+            SelectGroups(first);
             Equal(FontColor(a), OLE(0x0000FF)); Equal(Fill(a), OLE(0x556677)); Equal(Fill(b), OLE(0xF2F2F2)); Equal(Fill(c), OLE(0xCCFF99)); Equal(Fill(orphan), OLE(0xFF9999));
+            DataGridView grid = Field<DataGridView>(first, "flow");
+            Equal(grid.Rows.Count, 4);
+            int inputBlockRow = grid.Rows.Cast<DataGridViewRow>().Single(r => ((FlowBlock)r.Tag).Category == FlowCategory.Inputs).Index;
+            Equal(((FlowBlock)grid.Rows[inputBlockRow].Tag).Address, "A1:A2");
+            Invoke(first, "ToggleFlowRole", inputBlockRow);
+            Equal(FontColor(a), OLE(0x112233)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x000000)); Equal(Fill(b), OLE(0xF2F2F2));
+            Invoke(first, "ToggleFlowRole", inputBlockRow);
+            Equal(FontColor(a), OLE(0x0000FF)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x0000FF));
+            Invoke(first, "AnalyzeFlow");
+            Equal(grid.Rows[inputBlockRow].Cells[0].Value, CheckState.Checked);
+            Equal(FontColor(a), OLE(0x0000FF)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x0000FF));
+            dynamic added = Keep(ws.Range["A3"]); added.Value2 = 2.0; b.Formula = "=SUM(A1:A3)*2";
+            Invoke(first, "AnalyzeFlow");
+            Equal(((FlowBlock)grid.Rows[inputBlockRow].Tag).Address, "A1:A3");
+            Equal(grid.Rows[inputBlockRow].Cells[0].Value, CheckState.Indeterminate);
+            Equal(FontColor(added), OLE(0x000000)); Equal(FontColor(a), OLE(0x0000FF));
+            Invoke(first, "ToggleFlowRole", inputBlockRow); Equal(FontColor(added), OLE(0x0000FF));
+            b.Formula = "=SUM(A1:A2)*2"; added.ClearContents(); Invoke(first, "AnalyzeFlow");
+            Equal(((FlowBlock)grid.Rows[inputBlockRow].Tag).Address, "A1:A2");
+            Equal(grid.Rows[inputBlockRow].Cells[0].Value, CheckState.Checked);
+            Equal(FontColor(a), OLE(0x0000FF)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x0000FF));
+            Field<CheckBox>(first, "flowCellDetails").Checked = true;
+            Equal(grid.Rows.Count, 5);
+            int inputCellRow = grid.Rows.Cast<DataGridViewRow>().Single(r => ((FlowBlock)r.Tag).Category == FlowCategory.Inputs && ((FlowBlock)r.Tag).Address == "A1").Index;
+            Invoke(first, "ToggleFlowRole", inputCellRow);
+            Equal(FontColor(a), OLE(0x112233)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x0000FF));
+            Field<CheckBox>(first, "flowCellDetails").Checked = false;
+            Equal(grid.Rows[inputBlockRow].Cells[0].Value, CheckState.Indeterminate);
+            Invoke(first, "ToggleFlowRole", inputBlockRow);
+            Equal(grid.Rows[inputBlockRow].Cells[0].Value, CheckState.Checked);
+            Equal(FontColor(a), OLE(0x0000FF)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x0000FF));
             string firstLayer = Field<string>(first, "flowLayer"); Equal(bridge.HasHighlights(captured, "Flow", firstLayer), true);
             // A boundary cell has both an inflow font and an outflow fill.
             Field<ComboBox>(first, "flowFocus").SelectedIndex = 2; b.Select();
             Field<ComboBox>(first, "flowView").SelectedIndex = 1; Invoke(first, "AnalyzeFlow");
+            Equal(Field<CheckedListBox>(first, "flowGroups").GetItemCheckState(1), CheckState.Unchecked);
+            SelectGroups(first);
             Equal(FontColor(b), OLE(0x188A18)); Equal(Fill(b), OLE(0xBDD7EE));
-            DataGridView grid = Field<DataGridView>(first, "flow");
+            Equal(grid.Rows.Count, 4);
+            Field<CheckBox>(first, "flowCellDetails").Checked = true;
             Equal(grid.Rows.Count, 5);
             int inflowRow = grid.Rows.Cast<DataGridViewRow>().Single(r => (FlowCategory)r.Cells[0].Tag == FlowCategory.InsideInflows).Index;
             Invoke(first, "ToggleFlowRole", inflowRow);
@@ -74,11 +117,16 @@ public static class FlowPanelTests
             Equal(FontColor(b), OLE(0x188A18)); Equal(Fill(b), OLE(0xBDD7EE));
             groups.SetItemChecked(2, false); Application.DoEvents();
             Equal(FontColor(b), OLE(0x188A18)); Equal(Fill(b), OLE(0x667788));
-            int firstInputRow = grid.Rows.Cast<DataGridViewRow>().Single(r => (FlowCategory)r.Cells[0].Tag == FlowCategory.OutsidePrecedents && ((Cell)r.Tag).Address == "A1").Index;
+            int firstInputRow = grid.Rows.Cast<DataGridViewRow>().Single(r => (FlowCategory)r.Cells[0].Tag == FlowCategory.OutsidePrecedents && ((FlowBlock)r.Tag).Address == "A1").Index;
             Invoke(first, "ToggleFlowRole", firstInputRow);
             Equal(groups.GetItemCheckState(0), CheckState.Indeterminate); Equal(Fill(a), OLE(0x556677));
+            Invoke(first, "RemoveFlowColors");
+            Equal(groups.GetItemCheckState(1), CheckState.Unchecked); Equal(FontColor(b), OLE(0x223344));
+            Invoke(first, "ToggleFlowRole", inflowRow);
+            Equal(FontColor(b), OLE(0x188A18));
+            SelectGroups(first);
             // Another explorer owns its own layer; closing it preserves the first.
-            second = Open(bridge); Invoke(second, "AnalyzeFlow");
+            second = Open(bridge); Invoke(second, "AnalyzeFlow"); SelectGroups(second);
             string secondLayer = Field<string>(second, "flowLayer"); Equal(firstLayer == secondLayer, false);
             Equal(bridge.HasHighlights(captured, "Flow", firstLayer), true); Equal(bridge.HasHighlights(captured, "Flow", secondLayer), true);
             second.Close(); Application.DoEvents(); Equal(second.IsDisposed, true);
@@ -89,7 +137,7 @@ public static class FlowPanelTests
             wb.SaveAs(temporary, 51); first.Close(); Application.DoEvents(); Equal(first.IsDisposed, true);
             captured = bridge.Capture(workbook); Equal(bridge.HasHighlights(captured, "Flow", firstLayer), false); Equal(bridge.HasHighlights(captured, "Flow", "map"), true);
             Equal(FontColor(a), OLE(0x112233)); Equal(Fill(b), OLE(0x667788));
-            retained = Open(bridge); Invoke(retained, "AnalyzeFlow"); string retainedLayer = Field<string>(retained, "flowLayer");
+            retained = Open(bridge); Invoke(retained, "AnalyzeFlow"); SelectGroups(retained); string retainedLayer = Field<string>(retained, "flowLayer");
             Field<CheckBox>(retained, "keepFlowColors").Checked = true; retained.Close(); Application.DoEvents();
             Equal(retained.IsDisposed, true); Equal(bridge.HasHighlights(captured, "Flow", retainedLayer), true);
             remover = Open(bridge); Invoke(remover, "RemoveFlowColors"); remover.Close(); Application.DoEvents();

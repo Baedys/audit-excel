@@ -30,7 +30,7 @@ namespace FormulaExplorer
         public MainForm(ExcelBridge excel)
         {
             bridge = excel;
-            Text = "Clair — Explorateur Excel · 0.4 en développement";
+            Text = "Clair — Explorateur Excel · 0.5 en développement";
             Size = new Size(1160, 820); MinimumSize = new Size(940, 640);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(246, 248, 250);
@@ -91,7 +91,14 @@ namespace FormulaExplorer
             flowBar.Controls.Add(ActionButton("En aval : impacts", delegate { ShowFlow(true); }));
             InitializeFlow(flowBar);
             flowLayout.Controls.Add(flowBar, 0, 0); flowLayout.Controls.Add(CreateFlowBody(), 0, 1);
-            flow.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) { SetRoot((Cell)flow.Rows[e.RowIndex].Tag, true); tabs.SelectedIndex = 0; } };
+            flow.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e)
+            {
+                if (e.RowIndex < 0) return;
+                var block = flow.Rows[e.RowIndex].Tag as FlowBlock;
+                if (block != null && e.ColumnIndex == 0) return;
+                Cell cell = block == null ? flow.Rows[e.RowIndex].Tag as Cell : block.Cells[0];
+                if (cell != null) { SetRoot(cell, true); tabs.SelectedIndex = 0; }
+            };
 
             TableLayoutPanel compareLayout = PageLayout(compareTab, 100);
             FlowLayoutPanel compareBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
@@ -260,7 +267,7 @@ namespace FormulaExplorer
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 StringBuilder output = new StringBuilder();
-                output.AppendLine("Clair 0.2 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
+                output.AppendLine("Clair 0.5 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
                 foreach (string warning in engine.Warnings.Distinct()) output.AppendLine(warning);
                 output.AppendLine("\nCELLULES");
                 foreach (Cell c in book.Cells.Values.OrderBy(c => c.Sheet).ThenBy(c => c.Row).ThenBy(c => c.Column)) output.AppendLine(c.Location + "\t" + c.Kind + "\t" + c.Value + "\t" + c.Formula);
