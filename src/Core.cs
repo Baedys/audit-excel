@@ -9,6 +9,8 @@ namespace FormulaExplorer
     public sealed class Cell
     {
         public string Sheet, Address, Formula, Value, Kind;
+        public string FormulaR1C1;
+        public bool HasValidation;
         public int Row, Column;
         public bool IsFormula { get { return !String.IsNullOrEmpty(Formula); } }
         public string Key { get { return Book.Key(Sheet, Address); } }
@@ -307,6 +309,11 @@ namespace FormulaExplorer
             foreach (string key in before.Cells.Keys.Union(after.Cells.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
             {
                 Cell a, b; before.Cells.TryGetValue(key, out a); after.Cells.TryGetValue(key, out b);
+                // Blank cells can now be captured solely for data validation. The
+                // content comparator does not compare validation or formatting.
+                if (a != null && !a.IsFormula && a.Kind == "Vide") a = null;
+                if (b != null && !b.IsFormula && b.Kind == "Vide") b = null;
+                if (a == null && b == null) continue;
                 string reason = null;
                 if (a == null) reason = "Ajout";
                 else if (b == null) reason = "Suppression";

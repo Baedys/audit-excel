@@ -28,6 +28,8 @@ public static class ExcelOperationsTests
             dynamic other = Keep(sheets.Add(Type.Missing, ws)); other.Name = "Other";
             Keep(other.Range["A1"]).Value2 = 100.0; other.Activate(); Keep(other.Range["D9:E10"]).Select(); Keep(other.Range["E10"]).Activate();
             ExcelBridge bridge = new ExcelBridge(application); Book book = bridge.Capture(workbook); Cell cell = book.Get("Values", "B5");
+            bool eventsBefore = app.EnableEvents, screenBefore = app.ScreenUpdating;
+            Console.WriteLine("CHECK evaluation initial flags: events=" + eventsBefore + " screen=" + screenBefore);
             Equal(bridge.Evaluate(book, cell, "SUM(A1:A2)").Text, "10");
             Equal(bridge.Evaluate(book, cell, "ROW()").Text, "5");
             Equal(bridge.Evaluate(book, cell, "COLUMN()").Text, "2");
@@ -35,7 +37,7 @@ public static class ExcelOperationsTests
             Equal(bridge.Evaluate(book, cell, "{1,2;3,4}").Text, "1\t2" + Environment.NewLine + "3\t4");
             var range = bridge.Evaluate(book, cell, "A1:A2"); Equal(range.Rows, 2L); Equal(range.Text, "7" + Environment.NewLine + "3");
             Equal((string)Keep(app.ActiveSheet).Name, "Other"); Equal((string)Keep(app.Selection).Address, "$D$9:$E$10"); Equal((string)Keep(app.ActiveCell).Address, "$E$10");
-            Equal((bool)app.EnableEvents, true); Equal((bool)app.ScreenUpdating, true);
+            Equal((bool)app.EnableEvents, eventsBefore); Equal((bool)app.ScreenUpdating, screenBefore);
             FormulaChange change = bridge.EditFormula(book, cell, "=SUM(A1:A2)*3"); Equal((double)b5.Value2, 30.0);
             Reject(delegate { bridge.Evaluate(book, cell, "A1+1"); });
             bridge.UndoFormula(change); Equal((string)b5.Formula, "=SUM(A1:A2)*2"); Equal((double)b5.Value2, 20.0);

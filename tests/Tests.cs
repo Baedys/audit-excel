@@ -65,6 +65,16 @@ static class Tests
         Check("numeric vs text distinguished", delegate { var a = Demo.Create(); var b = Demo.Create(); b.Get("Hypothèses", "B1").Kind = "Texte"; Equal(Comparison.Compare(a, b, true, 0).Count, 1); });
         Check("addition deletion", delegate { var a = Demo.Create(); var b = Demo.Create(); b.Cells.Remove(Book.Key("Hypothèses", "B1")); Demo.Add(b, "Résultat", "C1", "2", null, "Nombre"); Equal(Comparison.Compare(a, b, false, 0).Count, 2); });
         Check("formula value change separated from formula mode", delegate { var a = Demo.Create(); var b = Demo.Create(); b.Get("Résultat", "B1").Value = "2"; Equal(Comparison.Compare(a, b, false, 0).Count, 0); Equal(Comparison.Compare(a, b, true, 0).Count, 1); });
+        Check("validation-only blanks are not content differences", delegate {
+            var before = new Book(); var after = new Book(); Demo.Add(after, "S", "A1", "", null, "Vide").HasValidation = true;
+            foreach (bool values in new[] { false, true }) {
+                Equal(Comparison.Compare(before, after, values, 0).Count, 0); Equal(Comparison.Compare(after, before, values, 0).Count, 0);
+            }
+            Demo.Add(before, "S", "A1", "5", null, "Nombre");
+            Equal(Comparison.Compare(before, after, false, 0).Single().Change, "Suppression");
+            Equal(Comparison.Compare(after, before, true, 0).Single().Change, "Ajout");
+            after.Get("S", "A1").Kind = "Texte"; Equal(Comparison.Compare(new Book(), after, true, 0).Count, 1);
+        });
     }
     static readonly List<object> com = new List<object>();
     static dynamic Keep(object value) { com.Add(value); return value; }
@@ -106,6 +116,24 @@ static class Tests
             Keep(first.Range["B2"]).Formula = "=RelativeCell";
             Book relatives = bridge.Capture(workbook);
             Check("Excel relative names are explicit unknowns", delegate { Equal(relatives.RelativeNames.Count, 3); var engine = new DependencyEngine(relatives); Equal(engine.Precedents(relatives.Get("Inputs", "B2")).Count(), 0); Assert(engine.Parsed(relatives.Get("Inputs", "B2")).Warnings.Any(w => w.Contains("relatif")), "warning missing"); });
+            Keep(first.Range["H1"]).Formula = "=A1+$A$2+A$1+$A2";
+            Keep(first.Range["H1:H2"]).FillDown();
+            Keep(Keep(first.Range["K8:K9"]).Validation).Add(1, 1, 1, "1", "10");
+            Keep(first.Range["K9"]).Formula = "=1+2";
+            Book mapped = bridge.Capture(workbook);
+            Check("Excel R1C1 capture preserves mixed references", delegate {
+                Equal(mapped.Get("Inputs", "H1").FormulaR1C1, "=RC[-7]+R2C1+R1C[-7]+R[1]C1");
+                Equal(mapped.Get("Inputs", "H2").FormulaR1C1, mapped.Get("Inputs", "H1").FormulaR1C1);
+                Equal(FormulaMap.Analyze(mapped).Cells.Single(c => c.Cell.Sheet == "Inputs" && c.Cell.Address == "H2").Kind, FormulaMapKind.FormulaCopiedDown);
+            });
+            Check("Excel blank validation capture and formula priority", delegate {
+                Assert(mapped.Cells.ContainsKey(Book.Key("Inputs", "K8")), "validated blank missing");
+                Assert(mapped.Get("Inputs", "K8").HasValidation, "validation missing");
+                Assert(mapped.Get("Inputs", "K9").HasValidation, "formula validation missing");
+                var classified = FormulaMap.Analyze(mapped);
+                Equal(classified.Cells.Single(c => c.Cell.Sheet == "Inputs" && c.Cell.Address == "K8").Kind, FormulaMapKind.DataValidation);
+                Equal(classified.Cells.Single(c => c.Cell.Sheet == "Inputs" && c.Cell.Address == "K9").Kind, FormulaMapKind.UniqueFormulaNoRefs);
+            });
             Console.WriteLine("EXCEL_VERSION " + excel.Version);
         }
         finally
@@ -122,7 +150,9 @@ static class Tests
         Core();
         Check("Excel formula syntax and source spans", delegate { Console.WriteLine("SYNTAX_ASSERTIONS " + FormulaSyntaxTests.Run()); });
         Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
-        if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); }
+        Check("Formula map categories and reference priorities", delegate { Console.WriteLine("MAP_ASSERTIONS " + FormulaMapTests.Run()); });
+        Check("Highlight palette serialization and validation", delegate { Console.WriteLine("PALETTE_ASSERTIONS " + HighlightPaletteTests.Run()); });
+        if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); Check("Excel reversible highlights session", ExcelHighlightsTests.Run); }
         Console.WriteLine("RESULT " + passed + " passed; " + failed + " failed");
         return failed == 0 ? 0 : 1;
     }

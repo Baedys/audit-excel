@@ -79,13 +79,13 @@ namespace FormulaExplorer
                 if (!Regex.IsMatch(reference.Value, @"(?i)^(?:R\d+C\d+|R\d+|C\d+)$")) return true;
             return false;
         }
-        static HashSet<string> FormulaCells(dynamic used)
+        static HashSet<string> SpecialCellAddresses(dynamic used, int type, int firstRow, int firstColumn, int usedHeight, int usedWidth)
         {
             HashSet<string> result = new HashSet<string>();
             object formulas = null, areas = null;
             try
             {
-                try { formulas = used.SpecialCells(-4123); } // xlCellTypeFormulas
+                try { formulas = used.SpecialCells(type); }
                 catch (COMException ex) { if ((uint)ex.ErrorCode == 0x800A03EC) return result; throw; }
                 areas = ((dynamic)formulas).Areas; dynamic list = areas;
                 for (int a = 1; a <= (int)list.Count; a++)
@@ -95,7 +95,10 @@ namespace FormulaExplorer
                     {
                         area = list.Item[a]; dynamic r = area; rows = r.Rows; columns = r.Columns;
                         int startRow = (int)r.Row, startCol = (int)r.Column, height = (int)((dynamic)rows).Count, width = (int)((dynamic)columns).Count;
-                        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) result.Add(Coordinates.Address(startRow + y, startCol + x));
+                        // SpecialCells can widen a single-cell input. Retain only the
+                        // captured rectangle and never enumerate an entire validated column.
+                        int endRow = Math.Min(startRow + height, firstRow + usedHeight), endColumn = Math.Min(startCol + width, firstColumn + usedWidth);
+                        for (int y = Math.Max(startRow, firstRow); y < endRow; y++) for (int x = Math.Max(startCol, firstColumn); x < endColumn; x++) result.Add(Coordinates.Address(y, x));
                     }
                     finally { Release(columns); Release(rows); Release(area); }
                 }
@@ -129,18 +132,24 @@ namespace FormulaExplorer
                         try { formulas = used.Formula2; }
                         catch (COMException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
                         catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
-                        HashSet<string> formulaCells = FormulaCells(used);
+                        object relativeFormulas = null;
+                        try { relativeFormulas = OfficeCall(usedObject, "FormulaR1C1", System.Reflection.BindingFlags.GetProperty); }
+                        catch (COMException) { book.Warnings.Add(sheet + " : structure relative des formules indisponible ; carte partielle."); }
+                        HashSet<string> formulaCells = SpecialCellAddresses(used, -4123, startRow, startCol, height, width);
+                        HashSet<string> validationCells = SpecialCellAddresses(used, -4174, startRow, startCol, height, width);
                         for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
                         {
                             object value = At(values, y, x);
                             string address = Coordinates.Address(startRow + y, startCol + x);
                             bool hasFormula = formulaCells.Contains(address);
-                            if (value == null && !hasFormula) continue;
+                            bool hasValidation = validationCells.Contains(address);
+                            if (value == null && !hasFormula && !hasValidation) continue;
                             // Excel Value2 numbers are VT_R8 (Double); VT_ERROR arrives as Int32 through IDispatch.
                             bool isError = value is ErrorWrapper || value is Int32;
                             string kind = value == null ? "Vide" : isError ? "Erreur" : value is bool ? "Booléen" : value is string ? "Texte" : "Nombre";
                             string text = isError ? ErrorText(value) : Convert.ToString(value, CultureInfo.InvariantCulture);
-                            book.Add(new Cell { Sheet = sheet, Address = address, Row = startRow + y, Column = startCol + x, Value = text, Kind = kind, Formula = hasFormula ? Convert.ToString(At(formulas, y, x), CultureInfo.InvariantCulture) : null });
+                            book.Add(new Cell { Sheet = sheet, Address = address, Row = startRow + y, Column = startCol + x, Value = text, Kind = kind, Formula = hasFormula ? Convert.ToString(At(formulas, y, x), CultureInfo.InvariantCulture) : null,
+                                FormulaR1C1 = hasFormula && relativeFormulas != null ? Convert.ToString(At(relativeFormulas, y, x), CultureInfo.InvariantCulture) : null, HasValidation = hasValidation });
                         }
                     }
                     finally { Release(columns); Release(rows); Release(usedObject); Release(worksheet); }

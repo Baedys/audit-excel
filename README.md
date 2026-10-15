@@ -6,7 +6,7 @@ Prototype Windows indépendant pour explorer les formules et les dépendances d'
 
 ## État
 
-La version 0.2 fournit une application autonome et un complément Excel avec ruban. La reconstruction reste en cours : l'identité fonctionnelle et visuelle avec Arixcel n'est pas établie. Le [registre de parité](docs/PARITY.md) décrit les exigences et les preuves manquantes. Aucun composant, code décompilé, visuel ou ressource Arixcel n'est distribué avec le projet.
+La version 0.3 fournit une application autonome et un complément Excel avec ruban, carte sur la grille et couleurs réversibles. La reconstruction reste en cours : l'identité fonctionnelle et visuelle avec Arixcel n'est pas établie. Le [registre de parité](docs/PARITY.md) décrit les exigences et les preuves manquantes. Aucun composant, code décompilé, visuel ou ressource Arixcel n'est distribué avec le projet.
 
 Le chargement COM, le callback du ruban, l'ouverture de plusieurs explorateurs et leur fermeture sont validés localement dans Excel 16.0. Les autres versions et l'architecture 32 bits restent à tester.
 
@@ -19,7 +19,8 @@ Le chargement COM, le callback du ruban, l'ouverture de plusieurs explorateurs e
 - Édition de formule par F2, annulation propre à Clair avec contrôle des modifications externes et restauration du format numérique si celui-ci n'a pas changé. Une édition dans un tableau ne se propage pas à sa colonne.
 - Références A1 absolues/relatives, plages rectangulaires, lignes/colonnes entières, noms absolus, intersections de références directes et noms de feuilles contenant des apostrophes.
 - Navigation vers une cellule dans Excel, sans modifier sa valeur ou son format.
-- Carte des cellules sous forme de liste colorée : formules, nombres, textes, booléens, erreurs.
+- Carte structurelle : formules uniques, copies vers le bas/la droite/deux directions, références locales/interfeuilles/externes, constantes et validation. Les formules sont comparées en notation R1C1 aux voisins immédiats haut et gauche.
+- Coloration de la grille Excel sur une ou toutes les feuilles ; retrait après sauvegarde/réouverture. Palette de fond et police, catégories activables, import/export XML et réglage par défaut enregistré explicitement.
 - Parcours transitif en amont et en aval d'une cellule.
 - Analyse des rôles de calcul et des flux de frontière avec périmètre et zone centrale distincts : entrées, calculs, sorties, formules isolées et quatre rôles de frontière.
 - Comparaison de deux captures : formules et constantes, ou valeurs calculées avec tolérance numérique absolue.
@@ -48,6 +49,10 @@ L'application démarre avec un modèle de démonstration. Pour votre classeur :
 
 Dans **Flux de calcul**, choisissez un périmètre, une zone centrale puis **Analyser**. Le périmètre classeur/feuille utilise les cellules capturées ; une sélection Excel inclut aussi ses cellules vides. Le menu des vues distingue rôles de calcul et flux traversant la zone centrale. Un avertissement de dépendance rend ces résultats partiels.
 
+Dans **Carte des cellules**, choisissez une feuille ou **Toutes les feuilles**, puis **Colorer dans Excel**. Clair recapture le même classeur avant de classer les cellules. **Retirer couleurs** supprime uniquement ses règles de carte ; les couleurs restent présentes tant que cette commande n'est pas utilisée, y compris après fermeture de Clair et sauvegarde du classeur. Après réouverture, rechargez le classeur dans Clair pour les retirer. Les feuilles protégées sont refusées avant toute modification.
+
+**Palette…** règle les catégories et couleurs ; **Aucun** laisse la propriété existante visible. **Utiliser** change la palette de cette fenêtre ; **Enregistrer par défaut** la conserve dans `%LOCALAPPDATA%\Clair\map-palette.xml`. Les nouvelles couleurs prennent effet au prochain clic **Colorer dans Excel**. Le XML importé/exporté appartient au format Clair, sans compatibilité annoncée avec celui d'Arixcel. **Rapport carte** exporte toutes les catégories et les avertissements de la capture.
+
 ![Analyse des rôles de calcul](docs/flow-preview.png)
 
 Pour ajouter le ruban à Excel :
@@ -67,14 +72,14 @@ Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle 
 ## Tests
 
 ```powershell
-.\test.ps1          # moteur, syntaxe et flux (sans Excel)
-.\test.ps1 -Excel   # sessions Excel isolées, expressions, édition et restauration
+.\test.ps1          # moteur, syntaxe, flux, carte et palette (sans Excel)
+.\test.ps1 -Excel   # sessions Excel isolées, expressions, édition, couleurs et restauration
 .\test-addin.ps1    # démarrage Excel /x, ruban, fenêtres, nettoyage registre
 ```
 
-Le test Excel crée des instances et classeurs jetables, puis les ferme sans enregistrer. Il vérifie aussi les évaluations en français/anglais, les noms et tableaux, les sélections de plages/formes, l'édition, l'annulation, les conflits et les formats. Le test COM installe temporairement les clés propres à Clair, lance son propre processus Excel identifié, vérifie le chargement puis supprime les clés. Il refuse de remplacer une installation Clair existante.
+Le test Excel crée des instances et classeurs jetables. Il vérifie aussi les évaluations en français/anglais, les noms et tableaux, les sélections de plages/formes, l'édition, l'annulation, les conflits et les formats. Le test de couleurs enregistre une copie temporaire, la rouvre, retire la carte et contrôle les formats effectifs, l'ordre relatif et `StopIfTrue` des règles préexistantes ; le fichier est ensuite supprimé. Le test COM installe temporairement les clés propres à Clair, lance son propre processus Excel identifié, vérifie le chargement puis supprime les clés. Il refuse de remplacer une installation Clair existante.
 
-## Limites explicites de la version 0.2
+## Limites explicites de la version 0.3
 
 - Le graphe de cellules utilise toujours une extraction lexicale distincte du nouvel arbre syntaxique. Toutes les branches conditionnelles y sont considérées ; l'évaluation d'une expression ne corrige pas automatiquement ce graphe.
 - `INDIRECT`, `OFFSET`, `LET`, `LAMBDA`, références externes, références 3D, tables structurées, noms relatifs et plages déversées signalés comme incomplets ou non résolus. Un avertissement signifie que le graphe peut manquer des cellules ou en inclure trop.
@@ -82,15 +87,17 @@ Le test Excel crée des instances et classeurs jetables, puis les ferme sans enr
 - L'arbre syntaxique prend en charge la notation A1 invariante. Notation R1C1, DDE et paramètres LAMBDA non liés ne sont pas évalués. Excel Evaluate limite l'expression contextualisée à 255 caractères ; les tableaux affichent un aperçu de 10 lignes × 5 colonnes, jusqu'à 8 zones. Les fonctions volatiles sont recalculées lors de l'évaluation.
 - Édition des cellules fusionnées et matrices CSE refusée. Une formule déversée s'édite uniquement à son origine. L'annulation propre à Clair est limitée à la session de sa fenêtre ; l'historique natif d'Excel n'est pas préservé par les écritures COM.
 - Les plages sont représentées par leurs cellules renseignées. Une référence simple vers une cellule vide reste visible ; les cellules vides d'une grande plage ne sont pas énumérées.
-- Carte sous forme de liste, sans coloration du classeur original. Comparaison sans formats, alignement de lignes/colonnes ou renommage automatique des feuilles.
+- Carte : cellules capturées renseignées ou avec validation ; les autres cellules vides restent inchangées. Classification `Indéterminée` en cas d'informations insuffisantes, désactivée dans la palette initiale. La désactivation des analyses uniques/validation d'Arixcel n'est pas reproduite : désactiver une catégorie Clair exclut seulement sa couleur.
+- Couleurs par règles conditionnelles propres à Clair : formats directs et règles préexistantes conservés. L'ordre relatif des règles est conservé ; Excel peut laisser des trous dans leurs numéros de priorité. Le retrait restaure leur effet, sans promettre une identité binaire du fichier. Les écritures de formatage affectent l'historique natif d'Excel. Si Excel interrompt une transaction et empêche sa restauration, Clair signale explicitement l'échec.
+- Surbrillance des flux et comparaisons non intégrée à l'interface. Comparaison sans formats, alignement de lignes/colonnes ou renommage automatique des feuilles.
 - Lecture des valeurs telles qu'Excel les expose. Mode de calcul manuel ou calcul en cours signalé ; aucune recalculation forcée.
-- Lecture limitée à 250 000 cellules dans les zones utilisées. Arbre : 500 relations par nœud, profondeur 32. Flux : 2 000 cellules. Carte : 20 000 lignes. Limites signalées lors de leur atteinte.
+- Lecture limitée à 250 000 cellules dans les zones utilisées. Arbre : 500 relations par nœud, profondeur 32. Parcours transitif : 2 000 cellules. Liste de carte : 20 000 lignes affichées ; coloration et rapport utilisent la capture complète. Limites signalées lors de leur atteinte.
 - Capture et analyse synchrones ; de gros modèles peuvent bloquer temporairement l'interface.
 - Windows/Excel uniquement. Chargement validé dans Excel local 16.0 ; couverture d'autres versions, architectures et déploiement signé encore manquante.
 
 ## Structure
 
-`src/Core.cs` contient le modèle, la lecture lexicale des références, les parcours et la comparaison. `FormulaSyntax.cs` construit l'arbre d'expressions ; `FlowAnalysis.cs` classe les flux. `ExcelBridge.cs` et `ExcelOperations.cs` encapsulent les échanges COM. `MainForm.cs`, `ExpressionPanel.cs` et `FlowPanel.cs` fournissent l'interface. `AddIn.cs` expose le complément COM. Les tests se trouvent dans `tests/`.
+`src/Core.cs` contient le modèle, la lecture lexicale des références, les parcours et la comparaison. `FormulaSyntax.cs` construit l'arbre d'expressions ; `FlowAnalysis.cs` classe les flux ; `FormulaMap.cs` classe la carte et `HighlightPalette.cs` conserve ses réglages. `ExcelBridge.cs`, `ExcelOperations.cs` et `ExcelHighlights.cs` encapsulent les échanges COM. `MainForm.cs`, `ExpressionPanel.cs`, `FlowPanel.cs` et `MapPanel.cs` fournissent l'interface. `AddIn.cs` expose le complément COM. Les tests se trouvent dans `tests/`.
 
 Voir [analyse du logiciel de référence](docs/ANALYSIS.md), [revue et validation](docs/VALIDATION.md) et [prochaines étapes](docs/ROADMAP.md).
 

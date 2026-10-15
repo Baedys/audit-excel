@@ -4,7 +4,7 @@
 
 Ce registre distingue les observations du binaire, les descriptions de l'éditeur et les exigences de validation proposées. Les statuts ci-dessous décrivent la base Clair 0.1 inspectée (`Core.cs`, `MainForm.cs`, `ExcelBridge.cs`, `AddIn.cs`, tests et documentation), avant les travaux de parité. Ils doivent être réévalués lors de chaque livraison, pas remplacés automatiquement par le résultat d'une compilation.
 
-## État courant 0.2
+## État courant 0.3
 
 La matrice initiale ci-dessous sert de référence historique. Les évolutions validées sont les suivantes ; aucune ne suffit seule à prouver une ligne entièrement identique au logiciel original.
 
@@ -16,6 +16,9 @@ La matrice initiale ci-dessous sert de référence historique. Les évolutions v
 | F09 | Sélection d'un nœud syntaxique surligne sa portion de formule. | Aperçu et code UI ; synchronisation inverse, cellules et multisélection encore absentes. |
 | F11 | Éditeur F2, écriture, historique d'annulation par fenêtre, contrôle des conflits et restauration du format généré. | Tests Excel sur formules, constantes, tableaux, déversements, changement de type. Annulation native Excel et comparaison exhaustive avec Arixcel non établies. |
 | C01, C02, C03 | Périmètre/zone centrale, huit catégories, liens directs, deux vues UI et exploration des cellules. | 64 assertions, dont frontières, cycles, cellules vides explicites, plusieurs feuilles. Périmètre classeur = cellules capturées ; références dynamiques incomplètes ; surbrillance et annulation d'analyse absentes. |
+| M01, M02 | Classification R1C1 par voisins haut/gauche, priorité externe/interfeuille/locale, validation sur constantes. Palette initiale relevée statiquement. | 64 assertions moteur ; capture Excel de références mixtes et validation de cellules vides. Preuves CIL dans [MAP-EVIDENCE.md](MAP-EVIDENCE.md). Références non résolues restent partielles ; comparaison runtime avec Arixcel manquante. |
+| M03, M04 | Couche de couleurs de carte sur une/toutes les feuilles, retrait indépendant des autres couches, persistant dans le classeur. | Tests Excel sur formats directs, règles existantes, ordre relatif/StopIfTrue, protection, sauvegarde/réouverture/retrait. Numéros de priorité non identiques si Excel laisse des trous ; échec après suppression partielle des anciennes règles non injecté. |
+| M05 | Fond/police facultatifs, catégories exclues, palette par défaut enregistrée explicitement, import/export XML Clair. | 308 assertions de sérialisation/validation/atomicité. Effet au clic suivant « Colorer » ; options d'analyse uniques/validation du produit original encore absentes. |
 
 Voir [validation détaillée](VALIDATION.md). Toutes les autres exigences restent dans l'état initial ou sans preuve suffisante. L'objectif global reste ouvert.
 
@@ -148,4 +151,4 @@ Tous les groupes suivants sont **absents** de la base inspectée :
 
 Les priorités ordonnent le travail ; elles n'excluent aucune exigence du résultat demandé. Avant déclaration de parité : observer Arixcel sur un corpus jetable commun, relever écrans/résultats/actions/restaurations, exécuter le même corpus avec Clair, conserver chaque différence et sa résolution. Tester séparément fonctions, apparence, clavier, persistance, performances et cycle de vie Excel. La compilation, les tests actuels et une revue de code réussie ne prouvent pas cette équivalence.
 
-Restent notamment inconnus : apparence exacte des fenêtres de cette version, seuils de regroupement, algorithmes d'alignement, ordre/priorité des catégories, limites d'évaluation, défauts des options, rôle de l'XLAM, reprise après incident et compatibilité précise avec chaque version d'Excel. Ces inconnues maintiennent l'objectif ouvert.
+Restent notamment inconnus : apparence exacte des fenêtres de cette version, seuils de regroupement, algorithmes d'alignement, limites d'évaluation, défauts des options hors carte, rôle de l'XLAM, reprise après incident et compatibilité précise avec chaque version d'Excel. La priorité des catégories et la palette de carte sont désormais établies statiquement, mais leur équivalence runtime reste à vérifier. Ces inconnues maintiennent l'objectif ouvert.

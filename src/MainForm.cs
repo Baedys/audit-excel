@@ -30,7 +30,7 @@ namespace FormulaExplorer
         public MainForm(ExcelBridge excel)
         {
             bridge = excel;
-            Text = "Clair — Explorateur Excel · 0.2 en développement";
+            Text = "Clair — Explorateur Excel · 0.3 en développement";
             Size = new Size(1160, 820); MinimumSize = new Size(940, 640);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(246, 248, 250);
@@ -76,11 +76,11 @@ namespace FormulaExplorer
             tree.AfterSelect += delegate { ShowDetails(SelectedCell()); };
             tree.NodeMouseDoubleClick += delegate { Safe(Navigate); };
 
-            TableLayoutPanel mapLayout = PageLayout(mapTab, 42);
+            TableLayoutPanel mapLayout = PageLayout(mapTab, 100);
             FlowLayoutPanel mapBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
             sheets.DropDownStyle = ComboBoxStyle.DropDownList; sheets.Width = 220;
             mapBar.Controls.Add(new Label { Text = "Feuille", AutoSize = true, Padding = new Padding(0, 6, 0, 0) }); mapBar.Controls.Add(sheets);
-            mapBar.Controls.Add(new Label { Text = "Bleu : formule · Vert : nombre · Gris : texte · Rouge : erreur", AutoSize = true, Padding = new Padding(8, 6, 0, 0) });
+            InitializeMap(mapBar);
             mapLayout.Controls.Add(mapBar, 0, 0); mapLayout.Controls.Add(map, 0, 1);
             sheets.SelectedIndexChanged += delegate { ShowMap(); };
             map.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) { SetRoot((Cell)map.Rows[e.RowIndex].Tag, true); tabs.SelectedIndex = 0; } };
@@ -147,7 +147,7 @@ namespace FormulaExplorer
         void SetBook(Book captured, string sheet, string address)
         {
             DependencyEngine next = new DependencyEngine(captured);
-            book = captured; engine = next; history.Clear();
+            book = captured; engine = next; mapAnalysis = FormulaMap.Analyze(captured); history.Clear();
             title.Text = "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
             sheets.Items.Clear(); foreach (string item in book.Sheets.OrderBy(s => s)) sheets.Items.Add(item);
             sheets.SelectedItem = sheet;
@@ -231,14 +231,6 @@ namespace FormulaExplorer
             int index = grid.Rows.Add(cell.Location, cell.IsFormula ? "Formule" : cell.Kind, cell.Value, cell.Formula);
             grid.Rows[index].Tag = cell;
             grid.Rows[index].DefaultCellStyle.BackColor = cell.Kind == "Erreur" ? Color.MistyRose : cell.IsFormula ? Color.FromArgb(232, 241, 255) : cell.Kind == "Nombre" ? Color.FromArgb(232, 247, 238) : Color.FromArgb(245, 245, 245);
-        }
-        void ShowMap()
-        {
-            if (book == null || sheets.SelectedItem == null) return;
-            CellColumns(map); string sheet = (string)sheets.SelectedItem;
-            List<Cell> cells = book.Cells.Values.Where(c => c.Sheet == sheet).OrderBy(c => c.Row).ThenBy(c => c.Column).ToList();
-            foreach (Cell cell in cells.Take(20000)) AddRow(map, cell);
-            if (cells.Count > 20000) status.Text = "Carte limitée à 20 000 lignes sur " + cells.Count + ".";
         }
         void ShowFlow(bool downstream)
         {

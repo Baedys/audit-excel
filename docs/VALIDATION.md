@@ -1,5 +1,19 @@
 # Revue et validation
 
+## Livraison 0.3 — 15 octobre 2026
+
+- Compilation de l'application et de la DLL .NET Framework : réussite sans avertissement.
+- `test.ps1 -Excel` : **65 groupes réussis, 0 échec**. Les 49 groupes sans Excel comprennent 682 assertions syntaxiques, 64 de flux, 64 de carte et 308 de palette ; les compteurs de groupes incluent les sessions englobantes.
+- Capture réelle de `FormulaR1C1` : références relatives, mixtes et absolues ; copie vers le bas classée correctement. Cellules vides avec validation capturées ; validation d'une formule ne remplace pas sa catégorie structurelle.
+- **52 contrôles de couleurs dans Excel 16.0** : remplissage et police effectifs, formats directs, valeurs/formules, règles conditionnelles préexistantes, `StopIfTrue`, ordre relatif, deux couches indépendantes, prévalidation de plusieurs feuilles protégées, remplacement par une couche vide, regroupement de 300 cellules, sauvegarde/réouverture/retrait.
+- Excel peut conserver des trous dans ses numéros de priorité après suppression. La version livrée ne renumérote pas les règles utilisateur : elle préserve leur ordre relatif et leur effet. Un essai de renumérotation sur processus jetable a provoqué un arrêt natif Excel ; cette approche a été retirée.
+- Palette XML : couleurs par défaut issues des observations statiques, clone profond, catégories exactes, couleurs bornées, DTD interdit, remplacement atomique du fichier. Tests d'import invalide et de remplacement refusé sans perte du fichier précédent.
+- Revue indépendante en lecture seule : correction des faux ajouts/suppressions dus aux cellules vides validées, et création du dossier de réglages lors du premier enregistrement. Revue finale de la couche de couleurs : aucun constat restant.
+- Interface native 0.3 contrôlée à 1160 × 820 (échelle Windows 200 %) : commandes de carte visibles, 12 catégories et 8 boutons de palette accessibles, sélecteur Windows de couleur fonctionnel. Processus de contrôle fermé. Taille minimale et clics d'application/retrait via MainForm non vérifiés ; les opérations Excel correspondantes sont couvertes par les tests d'API ci-dessus.
+- Complément 0.3 : `test-addin.ps1 -SkipBuild` réussi dans Excel ; chargement COM, callback du ruban, deux explorateurs, retour et fermeture globale. Enregistrement temporaire supprimé et absence de la clé Clair vérifiée après le test.
+
+La restauration après un échec survenant **après suppression partielle** des anciennes règles n'a pas été injectée en test. Le code tente la restauration et signale explicitement toute restauration incomplète. Les tests ne prouvent pas une identité binaire du classeur ni une fidélité exhaustive avec Arixcel. Options d'analyse de carte, couverture des références complexes, surbrillance de flux, comparaison avancée et utilitaires restent ouverts dans [PARITY.md](PARITY.md).
+
 ## Livraison 0.2 — 15 octobre 2026
 
 Les résultats de cette section remplacent le diagnostic COM de la base 0.1 conservé plus bas.
