@@ -121,7 +121,7 @@ namespace FormulaExplorer
                     try
                     {
                         worksheet = sheets.Item[s]; dynamic ws = worksheet;
-                        string sheet = (string)ws.Name; book.Sheets.Add(sheet);
+                        string sheet = (string)ws.Name; book.SetSheetIndex(sheet, (int)ws.Index);
                         usedObject = ws.UsedRange; dynamic used = usedObject;
                         rows = used.Rows; columns = used.Columns;
                         int height = (int)((dynamic)rows).Count, width = (int)((dynamic)columns).Count;

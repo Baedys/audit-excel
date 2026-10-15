@@ -1,5 +1,18 @@
 # Revue et validation
 
+## Livraison 0.6 — 15 octobre 2026
+
+- Ordre capturé par Worksheet.Index, y compris indices non contigus ; snapshot immuable transmis aux flux. Fallback explicite pour les fixtures sans index. Les blocs restent dans l'ordre d'émission au lieu d'être retriés par adresse. **895 assertions de blocs/ordre**, dont un grand rectangle démarrant plus haut mais émis après un petit bloc plus bas.
+- **628 assertions d'arbre** : deux vues et deux regroupements, niveaux catégorie/feuille/bloc, feuilles cachées, priorité centrale, ordre des catégories et des feuilles, doubles rôles, clés stables, listes immuables et rejet de blocs étrangers ou répétés.
+- **62 assertions de préférences** : quatre combinaisons indépendantes, remplacement, création du dossier parent, XML strict borné à 4096 octets, DTD et contenu étranger refusés ; destination verrouillée conservée exactement et temporaires nettoyés avant nouvelle tentative.
+- **71 contrôles WinForms sans Excel** : état mixte des parents, ciblage d'une seule feuille, synchronisation arbre/grille, détail B2 conservé sans saut vers B1, curseur retrouvé après regroupement et changement de vue, Espace/Entrée, réinitialisation et retour. Le test de budget a été précisé après la suite complète : feuille cachée contenant directement plusieurs blocs, pour reproduire exactement le défaut corrigé.
+- Suite `test.ps1 -Excel` : **73 groupes réussis, 0 échec**, dont 73 contrôles de fenêtres Excel, capture de feuilles dans un ordre contraire à l'alphabet, 95 contrôles de couches et 500 assertions de restauration. Compilation finale application/DLL 0.6.0.0 sans avertissement et **55 groupes sans Excel réussis**, incluant le test de budget renforcé.
+- Complément final depuis PowerShell 7 MTA : chargement, callback du ruban, deux explorateurs sur le thread UI Excel, retour et fermeture globale réussis. Enregistrement temporaire supprimé. Aucun nouveau contrôle du client STA en 0.6.
+- Interface native contrôlée à **1160 × 820 et 940 × 640** : activation d'une catégorie, détail B2 conservé après décochage, états mixtes arbre/grille, Espace/Entrée, flèches et molette ; regroupements des deux vues indépendants et curseur retrouvé au retour. Au minimum, l'arbre ne montre que 1 à 2 lignes selon la barre horizontale et les longs textes sont tronqués ; défilement et commandes restent accessibles. Processus de démonstration fermé, aucun Excel ni préférence réelle modifié ; réglages de contrôle isolés dans `work/`.
+- Revue indépendante : deux défauts corrigés, signalement de troncature sous une feuille cachée et parcours quadratique du focus pour les libellés de frontière. Calcul du contexte central une seule fois par reconstruction ; revue des corrections sans constat restant. Les états visuels utilisent StateImageIndex avec CheckBoxes désactivé, conformément au [contrat WinForms documenté par Microsoft](https://learn.microsoft.com/dotnet/api/system.windows.forms.treenode.stateimageindex).
+
+Les vérifications propres à Clair ne prouvent pas l'identité runtime avec Arixcel. Les lots internes des collections originales, les libellés R1C1, le périmètre multi-classeurs, les couches de formats directs et les commandes globales/permanentes restent ouverts, avec les autres exigences du [registre de parité](PARITY.md).
+
 ## Livraison 0.5 — 15 octobre 2026
 
 - Scanner de rectangles original identifié statiquement dans Arixcel.Common.dll. Segments horizontaux ancrés sur leur premier point ; prolongement vertical seulement à largeur/X identiques, avec comparaison à l'origine du rectangle. R1C1 comparé uniquement pour deux formules dans la vue rôles. Preuves, cas non transitifs et limites dans [FLOW-EVIDENCE.md](FLOW-EVIDENCE.md).

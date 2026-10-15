@@ -60,11 +60,15 @@ public static class FlowBlocksTests
     {
         Equal(String.Join("|", blocks.Where(b => b.Category == category).Select(b => b.Address)), expected, context);
     }
-    static void Shape(string name, string addresses, string expected)
+    static void Shape(string name, string addresses, string expected, bool checkOrder = false)
     {
         var book = new Book();
         foreach (string address in addresses.Split(',')) Add(book, "S", address);
-        Addresses(Checked(Analyze(book), name), FlowCategory.OrphanFormulas, expected, name);
+        var blocks = Checked(Analyze(book), name);
+        // Shapes alone do not prescribe ordering within the original scanner's hash collections.
+        Equal(String.Join("|", blocks.Where(b => b.Category == FlowCategory.OrphanFormulas).Select(b => b.Address).OrderBy(a => a, StringComparer.Ordinal)),
+            String.Join("|", expected.Split('|').OrderBy(a => a, StringComparer.Ordinal)), name + " shape");
+        if (checkOrder) Addresses(blocks, FlowCategory.OrphanFormulas, expected, name + " emission order");
     }
     static void Inputs(string name, string[] addresses, string[] formulas, string[] r1c1, string expected)
     {
@@ -93,11 +97,13 @@ public static class FlowBlocksTests
         Shape("changing width", "A1,B1,A2,B2,C2,A3,B3", "A1:B1|A2:C2|A3:B3");
         Shape("sparse grid corners", "XFD1048576,A1,XFD1,A1048576", "A1|XFD1|A1048576|XFD1048576");
         Shape("rectangle at grid limit", "XFD1048576,XFC1048575,XFD1048575,XFC1048576,A1", "A1|XFC1048575:XFD1048576");
+        Shape("lower short block finishes before tall upper block", "A3,C2,A1,A2", "C2|A1:A3", true);
+        Shape("right short block finishes before left upper block", "A1,C1,A2,A3", "C1|A1:A3", true);
 
         var book = new Book();
         Add(book, "Z", "A1"); Add(book, "O'Brien", "A1"); Add(book, "A", "A1");
         var blocks = Checked(Analyze(book), "separate sheets");
-        Equal(String.Join("|", blocks.Select(b => b.Location)), "'A'!A1|'O''Brien'!A1|'Z'!A1", "sheet sorting and escaping");
+        Equal(String.Join("|", blocks.Select(b => b.Location)), "'A'!A1|'O''Brien'!A1|'Z'!A1", "unindexed sheet fallback and escaping");
         Equal(blocks.Count, 3, "same address on three sheets");
         Throws<NotSupportedException>(delegate { ((IList<FlowBlock>)blocks).Clear(); }, "block list immutable");
         Throws<NotSupportedException>(delegate { ((IList<Cell>)blocks[0].Cells).Add(book.Get("A", "B1")); }, "cell list immutable");
@@ -135,9 +141,49 @@ public static class FlowBlocksTests
         Inputs("vertical comparison keeps original rectangle anchor", new[] { "A1", "B1", "A2", "B2", "A3", "B3" },
             new[] { "=1", null, null, "=2", "=2", "=2" }, new[] { "=1", null, null, "=2", "=2", "=2" }, "A1:B2|A3:B3");
 
+        WorksheetOrder();
         BoundaryAndActivation();
         Console.WriteLine("PASS FlowBlocks: " + assertions + " assertions");
         return assertions;
+    }
+
+    static void WorksheetOrder()
+    {
+        var book = new Book();
+        // Capture order is explicit, independent of cell insertion, scope enumeration,
+        // alphabetical names, or gaps left by Excel chart sheets.
+        Add(book, "A", "A1"); Add(book, "Z", "A1"); Add(book, "O'Brien", "A1");
+        book.SetSheetIndex("A", 9); book.SetSheetIndex("O'Brien", 4); book.SetSheetIndex("Z", 1);
+        book.SetSheetIndex("Empty", 3);
+        Equal(String.Join("|", book.SheetOrder), "Z|Empty|O'Brien|A", "worksheet indices and empty sheet");
+        FlowAnalysisResult result = Analyze(book, new[] { book.Get("A", "A1") });
+        Equal(String.Join("|", result.SheetOrder), "Z|Empty|O'Brien|A", "analysis carries all worksheet order");
+        Equal(String.Join("|", Checked(result, "captured sheet order").Select(b => b.Sheet)), "Z|O'Brien|A",
+            "blocks follow worksheet order without focus priority");
+        Throws<NotSupportedException>(delegate { ((IList<string>)book.SheetOrder).Clear(); }, "book sheet order immutable");
+        Throws<NotSupportedException>(delegate { ((IList<string>)result.SheetOrder).Clear(); }, "analysis sheet order immutable");
+        var oldBookOrder = book.SheetOrder;
+        book.SetSheetIndex("a", 2);
+        Equal(book.Sheets.Count, 4, "case-insensitive index update does not add a sheet");
+        Equal(String.Join("|", book.SheetOrder), "Z|A|Empty|O'Brien", "updated worksheet index");
+        Equal(String.Join("|", oldBookOrder), "Z|Empty|O'Brien|A", "book order access returns snapshot");
+        Equal(String.Join("|", result.SheetOrder), "Z|Empty|O'Brien|A", "analysis order remains captured");
+        Equal(String.Join("|", FlowBlocks.Build(result).Select(b => b.Sheet)), "Z|O'Brien|A", "blocks use analysis order snapshot");
+
+        book.Sheets.Add("Unindexed Z"); book.Sheets.Add("Unindexed A");
+        Equal(String.Join("|", book.SheetOrder), "Z|A|Empty|O'Brien|Unindexed A|Unindexed Z", "mixed indexed and fixture fallback");
+        book.Sheets.Remove("Empty");
+        Equal(book.SheetOrder.Contains("Empty"), false, "removed sheet omitted despite retained metadata");
+        Throws<ArgumentOutOfRangeException>(delegate { book.SetSheetIndex("Invalid", 0); }, "one-based sheet index");
+        Equal(book.Sheets.Contains("Invalid"), false, "invalid index does not add a sheet");
+        Throws<ArgumentException>(delegate { book.SetSheetIndex(" ", 1); }, "sheet name required");
+
+        var multi = new Book();
+        foreach (string sheet in new[] { "A", "Z" })
+            foreach (string address in new[] { "A1", "A2", "A3", "C2" }) Add(multi, sheet, address);
+        multi.SetSheetIndex("Z", 1); multi.SetSheetIndex("A", 2);
+        Equal(String.Join("|", Checked(Analyze(multi), "sheet and emission order").Select(b => b.Location)),
+            "'Z'!C2|'Z'!A1:A3|'A'!C2|'A'!A1:A3", "sheet order retains emission order within each sheet");
     }
 
     static void BoundaryAndActivation()

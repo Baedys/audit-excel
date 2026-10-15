@@ -30,9 +30,21 @@ public static class FlowPanelTests
     }
     static void SelectGroups(MainForm form)
     {
-        CheckedListBox groups = Field<CheckedListBox>(form, "flowGroups");
-        for (int i = 0; i < groups.Items.Count; i++) { groups.SetItemChecked(i, true); Application.DoEvents(); }
+        TreeNode root = Field<TreeView>(form, "flowGroups").Nodes[0];
+        if (root.StateImageIndex != (int)CheckState.Checked) Invoke(form, "ToggleFlowTreeNode", root);
     }
+    static IEnumerable<TreeNode> Nodes(TreeNodeCollection roots)
+    {
+        foreach (TreeNode node in roots) { yield return node; foreach (TreeNode child in Nodes(node.Nodes)) yield return child; }
+    }
+    static TreeNode Category(MainForm form, FlowCategory category)
+    {
+        return Nodes(Field<TreeView>(form, "flowGroups").Nodes).Single(n => {
+            var model = n.Tag as FlowTreeNode;
+            return model != null && model.Kind == FlowTreeNodeKind.Category && model.Category == category && model.Sheet == null;
+        });
+    }
+    static CheckState CategoryState(MainForm form, FlowCategory category) { return (CheckState)Category(form, category).StateImageIndex; }
     static int OLE(int rgb) { return ColorTranslator.ToOle(Color.FromArgb(255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255)); }
     static int Fill(dynamic cell) { return Convert.ToInt32(Keep(Keep(cell.DisplayFormat).Interior).Color); }
     static int FontColor(dynamic cell) { return Convert.ToInt32(Keep(Keep(cell.DisplayFormat).Font).Color); }
@@ -41,6 +53,9 @@ public static class FlowPanelTests
         MainForm form = new MainForm(bridge);
         // User settings remain untouched; these checks require the observed defaults.
         typeof(MainForm).GetField("flowPalette", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(form, FlowPalette.Default());
+        typeof(MainForm).GetField("flowViewSettingsFile", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(form, null);
+        typeof(MainForm).GetField("flowViewSettings", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(form, new FlowViewSettings());
+        Field<CheckBox>(form, "flowGroupBySheet").Checked = false;
         form.Show(); form.ExecuteRibbonCommand("flow"); Application.DoEvents(); return form;
     }
     public static void Run()
@@ -65,7 +80,7 @@ public static class FlowPanelTests
             first = Open(bridge); Invoke(first, "AnalyzeFlow");
             Equal(FontColor(a), OLE(0x112233)); Equal(Fill(b), OLE(0x667788));
             Equal(bridge.HasHighlights(captured, "Flow", Field<string>(first, "flowLayer")), false);
-            Equal(Field<CheckedListBox>(first, "flowGroups").GetItemCheckState(0), CheckState.Unchecked);
+            Equal(CategoryState(first, FlowCategory.Inputs), CheckState.Unchecked);
             SelectGroups(first);
             Equal(FontColor(a), OLE(0x0000FF)); Equal(Fill(a), OLE(0x556677)); Equal(Fill(b), OLE(0xF2F2F2)); Equal(Fill(c), OLE(0xCCFF99)); Equal(Fill(orphan), OLE(0xFF9999));
             DataGridView grid = Field<DataGridView>(first, "flow");
@@ -103,7 +118,7 @@ public static class FlowPanelTests
             // A boundary cell has both an inflow font and an outflow fill.
             Field<ComboBox>(first, "flowFocus").SelectedIndex = 2; b.Select();
             Field<ComboBox>(first, "flowView").SelectedIndex = 1; Invoke(first, "AnalyzeFlow");
-            Equal(Field<CheckedListBox>(first, "flowGroups").GetItemCheckState(1), CheckState.Unchecked);
+            Equal(CategoryState(first, FlowCategory.InsideInflows), CheckState.Unchecked);
             SelectGroups(first);
             Equal(FontColor(b), OLE(0x188A18)); Equal(Fill(b), OLE(0xBDD7EE));
             Equal(grid.Rows.Count, 4);
@@ -112,16 +127,15 @@ public static class FlowPanelTests
             int inflowRow = grid.Rows.Cast<DataGridViewRow>().Single(r => (FlowCategory)r.Cells[0].Tag == FlowCategory.InsideInflows).Index;
             Invoke(first, "ToggleFlowRole", inflowRow);
             Equal(FontColor(b), OLE(0x223344)); Equal(Fill(b), OLE(0xBDD7EE));
-            CheckedListBox groups = Field<CheckedListBox>(first, "flowGroups");
-            Equal(groups.GetItemCheckState(1), CheckState.Unchecked); groups.SetItemChecked(1, true); Application.DoEvents();
+            Equal(CategoryState(first, FlowCategory.InsideInflows), CheckState.Unchecked); Invoke(first, "ToggleFlowTreeNode", Category(first, FlowCategory.InsideInflows));
             Equal(FontColor(b), OLE(0x188A18)); Equal(Fill(b), OLE(0xBDD7EE));
-            groups.SetItemChecked(2, false); Application.DoEvents();
+            Invoke(first, "ToggleFlowTreeNode", Category(first, FlowCategory.InsideOutflows));
             Equal(FontColor(b), OLE(0x188A18)); Equal(Fill(b), OLE(0x667788));
             int firstInputRow = grid.Rows.Cast<DataGridViewRow>().Single(r => (FlowCategory)r.Cells[0].Tag == FlowCategory.OutsidePrecedents && ((FlowBlock)r.Tag).Address == "A1").Index;
             Invoke(first, "ToggleFlowRole", firstInputRow);
-            Equal(groups.GetItemCheckState(0), CheckState.Indeterminate); Equal(Fill(a), OLE(0x556677));
+            Equal(CategoryState(first, FlowCategory.OutsidePrecedents), CheckState.Indeterminate); Equal(Fill(a), OLE(0x556677));
             Invoke(first, "RemoveFlowColors");
-            Equal(groups.GetItemCheckState(1), CheckState.Unchecked); Equal(FontColor(b), OLE(0x223344));
+            Equal(CategoryState(first, FlowCategory.InsideInflows), CheckState.Unchecked); Equal(FontColor(b), OLE(0x223344));
             Invoke(first, "ToggleFlowRole", inflowRow);
             Equal(FontColor(b), OLE(0x188A18));
             SelectGroups(first);
@@ -143,6 +157,13 @@ public static class FlowPanelTests
             remover = Open(bridge); Invoke(remover, "RemoveFlowColors"); remover.Close(); Application.DoEvents();
             Equal(bridge.HighlightLayers(captured).Any(l => l.StartsWith("flow_", StringComparison.Ordinal)), false);
             Equal(bridge.HasHighlights(captured, "Flow", "map"), true); Equal((string)b.Formula, "=SUM(A1:A2)*2"); Equal((double)a.Value2, 7.0);
+            // Capture must retain worksheet order rather than alphabetize the names.
+            dynamic zOrder = Keep(Keep(wb.Worksheets).Add(Type.Missing, notes)); zOrder.Name = "Z order";
+            dynamic aOrder = Keep(Keep(wb.Worksheets).Add(Type.Missing, zOrder)); aOrder.Name = "A order";
+            Keep(zOrder.Range["A1"]).Value2 = 1; Keep(aOrder.Range["A1"]).Value2 = 2;
+            Book ordered = bridge.Capture(workbook);
+            Equal(ordered.SheetOrder.IndexOf("Z order") < ordered.SheetOrder.IndexOf("A order"), true);
+            Equal(ordered.SheetOrder.IndexOf("Z order") < ordered.SheetOrder.IndexOf("Flow"), false);
             Console.WriteLine("PASS " + checks + " flow window checks: role/group toggles, combined colors, isolated windows, SaveAs cleanup, keep and later removal");
         }
         finally

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -24,9 +25,31 @@ namespace FormulaExplorer
         public DateTime Captured = DateTime.Now;
         public readonly Dictionary<string, Cell> Cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> Sheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, int> sheetIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, string> Names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> RelativeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> Warnings = new List<string>();
+        /// <summary>
+        /// Captured worksheets follow Excel's Worksheet.Index (which can have gaps for chart sheets).
+        /// Sheets added without an index follow indexed sheets in ordinal name order. This fallback
+        /// is deterministic for existing fixtures using Sheets.Add, not a claim about workbook order.
+        /// Each access returns an immutable snapshot of the currently known sheet names.
+        /// </summary>
+        public ReadOnlyCollection<string> SheetOrder
+        {
+            get
+            {
+                return Sheets.OrderBy(sheet => sheetIndexes.ContainsKey(sheet) ? 0 : 1)
+                    .ThenBy(sheet => sheetIndexes.ContainsKey(sheet) ? sheetIndexes[sheet] : 0)
+                    .ThenBy(sheet => sheet, StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
+            }
+        }
+        public void SetSheetIndex(string sheet, int index)
+        {
+            if (String.IsNullOrWhiteSpace(sheet)) throw new ArgumentException("A sheet name is required.", "sheet");
+            if (index < 1) throw new ArgumentOutOfRangeException("index", "Worksheet indices are one-based.");
+            Sheets.Add(sheet); sheetIndexes[sheet] = index;
+        }
         public static string Key(string sheet, string address) { return sheet + "\0" + address.ToUpperInvariant(); }
         public void Add(Cell cell) { Sheets.Add(cell.Sheet); Cells[cell.Key] = cell; }
         public Cell Get(string sheet, string address)

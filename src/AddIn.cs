@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("0.5.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.6.0.0")]
 [assembly: ComVisible(false)]
 
 namespace FormulaExplorer
@@ -56,7 +56,7 @@ namespace FormulaExplorer
         public void OnAddInsUpdate(ref Array custom) { }
         public void OnStartupComplete(ref Array custom) { }
         public void OnBeginShutdown(ref Array custom) { CloseWindows(true); }
-        public string Status() { return application == null ? "Disconnected" : "Clair 0.5 connected"; }
+        public string Status() { return application == null ? "Disconnected" : "Clair 0.6 connected"; }
         public void RibbonOnLoad([MarshalAs(UnmanagedType.IDispatch)] object ribbon) { ribbonLoaded = true; }
         public bool IsRibbonLoaded() { return ribbonLoaded; }
         public int OpenWindowCount() { return windows.Count; }

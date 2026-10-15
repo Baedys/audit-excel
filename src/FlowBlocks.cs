@@ -46,10 +46,16 @@ namespace FormulaExplorer
             if (result == null) throw new ArgumentNullException("result");
             var blocks = new List<FlowBlock>();
             foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
-                foreach (var sheet in result.Cells(category).GroupBy(c => c.Sheet, StringComparer.OrdinalIgnoreCase))
-                    Scan(category, sheet, blocks);
-            return blocks.OrderBy(b => b.Category).ThenBy(b => b.Sheet, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(b => b.FirstRow).ThenBy(b => b.FirstColumn).ToList().AsReadOnly();
+            {
+                var bySheet = result.Cells(category).GroupBy(c => c.Sheet, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(group => group.Key, group => group, StringComparer.OrdinalIgnoreCase);
+                foreach (string sheet in result.SheetOrder)
+                    if (bySheet.ContainsKey(sheet)) Scan(category, bySheet[sheet], blocks);
+            }
+            // Keep scanner emission order: a rectangle that stops growing is emitted before
+            // a taller rectangle still active, even when the taller one starts above it.
+            // Ordering within one Dictionary enumeration batch is not an original UI contract.
+            return blocks.AsReadOnly();
         }
         static bool Compatible(FlowCategory category, Cell first, Cell candidate)
         {

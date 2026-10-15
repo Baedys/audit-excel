@@ -28,6 +28,8 @@ namespace FormulaExplorer
         public ReadOnlyCollection<FlowLink> InflowLinks { get; private set; }
         public ReadOnlyCollection<FlowLink> OutflowLinks { get; private set; }
         public ReadOnlyCollection<string> Warnings { get; private set; }
+        // Snapshot of all known workbook sheets, including those without a role in this scope.
+        public ReadOnlyCollection<string> SheetOrder { get; private set; }
         public bool Incomplete { get { return Warnings.Count != 0; } }
         public bool HasFocusBoundary { get { return Focus.Count < Scope.Count; } }
         public ReadOnlyCollection<Cell> Cells(FlowCategory category)
@@ -37,11 +39,13 @@ namespace FormulaExplorer
             return cells;
         }
         internal FlowAnalysisResult(List<Cell> scope, List<Cell> focus, List<FlowLink> links,
-            List<FlowLink> inflows, List<FlowLink> outflows, Dictionary<FlowCategory, List<Cell>> groups, List<string> warnings)
+            List<FlowLink> inflows, List<FlowLink> outflows, Dictionary<FlowCategory, List<Cell>> groups, List<string> warnings,
+            IEnumerable<string> sheetOrder)
         {
             Scope = scope.AsReadOnly(); Focus = focus.AsReadOnly(); Links = links.AsReadOnly();
             InflowLinks = inflows.AsReadOnly(); OutflowLinks = outflows.AsReadOnly(); Warnings = warnings.AsReadOnly();
             categories = groups.ToDictionary(p => p.Key, p => p.Value.AsReadOnly());
+            SheetOrder = sheetOrder.ToList().AsReadOnly();
         }
     }
 
@@ -114,7 +118,7 @@ namespace FormulaExplorer
                 if (outsideDependents.Contains(cell.Key)) groups[FlowCategory.OutsideDependents].Add(cell);
             }
             List<string> warnings = engine.Warnings.Where(w => !String.IsNullOrWhiteSpace(w)).Distinct(StringComparer.Ordinal).ToList();
-            return new FlowAnalysisResult(area, center, links, inflows, outflows, groups, warnings);
+            return new FlowAnalysisResult(area, center, links, inflows, outflows, groups, warnings, engine.Book.SheetOrder);
         }
         static int LowerBound(List<Cell> cells, int row)
         {

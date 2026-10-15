@@ -30,7 +30,7 @@ namespace FormulaExplorer
         public MainForm(ExcelBridge excel)
         {
             bridge = excel;
-            Text = "Clair — Explorateur Excel · 0.5 en développement";
+            Text = "Clair — Explorateur Excel · 0.6 en développement";
             Size = new Size(1160, 820); MinimumSize = new Size(940, 640);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(246, 248, 250);
@@ -169,9 +169,9 @@ namespace FormulaExplorer
         void SetRoot(Cell cell, bool remember)
         {
             if (remember && root != null) history.Push(root);
-            root = cell; flow.Rows.Clear(); flowResult = null; ShowTree();
+            root = cell; ResetFlowDisplay(); ShowTree();
         }
-        void Back() { if (history.Count > 0) { root = history.Pop(); flow.Rows.Clear(); ShowTree(); } }
+        void Back() { if (history.Count > 0) { root = history.Pop(); ResetFlowDisplay(); ShowTree(); } }
         public void ExecuteRibbonCommand(string command)
         {
             Safe(delegate
@@ -267,7 +267,7 @@ namespace FormulaExplorer
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 StringBuilder output = new StringBuilder();
-                output.AppendLine("Clair 0.5 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
+                output.AppendLine("Clair 0.6 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
                 foreach (string warning in engine.Warnings.Distinct()) output.AppendLine(warning);
                 output.AppendLine("\nCELLULES");
                 foreach (Cell c in book.Cells.Values.OrderBy(c => c.Sheet).ThenBy(c => c.Row).ThenBy(c => c.Column)) output.AppendLine(c.Location + "\t" + c.Kind + "\t" + c.Value + "\t" + c.Formula);

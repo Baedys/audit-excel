@@ -93,11 +93,13 @@ static class Tests
             Keep(first.Range["D1"]).Formula = "=1/0";
             Keep(first.Range["E1"]).Value2 = true;
             dynamic second = Keep(sheets.Add(Type.Missing, first)); second.Name = "O'Brien";
+            second.Move(first, Type.Missing); // Deliberately reverse alphabetic worksheet order.
             Keep(second.Range["A1"]).Formula = "=Inputs!B1*0.65";
             dynamic names = Keep(wb.Names); Keep(names.Add("Price", "=Inputs!$A$1"));
             Keep(second.Range["B1"]).Formula = "=Price*2";
             excel.Calculate();
             ExcelBridge bridge = new ExcelBridge(application); Book before = bridge.Capture(workbook);
+            Check("Excel captured worksheet order", delegate { Equal(before.SheetOrder[0], "O'Brien"); Equal(before.SheetOrder[1], "Inputs"); });
             Check("Excel bulk values and formula", delegate { Equal(before.Get("Inputs", "B1").Formula, "=A1*A2"); Equal(before.Get("Inputs", "B1").Value, "30000"); });
             Check("Excel text beginning equals remains constant", delegate { Assert(!before.Get("Inputs", "C1").IsFormula, "text mistaken for formula"); });
             Check("Excel error variant", delegate { Equal(before.Get("Inputs", "D1").Kind, "Erreur"); Equal(before.Get("Inputs", "D1").Value, "#DIV/0!"); });
@@ -155,6 +157,9 @@ static class Tests
         Check("Flow palette serialization and validation", delegate { Console.WriteLine("FLOW_PALETTE_ASSERTIONS " + FlowPaletteTests.Run()); });
         Check("Flow highlight composition and role activation", delegate { Console.WriteLine("FLOW_HIGHLIGHT_ASSERTIONS " + FlowHighlightPlanTests.Run()); });
         Check("Flow rectangles and block activation", delegate { Console.WriteLine("FLOW_BLOCK_ASSERTIONS " + FlowBlocksTests.Run()); });
+        Check("Flow tree structure, ordering and visibility", delegate { Console.WriteLine("FLOW_TREE_ASSERTIONS " + FlowTreeTests.Run()); });
+        Check("Flow view preference persistence", delegate { Console.WriteLine("FLOW_VIEW_SETTINGS_ASSERTIONS " + FlowViewSettingsTests.Run()); });
+        Check("Flow tree window interaction", delegate { Console.WriteLine("FLOW_TREE_UI_ASSERTIONS " + FlowTreePanelTests.Run()); });
         if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run); }
         Console.WriteLine("RESULT " + passed + " passed; " + failed + " failed");
         return failed == 0 ? 0 : 1;

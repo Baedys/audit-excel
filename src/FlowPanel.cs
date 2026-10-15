@@ -11,10 +11,9 @@ namespace FormulaExplorer
     public sealed partial class MainForm
     {
         readonly ComboBox flowScope = new ComboBox(), flowFocus = new ComboBox(), flowView = new ComboBox();
-        readonly CheckedListBox flowGroups = new CheckedListBox();
+        readonly TreeView flowGroups = new TreeView();
         readonly CheckBox keepFlowColors = new CheckBox();
         readonly CheckBox flowCellDetails = new CheckBox();
-        readonly List<FlowCategory> flowGroupCategories = new List<FlowCategory>();
         readonly List<FlowCategory> flowActivationOrder = Enum.GetValues(typeof(FlowCategory)).Cast<FlowCategory>().ToList();
         readonly List<FlowActivation> flowActivations = new List<FlowActivation>();
         readonly HashSet<string> flowExcludedRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -29,6 +28,7 @@ namespace FormulaExplorer
         static string FlowPalettePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clair", "flow-palette.xml"); } }
         void InitializeFlow(FlowLayoutPanel bar)
         {
+            LoadFlowViewSettings();
             try { if (File.Exists(FlowPalettePath)) flowPalette = FlowPalette.Load(FlowPalettePath); }
             catch (Exception ex) { flowPaletteWarning = "Palette flux illisible : " + ex.Message + " Défaut utilisé."; }
             bar.SetFlowBreak(bar.Controls[bar.Controls.Count - 1], true);
@@ -50,6 +50,7 @@ namespace FormulaExplorer
             bar.Controls.Add(ActionButton("Fermer en conservant", delegate { keepFlowColors.Checked = true; Close(); }));
             flowView.SelectedIndexChanged += delegate
             {
+                SyncFlowGroupOption();
                 if (flowResult == null) return;
                 Safe(delegate { ShowFlowCategories(); if (flowColorsApplied) ApplyFlowColors(); });
             };
@@ -57,21 +58,10 @@ namespace FormulaExplorer
         Control CreateFlowBody()
         {
             SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 230 };
-            TableLayoutPanel left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2 };
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 70)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            left.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Couleurs par groupe.\nCases de la grille : activer un bloc.\nUne cellule peut porter deux rôles." }, 0, 0);
-            flowGroups.Dock = DockStyle.Fill; flowGroups.CheckOnClick = true; flowGroups.IntegralHeight = false; flowGroups.HorizontalScrollbar = true;
-            left.Controls.Add(flowGroups, 0, 1); split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
-            flowGroups.ItemCheck += delegate(object sender, ItemCheckEventArgs e)
-            {
-                if (updatingFlowControls || flowResult == null) return;
-                FlowCategory category = flowGroupCategories[e.Index];
-                flowPalette.Entries[category].Enabled = e.NewValue != CheckState.Unchecked;
-                foreach (Cell cell in flowResult.Cells(category)) flowExcludedRoles.Remove(FlowHighlightPlan.RoleKey(category, cell));
-                ActivateFlowCategory(category);
-                // CheckedListBox commits its new state only after this event returns.
-                if (IsHandleCreated) BeginInvoke((Action)delegate { Safe(delegate { ShowFlowCategories(); if (flowColorsApplied) ApplyFlowColors(); }); });
-            };
+            TableLayoutPanel left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3 };
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            InitializeFlowTree(left);
+            left.Controls.Add(flowGroups, 0, 2); split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
             flow.CellContentClick += delegate(object sender, DataGridViewCellEventArgs e)
             {
                 if (e.RowIndex >= 0 && e.ColumnIndex == 0) Safe(delegate { ToggleFlowRole(e.RowIndex); });
@@ -144,20 +134,19 @@ namespace FormulaExplorer
         void ShowFlowCategories()
         {
             if (flowResult == null) return;
-            flow.Columns.Clear(); flow.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Highlight", HeaderText = "Colorer", FillWeight = 50, ThreeState = true });
-            flow.Columns.Add("Category", "Rôle"); flow.Columns.Add("Location", flowCellDetails.Checked ? "Cellule" : "Bloc"); flow.Columns.Add("Value", "Cellules / valeur"); flow.Columns.Add("Formula", "Formule (première cellule)"); flow.Columns[4].FillWeight = 180;
-            FlowCategory[] visible = VisibleFlowCategories().ToArray();
-            int total = 0, enabled = 0, shown = 0; updatingFlowControls = true;
+            RebuildFlowTree();
+            string selectedRole = null; int selectedColumn = flow.CurrentCell == null ? 0 : flow.CurrentCell.ColumnIndex;
+            var previous = flow.CurrentRow == null ? null : flow.CurrentRow.Tag as FlowBlock;
+            if (previous != null) selectedRole = FlowHighlightPlan.RoleKey(previous.Category, previous.Cells[0]);
+            int shown = 0, selectedRow = -1; updatingFlowControls = true;
             try
             {
-                flowGroups.Items.Clear(); flowGroupCategories.Clear();
-                foreach (FlowCategory category in visible)
+                flow.Columns.Clear(); flow.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Highlight", HeaderText = "Colorer", FillWeight = 50, ThreeState = true });
+                flow.Columns.Add("Category", "Rôle"); flow.Columns.Add("Location", flowCellDetails.Checked ? "Cellule" : "Bloc"); flow.Columns.Add("Value", "Cellules / valeur"); flow.Columns.Add("Formula", "Formule (première cellule)"); flow.Columns[4].FillWeight = 180;
+                foreach (FlowBlock source in flowTreeRoot.Blocks)
                 {
-                    var cells = flowResult.Cells(category); int active = cells.Count(c => FlowRoleEnabled(category, c));
-                    var blocks = flowBlocks.Where(b => b.Category == category).ToList();
-                    AddFlowGroup(category, cells, blocks.Count);
-                    HighlightStyle style = flowPalette.Entries[category]; total += cells.Count; enabled += active;
-                    IEnumerable<FlowBlock> rows = flowCellDetails.Checked ? cells.Select(c => new FlowBlock(category, new List<Cell> { c })) : blocks;
+                    FlowCategory category = source.Category; HighlightStyle style = flowPalette.Entries[category];
+                    IEnumerable<FlowBlock> rows = flowCellDetails.Checked ? source.Cells.Select(c => new FlowBlock(category, new List<Cell> { c })) : new[] { source };
                     foreach (FlowBlock block in rows)
                     {
                         if (shown >= 20000) break;
@@ -166,27 +155,26 @@ namespace FormulaExplorer
                         flow.Rows[row].Tag = block; flow.Rows[row].Cells[0].Tag = category;
                         if (style.FillRgb.HasValue) flow.Rows[row].DefaultCellStyle.BackColor = Rgb(style.FillRgb.Value);
                         if (style.FontRgb.HasValue) flow.Rows[row].DefaultCellStyle.ForeColor = Rgb(style.FontRgb.Value);
+                        if (selectedRole != null && block.Cells.Any(c => String.Equals(FlowHighlightPlan.RoleKey(category, c), selectedRole, StringComparison.OrdinalIgnoreCase))) selectedRow = row;
                         shown++;
                     }
+                    if (shown >= 20000) break;
                 }
+                if (selectedRow >= 0) { flow.ClearSelection(); flow.Rows[selectedRow].Selected = true; flow.CurrentCell = flow.Rows[selectedRow].Cells[selectedColumn]; }
             }
             finally { updatingFlowControls = false; }
-            int rowCount = flowCellDetails.Checked ? total : flowBlocks.Count(b => visible.Contains(b.Category));
+            var selectedNode = flowGroups.SelectedNode == null ? null : flowGroups.SelectedNode.Tag as FlowTreeNode;
+            if (selectedRow < 0 && selectedNode != null) SelectFlowGridNode(selectedNode);
+            int total = flowTreeRoot.RoleCount, enabled = flowTreeRoot.Blocks.Sum(b => b.Cells.Count(c => FlowRoleEnabled(b.Category, c)));
+            int rowCount = flowCellDetails.Checked ? total : flowTreeRoot.Blocks.Count;
             status.Text = total + " rôles · " + enabled + " actifs · " + rowCount + (flowCellDetails.Checked ? " lignes" : " blocs") + " · " + flowResult.Scope.Count + " cellules dans le périmètre · " + flowResult.Focus.Count + " dans la zone centrale · " + flowResult.Links.Count + " liens directs" +
-                (rowCount > shown ? " · liste limitée à 20 000 lignes" : "") + (flowResult.Incomplete ? " · résultat partiel" : "") +
+                (rowCount > shown ? " · liste limitée à 20 000 lignes" : "") + (flowTreeTruncated ? " · arbre limité à 20 000 éléments" : "") + (flowResult.Incomplete ? " · résultat partiel" : "") +
                 (flowView.SelectedIndex == 1 && !flowResult.HasFocusBoundary ? " · zone centrale = périmètre : aucun flux de frontière" : "");
             warnings.Text = "Flux calculés sur une capture. Analyser actualise le même classeur et conserve les rôles encore sélectionnés. Cochez les groupes ou blocs pour les colorer.\r\n" +
-                (flowPaletteWarning ?? "") + (flowResult.Incomplete ? String.Join("\r\n", flowResult.Warnings.Take(200)) : "Aucune référence non résolue détectée dans la capture.");
+                (flowPaletteWarning ?? "") + (flowViewWarning ?? "") + (flowResult.Incomplete ? String.Join("\r\n", flowResult.Warnings.Take(200)) : "Aucune référence non résolue détectée dans la capture.");
         }
         static CheckState FlowCheckState(int active, int total)
         { return active == 0 ? CheckState.Unchecked : active == total ? CheckState.Checked : CheckState.Indeterminate; }
-        void AddFlowGroup(FlowCategory category, IList<Cell> cells, int blocks)
-        {
-            int active = cells.Count(c => FlowRoleEnabled(category, c));
-            flowGroupCategories.Add(category);
-            int index = flowGroups.Items.Add(FlowLabels[(int)category] + " (" + active + "/" + cells.Count + ") · " + blocks + " blocs");
-            flowGroups.SetItemCheckState(index, FlowCheckState(active, cells.Count));
-        }
         void SetFlowCells(FlowCategory category, IList<Cell> cells, bool enabled)
         {
             if (!flowPalette.Entries[category].Enabled)
