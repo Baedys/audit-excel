@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace FormulaExplorer
 {
-    public sealed class ExcelBridge
+    public sealed partial class ExcelBridge
     {
         readonly object application;
         public ExcelBridge(object app) { application = app; }

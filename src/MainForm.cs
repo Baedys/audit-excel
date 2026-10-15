@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace FormulaExplorer
 {
-    public sealed class MainForm : Form
+    public sealed partial class MainForm : Form
     {
         Book book, baseline;
         DependencyEngine engine;
@@ -30,7 +30,7 @@ namespace FormulaExplorer
         public MainForm(ExcelBridge excel)
         {
             bridge = excel;
-            Text = "Clair — Explorateur Excel · prototype 0.1";
+            Text = "Clair — Explorateur Excel · 0.2 en développement";
             Size = new Size(1160, 820); MinimumSize = new Size(940, 640);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(246, 248, 250);
@@ -39,7 +39,7 @@ namespace FormulaExplorer
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             Controls.Add(layout);
             title.Dock = DockStyle.Fill; title.Font = new Font(Font.FontFamily, 15, FontStyle.Bold); title.ForeColor = Color.FromArgb(18, 86, 88);
@@ -66,11 +66,12 @@ namespace FormulaExplorer
             explorerLayout.Controls.Add(split, 0, 1);
             tree.Dock = DockStyle.Fill; tree.HideSelection = false; tree.BorderStyle = BorderStyle.None; tree.ItemHeight = 28;
             split.Panel1.Controls.Add(tree);
-            TableLayoutPanel right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Padding = new Padding(12) };
-            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 170)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            TableLayoutPanel right = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, Padding = new Padding(8) };
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 90)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 60)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             detail.Dock = DockStyle.Fill; detail.AutoEllipsis = true; right.Controls.Add(detail, 0, 0);
             formula.Dock = DockStyle.Fill; formula.Multiline = true; formula.ReadOnly = true; formula.ScrollBars = ScrollBars.Both; formula.WordWrap = false; formula.Font = new Font("Consolas", 11); formula.BackColor = Color.White;
             right.Controls.Add(formula, 0, 1); split.Panel2.Controls.Add(right);
+            InitializeExpressions(right);
             tree.BeforeExpand += delegate(object sender, TreeViewCancelEventArgs e) { ExpandNode(e.Node); };
             tree.AfterSelect += delegate { ShowDetails(SelectedCell()); };
             tree.NodeMouseDoubleClick += delegate { Safe(Navigate); };
@@ -84,10 +85,11 @@ namespace FormulaExplorer
             sheets.SelectedIndexChanged += delegate { ShowMap(); };
             map.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) { SetRoot((Cell)map.Rows[e.RowIndex].Tag, true); tabs.SelectedIndex = 0; } };
 
-            TableLayoutPanel flowLayout = PageLayout(flowTab, 42);
+            TableLayoutPanel flowLayout = PageLayout(flowTab, 118);
             FlowLayoutPanel flowBar = new FlowLayoutPanel { Dock = DockStyle.Fill };
             flowBar.Controls.Add(ActionButton("En amont : entrées", delegate { ShowFlow(false); }));
             flowBar.Controls.Add(ActionButton("En aval : impacts", delegate { ShowFlow(true); }));
+            InitializeFlow(flowBar);
             flowLayout.Controls.Add(flowBar, 0, 0); flowLayout.Controls.Add(flow, 0, 1);
             flow.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0) { SetRoot((Cell)flow.Rows[e.RowIndex].Tag, true); tabs.SelectedIndex = 0; } };
 
@@ -160,9 +162,26 @@ namespace FormulaExplorer
         void SetRoot(Cell cell, bool remember)
         {
             if (remember && root != null) history.Push(root);
-            root = cell; flow.Rows.Clear(); ShowTree();
+            root = cell; flow.Rows.Clear(); flowResult = null; ShowTree();
         }
         void Back() { if (history.Count > 0) { root = history.Pop(); flow.Rows.Clear(); ShowTree(); } }
+        public void ExecuteRibbonCommand(string command)
+        {
+            Safe(delegate
+            {
+                switch (command)
+                {
+                    case "precedents": reverse = false; tabs.SelectedIndex = 0; ShowTree(); break;
+                    case "dependents": reverse = true; tabs.SelectedIndex = 0; ShowTree(); break;
+                    case "back": Back(); break;
+                    case "map": tabs.SelectedIndex = 1; break;
+                    case "flow": tabs.SelectedIndex = 2; break;
+                    case "compare": tabs.SelectedIndex = 3; break;
+                    case "refresh": LoadExcel(); break;
+                    default: throw new ArgumentException("Commande inconnue : " + command);
+                }
+            });
+        }
         TreeNode Node(Cell cell, TreeNode parent)
         {
             bool cycle = false;
@@ -193,8 +212,9 @@ namespace FormulaExplorer
         {
             if (cell == null) return;
             ParsedFormula parsed = engine.Parsed(cell);
-            detail.Text = cell.Location + "\n\nValeur : " + cell.Value + "\nType : " + (cell.IsFormula ? "Formule → " : "") + cell.Kind + "\nFonctions : " + String.Join(", ", parsed.Functions.Distinct()) + "\nRéférences : " + parsed.References.Count + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
+            detail.Text = cell.Location + "\nValeur : " + cell.Value + " · " + (cell.IsFormula ? "Formule → " : "") + cell.Kind + "\nFonctions : " + String.Join(", ", parsed.Functions.Distinct()) + "\nRéférences : " + parsed.References.Count + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
             formula.Text = (cell.IsFormula ? cell.Formula : "(constante)") + "\r\n\r\n" + String.Join("\r\n", parsed.Warnings);
+            ShowExpression(cell);
         }
         void Navigate()
         {
@@ -248,7 +268,7 @@ namespace FormulaExplorer
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 StringBuilder output = new StringBuilder();
-                output.AppendLine("Clair 0.1 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
+                output.AppendLine("Clair 0.2 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
                 foreach (string warning in engine.Warnings.Distinct()) output.AppendLine(warning);
                 output.AppendLine("\nCELLULES");
                 foreach (Cell c in book.Cells.Values.OrderBy(c => c.Sheet).ThenBy(c => c.Row).ThenBy(c => c.Column)) output.AppendLine(c.Location + "\t" + c.Kind + "\t" + c.Value + "\t" + c.Formula);
@@ -258,9 +278,10 @@ namespace FormulaExplorer
                 File.WriteAllText(dialog.FileName, output.ToString(), Encoding.UTF8); status.Text = "Rapport enregistré.";
             }
         }
-        public void SavePreview(string path)
+        public void SavePreview(string path, string mode = null)
         {
             Show(); Application.DoEvents();
+            if (mode != null) { ExecuteRibbonCommand(mode); if (mode == "flow") AnalyzeFlow(); Application.DoEvents(); }
             using (Bitmap image = new Bitmap(Width, Height)) { DrawToBitmap(image, new Rectangle(0, 0, Width, Height)); image.Save(path); }
             Close();
         }

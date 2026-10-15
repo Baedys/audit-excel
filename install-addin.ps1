@@ -7,7 +7,11 @@ $classKey = "Software\Classes\CLSID\$classId"
 $progKey = 'Software\Classes\Clair.ExcelAddIn'
 $addinKey = 'Software\Microsoft\Office\Excel\Addins\Clair.ExcelAddIn'
 if (-not $Uninstall -and -not (Test-Path -LiteralPath $addinPath)) { throw 'Build first: .\build.ps1' }
-foreach ($registryView in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
+$registryViews = @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)
+if (-not $Uninstall) { $assemblyName = [Reflection.AssemblyName]::GetAssemblyName($addinPath).FullName }
+# Check every view before writing anything: a conflict in the second view must
+# not leave the first view partially registered or partially uninstalled.
+foreach ($registryView in $registryViews) {
     $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $registryView)
     try {
         # Refuse to replace or delete a key not owned by this add-in.
@@ -16,6 +20,11 @@ foreach ($registryView in @([Microsoft.Win32.RegistryView]::Registry64, [Microso
             try { if ($null -ne $existing -and $existing.GetValue('ClairOwner') -ne $owner) { throw "Registry key belongs to another installation: $path" } }
             finally { if ($null -ne $existing) { $existing.Dispose() } }
         }
+    } finally { $hive.Dispose() }
+}
+foreach ($registryView in $registryViews) {
+    $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $registryView)
+    try {
         if ($Uninstall) {
             foreach ($path in @($addinKey, $progKey, $classKey)) { $hive.DeleteSubKeyTree($path, $false) }
         } else {
@@ -25,7 +34,7 @@ foreach ($registryView in @([Microsoft.Win32.RegistryView]::Registry64, [Microso
             try {
                 $key.SetValue('', 'mscoree.dll'); $key.SetValue('ThreadingModel', 'Both')
                 $key.SetValue('Class', 'FormulaExplorer.ExcelAddIn')
-                $key.SetValue('Assembly', 'Clair.AddIn, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null')
+                $key.SetValue('Assembly', $assemblyName)
                 $key.SetValue('RuntimeVersion', 'v4.0.30319')
                 $key.SetValue('CodeBase', ([Uri]$addinPath).AbsoluteUri)
             } finally { $key.Dispose() }
@@ -44,7 +53,7 @@ foreach ($registryView in @([Microsoft.Win32.RegistryView]::Registry64, [Microso
             try {
                 $key.SetValue('ClairOwner', $owner)
                 $key.SetValue('FriendlyName', 'Clair — Explorateur Excel')
-                $key.SetValue('Description', 'Exploration des dépendances, carte et comparaison — prototype 0.1')
+                $key.SetValue('Description', 'Exploration des formules, dépendances, cartes, flux et comparaison')
                 $key.SetValue('LoadBehavior', 3, [Microsoft.Win32.RegistryValueKind]::DWord)
                 $key.SetValue('CommandLineSafe', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
             } finally { $key.Dispose() }

@@ -1,12 +1,12 @@
 # Suite de la reconstruction
 
-1. Corriger et vérifier la découverte du complément COM dans Excel, puis le rendu du ruban et ses callbacks.
+1. Étendre le chargement COM désormais vérifié localement à Excel 32/64 bits et aux autres versions ; terminer groupes, raccourcis et options du ruban.
 2. Remplacer la lecture lexicale par un analyseur syntaxique couvrant les opérateurs de références, noms relatifs, tables et expressions LET/LAMBDA.
-3. Ajouter l'évaluation des sous-expressions avec contexte exact et affichage des valeurs intermédiaires.
+3. Étendre l'arbre syntaxique et l'évaluation Excel ajoutés en 0.2 : branches actives, cibles de recherches, paramètres LAMBDA, longues formules et valeurs de tous les nœuds ; vérifier la fidélité contre la référence.
 4. Résoudre les références externes vers les classeurs ouverts et les plages déversées, en indiquant les frontières non disponibles.
 5. Comparer plages, feuilles et classeurs avec alignement explicite des lignes/colonnes et options de formats.
 6. Ajouter une carte sur la grille Excel et des surbrillances réversibles, avec restauration et annulation vérifiées.
 7. Indexer les dépendants, rendre les longues analyses annulables et tester de grands modèles.
 8. Tester installation/désinstallation, Excel 32/64 bits et versions prises en charge ; produire un paquet signé.
 
-Le prototype actuel commence cette reconstruction. Ces éléments restent ouverts et ne sont pas considérés comme livrés.
+La version 0.2 répare le chargement COM, ajoute l'arbre syntaxique, l'évaluation contextualisée, l'édition avec annulation et la classification scope/focus des flux. Les exigences restantes et les preuves de chaque étape figurent dans [PARITY.md](PARITY.md). L'équivalence complète reste ouverte.

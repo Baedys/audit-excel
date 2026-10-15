@@ -10,7 +10,7 @@ static class Tests
     static void Check(string name, Action action)
     {
         try { action(); passed++; Console.WriteLine("PASS " + name); }
-        catch (Exception ex) { failed++; Console.WriteLine("FAIL " + name + ": " + ex.Message); }
+        catch (Exception ex) { failed++; Console.WriteLine("FAIL " + name + ": " + ex.Message); Console.WriteLine(ex.StackTrace); }
     }
     static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     static void Equal<T>(T actual, T expected) { if (!Object.Equals(actual, expected)) throw new Exception("Expected " + expected + ", got " + actual); }
@@ -120,7 +120,9 @@ static class Tests
     static int Main(string[] args)
     {
         Core();
-        if (args.Contains("--excel")) Check("Excel integration session", Excel);
+        Check("Excel formula syntax and source spans", delegate { Console.WriteLine("SYNTAX_ASSERTIONS " + FormulaSyntaxTests.Run()); });
+        Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
+        if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); }
         Console.WriteLine("RESULT " + passed + " passed; " + failed + " failed");
         return failed == 0 ? 0 : 1;
     }

@@ -1,8 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("0.1.0.0")]
+[assembly: System.Reflection.AssemblyVersion("0.2.0.0")]
 [assembly: ComVisible(false)]
 
 namespace FormulaExplorer
@@ -10,11 +11,13 @@ namespace FormulaExplorer
     [ComVisible(true), ComImport, Guid("B65AD801-ABAF-11D0-BB8B-00A0C90F2744"), InterfaceType(ComInterfaceType.InterfaceIsDual)]
     public interface IDTExtensibility2
     {
-        [DispId(1)] void OnConnection([MarshalAs(UnmanagedType.IDispatch)] object application, int connectMode, [MarshalAs(UnmanagedType.IDispatch)] object addIn, ref Array custom);
-        [DispId(2)] void OnDisconnection(int removeMode, ref Array custom);
-        [DispId(3)] void OnAddInsUpdate(ref Array custom);
-        [DispId(4)] void OnStartupComplete(ref Array custom);
-        [DispId(5)] void OnBeginShutdown(ref Array custom);
+        // Match Office's native SAFEARRAY(VARIANT)* [in] contract exactly.
+        // A bare ref Array defaults to [in,out], an incompatible COM signature.
+        [DispId(1)] void OnConnection([In, MarshalAs(UnmanagedType.IDispatch)] object application, [In] int connectMode, [In, MarshalAs(UnmanagedType.IDispatch)] object addIn, [In, MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_VARIANT)] ref Array custom);
+        [DispId(2)] void OnDisconnection([In] int removeMode, [In, MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_VARIANT)] ref Array custom);
+        [DispId(3)] void OnAddInsUpdate([In, MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_VARIANT)] ref Array custom);
+        [DispId(4)] void OnStartupComplete([In, MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_VARIANT)] ref Array custom);
+        [DispId(5)] void OnBeginShutdown([In, MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_VARIANT)] ref Array custom);
     }
     [ComVisible(true), ComImport, Guid("000C0396-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsDual)]
     public interface IRibbonExtensibility
@@ -25,33 +28,73 @@ namespace FormulaExplorer
     public sealed class ExcelAddIn : IDTExtensibility2, IRibbonExtensibility
     {
         object application;
-        MainForm window;
+        readonly List<MainForm> windows = new List<MainForm>();
+        MainForm currentWindow;
+        bool ribbonLoaded;
         public string GetCustomUI(string ribbonId)
         {
-            return "<customUI xmlns=\"http://schemas.microsoft.com/office/2009/07/customui\"><ribbon><tabs>" +
-                "<tab id=\"ClairTab\" label=\"Clair\"><group id=\"ClairAudit\" label=\"Explorateur Excel\">" +
-                "<button id=\"ClairExplore\" label=\"Explorer la sélection\" size=\"large\" imageMso=\"TracePrecedents\" onAction=\"Explore\"/>" +
+            return "<customUI xmlns=\"http://schemas.microsoft.com/office/2009/07/customui\" onLoad=\"RibbonOnLoad\"><ribbon><tabs>" +
+                "<tab id=\"ClairTab\" label=\"Clair\" keytip=\"CL\"><group id=\"ClairAudit\" label=\"Explorateur de formules\">" +
+                "<button id=\"ClairExplore\" label=\"Antécédents\" size=\"large\" imageMso=\"TracePrecedents\" onAction=\"Explore\" screentip=\"Explorer les cellules utilisées par la formule sélectionnée\"/>" +
+                "<button id=\"ClairDependents\" label=\"Dépendants\" size=\"large\" imageMso=\"TraceDependents\" onAction=\"ExploreDependents\" screentip=\"Explorer les formules qui utilisent la sélection\"/>" +
+                "<button id=\"ClairBack\" label=\"Retour\" imageMso=\"GoBack\" onAction=\"GoBack\"/>" +
+                "<button id=\"ClairClose\" label=\"Tout fermer\" imageMso=\"CloseAll\" onAction=\"CloseAll\"/>" +
+                "</group><group id=\"ClairAnalysis\" label=\"Analyse\">" +
+                "<button id=\"ClairMap\" label=\"Carte des cellules\" size=\"large\" imageMso=\"ConditionalFormattingColorScalesGallery\" onAction=\"ShowMap\"/>" +
+                "<button id=\"ClairFlow\" label=\"Flux de calcul\" size=\"large\" imageMso=\"TracePrecedents\" onAction=\"ShowFlow\"/>" +
+                "<button id=\"ClairCompare\" label=\"Comparer\" size=\"large\" imageMso=\"CompareAndMergeWorkbooks\" onAction=\"ShowComparison\"/>" +
                 "</group></tab></tabs></ribbon></customUI>";
         }
         public void OnConnection(object app, int connectMode, object addIn, ref Array custom)
         {
             application = app; ((dynamic)addIn).Object = this;
         }
-        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindow(); application = null; }
+        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(); application = null; ribbonLoaded = false; }
         public void OnAddInsUpdate(ref Array custom) { }
         public void OnStartupComplete(ref Array custom) { }
-        public void OnBeginShutdown(ref Array custom) { CloseWindow(); }
-        public string Status() { return application == null ? "Disconnected" : "Clair 0.1 connected"; }
-        public void Explore([MarshalAs(UnmanagedType.IDispatch)] object control)
+        public void OnBeginShutdown(ref Array custom) { CloseWindows(); }
+        public string Status() { return application == null ? "Disconnected" : "Clair 0.2 connected"; }
+        public void RibbonOnLoad([MarshalAs(UnmanagedType.IDispatch)] object ribbon) { ribbonLoaded = true; }
+        public bool IsRibbonLoaded() { return ribbonLoaded; }
+        public int OpenWindowCount() { return windows.Count; }
+        public void Explore([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("precedents"); }
+        public void ExploreDependents([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("dependents"); }
+        public void ShowMap([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("map"); }
+        public void ShowFlow([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("flow"); }
+        public void ShowComparison([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("compare"); }
+        public void CloseAll([MarshalAs(UnmanagedType.IDispatch)] object control) { CloseWindows(); }
+        public void GoBack([MarshalAs(UnmanagedType.IDispatch)] object control)
+        {
+            if (currentWindow != null && !currentWindow.IsDisposed) { currentWindow.ExecuteRibbonCommand("back"); currentWindow.Activate(); }
+        }
+        void Open(string command)
         {
             try
             {
-                CloseWindow();
                 if (application == null) throw new InvalidOperationException("Excel déconnecté.");
-                window = new MainForm(new ExcelBridge(application)); window.Show();
+                MainForm window = new MainForm(new ExcelBridge(application));
+                windows.Add(window); currentWindow = window;
+                window.Activated += delegate { currentWindow = window; };
+                window.FormClosed += delegate
+                {
+                    windows.Remove(window);
+                    if (currentWindow == window) currentWindow = windows.Count == 0 ? null : windows[windows.Count - 1];
+                };
+                window.Show(new ExcelWindow((int)((dynamic)application).Hwnd));
+                window.ExecuteRibbonCommand(command);
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "Clair"); }
         }
-        void CloseWindow() { if (window != null) { window.Close(); window.Dispose(); window = null; } }
+        void CloseWindows()
+        {
+            foreach (MainForm window in windows.ToArray()) { window.Close(); window.Dispose(); }
+            windows.Clear(); currentWindow = null;
+        }
+        sealed class ExcelWindow : IWin32Window
+        {
+            readonly IntPtr handle;
+            public ExcelWindow(int hwnd) { handle = new IntPtr(hwnd); }
+            public IntPtr Handle { get { return handle; } }
+        }
     }
 }

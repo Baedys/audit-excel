@@ -47,7 +47,9 @@ Clair utilise un moteur original d'extraction de références et des captures en
 
 La lecture complète des dépendances ne peut pas reposer uniquement sur `Range.DirectPrecedents` : Microsoft indique que cette propriété se limite à la feuille active et ne suit pas les références distantes. Voir [documentation officielle](https://learn.microsoft.com/en-us/office/vba/api/excel.range.directprecedents).
 
-Le point d'entrée COM est fondé sur les interfaces Office documentées : [IDTExtensibility2](https://learn.microsoft.com/en-us/dotnet/api/extensibility.idtextensibility2?view=visualstudiosdk-2022), [IRibbonExtensibility](https://learn.microsoft.com/en-us/dotnet/api/microsoft.office.core.iribbonextensibility?view=office-pia) et [COMAddIns.Update](https://learn.microsoft.com/en-us/office/vba/api/office.comaddins.update). Le test local de découverte du complément reste en échec ; aucune réussite de chargement n'est revendiquée.
+Le point d'entrée COM est fondé sur les interfaces Office documentées : [IDTExtensibility2](https://learn.microsoft.com/en-us/dotnet/api/extensibility.idtextensibility2?view=visualstudiosdk-2022), [IRibbonExtensibility](https://learn.microsoft.com/en-us/dotnet/api/microsoft.office.core.iribbonextensibility?view=office-pia) et [COMAddIns.Update](https://learn.microsoft.com/en-us/office/vba/api/office.comaddins.update). Le défaut de découverte observé en 0.1 est corrigé en 0.2 par la signature SAFEARRAY des callbacks ; le chargement et le ruban sont maintenant vérifiés localement, voir [validation](VALIDATION.md).
+
+L'évaluation ajoutée en 0.2 s'appuie sur [Worksheet.Evaluate](https://learn.microsoft.com/en-us/office/vba/api/excel.worksheet.evaluate), avec sélection temporaire de la cellule propriétaire et restauration du contexte. Un LCID anglais explicite évite d'interpréter les fonctions invariantes comme des fonctions françaises. Les références structurées non qualifiées reçoivent le nom de la table propriétaire ; les branches LET conservent leurs définitions locales. Ce mécanisme original n'est pas une reproduction prouvée de l'évaluateur interne d'Arixcel.
 
 ## Questions encore ouvertes
 
