@@ -1,6 +1,6 @@
 # Clair — Explorateur Excel
 
-Prototype Windows indépendant pour explorer les formules et les dépendances d'un classeur Excel. C# / .NET Framework 4.8, interface WinForms, licence MIT.
+Prototype Windows indépendant pour explorer les formules et les dépendances d'un classeur Excel. C# / .NET Framework 4.8, interface WinForms, licence GNU.
 
 ![Interface de démonstration](docs/preview.png)
 
@@ -112,4 +112,4 @@ Voir [analyse du logiciel de référence](docs/ANALYSIS.md), [revue et validatio
 
 ## Licence
 
-[MIT](LICENSE). Arixcel et Microsoft Excel sont des produits distincts ; le projet n'est ni affilié ni approuvé par leurs éditeurs. La licence couvre uniquement les fichiers originaux de ce dépôt.
+[GNU](LICENSE). Arixcel et Microsoft Excel sont des produits distincts ; le projet n'est ni affilié ni approuvé par leurs éditeurs. La licence couvre uniquement les fichiers originaux de ce dépôt.
