@@ -160,7 +160,20 @@ static class Tests
         Check("Flow tree structure, ordering and visibility", delegate { Console.WriteLine("FLOW_TREE_ASSERTIONS " + FlowTreeTests.Run()); });
         Check("Flow view preference persistence", delegate { Console.WriteLine("FLOW_VIEW_SETTINGS_ASSERTIONS " + FlowViewSettingsTests.Run()); });
         Check("Flow tree window interaction", delegate { Console.WriteLine("FLOW_TREE_UI_ASSERTIONS " + FlowTreePanelTests.Run()); });
-        if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run); }
+        Check("Direct color layer history and permanence", delegate { Console.WriteLine("DIRECT_COLOR_LAYER_ASSERTIONS " + DirectColorLayersTests.Run()); });
+        Check("Direct color transactions and repair", delegate { Console.WriteLine("DIRECT_COLOR_TRANSACTION_ASSERTIONS " + DirectColorTransactionTests.Run()); });
+        Check("Direct color document and XML recovery", delegate { Console.WriteLine("DIRECT_XML_ASSERTIONS " + DirectHighlightDataTests.Run()); });
+        if (args.Contains("--excel"))
+        {
+            Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
+            Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
+            Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });
+            Check("Excel direct highlight lifecycle session", delegate { ExcelDirectHighlightsTests.Run(); });
+            Check("Excel direct map window session", delegate { MapDirectPanelTests.Run(); });
+            Check("Excel direct flow window regressions", delegate { FlowDirectPanelTests.Run(); });
+            Check("Excel direct color persistence session", delegate { ExcelDirectHighlightPersistenceTests.Run(); });
+            Check("Excel direct color event callbacks", delegate { ExcelDirectEventTests.Run(); });
+        }
         Console.WriteLine("RESULT " + passed + " passed; " + failed + " failed");
         return failed == 0 ? 0 : 1;
     }

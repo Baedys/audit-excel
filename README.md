@@ -10,6 +10,8 @@ La version 0.6 fournit une application autonome et un complément Excel avec rub
 
 Le chargement COM, le callback du ruban, l'ouverture de plusieurs explorateurs et leur fermeture sont validés localement dans Excel 16.0. Les autres versions et l'architecture 32 bits restent à tester.
 
+Les travaux suivants remplacent les couleurs CF par des formats directs partagés entre cartes et flux, ajoutent retrait/permanence globaux et sauvegarde d'un historique propre à Clair. Leur [validation](docs/VALIDATION.md) reste distincte de la livraison 0.6 ; l'équivalence complète avec Arixcel n'est pas établie. L'historique enregistré décrit base et sommet de chaque propriété, sans recréer les fenêtres d'analyse. Après fermeture de l'application autonome, les modifications structurelles ultérieures ne sont plus suivies ; le complément chargé conserve ce suivi. Les règles CF utilisateur restent actives et peuvent masquer les couleurs directes.
+
 ## Fonctions disponibles
 
 - Capture du classeur actif et de la cellule sélectionnée, avec lecture groupée des valeurs et formules.

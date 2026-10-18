@@ -28,7 +28,7 @@ namespace FormulaExplorer
     // Keep COM callbacks on the creating Excel STA. The CLR's default
     // free-threaded marshaler can otherwise create a WinForms window on an RPC
     // thread while Excel's UI waits for that window's synchronous messages.
-    public sealed class ExcelAddIn : StandardOleMarshalObject, IDTExtensibility2, IRibbonExtensibility
+    public sealed partial class ExcelAddIn : StandardOleMarshalObject, IDTExtensibility2, IRibbonExtensibility
     {
         object application;
         readonly List<MainForm> windows = new List<MainForm>();
@@ -46,13 +46,18 @@ namespace FormulaExplorer
                 "<button id=\"ClairMap\" label=\"Carte des cellules\" size=\"large\" imageMso=\"ConditionalFormattingColorScalesGallery\" onAction=\"ShowMap\"/>" +
                 "<button id=\"ClairFlow\" label=\"Flux de calcul\" size=\"large\" imageMso=\"TracePrecedents\" onAction=\"ShowFlow\"/>" +
                 "<button id=\"ClairCompare\" label=\"Comparer\" size=\"large\" imageMso=\"CompareAndMergeWorkbooks\" onAction=\"ShowComparison\"/>" +
+                "</group><group id=\"ClairColors\" label=\"Couleurs directes\">" +
+                "<menu id=\"ClairFlowColors\" label=\"Flux\"><button id=\"ClairFlowRemove\" label=\"Retirer tous les flux\" onAction=\"RemoveFlowColors\"/><button id=\"ClairFlowKeep\" label=\"Rendre les flux permanents…\" onAction=\"KeepFlowColors\"/></menu>" +
+                "<menu id=\"ClairMapColors\" label=\"Cartes\"><button id=\"ClairMapRemove\" label=\"Retirer toutes les cartes\" onAction=\"RemoveMapColors\"/><button id=\"ClairMapKeep\" label=\"Rendre les cartes permanentes…\" onAction=\"KeepMapColors\"/></menu>" +
+                "<button id=\"ClairRestoreColors\" label=\"Couleurs enregistrées…\" onAction=\"RestoreSavedColors\"/>" +
                 "</group></tab></tabs></ribbon></customUI>";
         }
         public void OnConnection(object app, int connectMode, object addIn, ref Array custom)
         {
             application = app; ((dynamic)addIn).Object = this;
+            ConnectColorEvents();
         }
-        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(true); application = null; ribbonLoaded = false; }
+        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(true); DisconnectColorEvents(); application = null; ribbonLoaded = false; }
         public void OnAddInsUpdate(ref Array custom) { }
         public void OnStartupComplete(ref Array custom) { }
         public void OnBeginShutdown(ref Array custom) { CloseWindows(true); }

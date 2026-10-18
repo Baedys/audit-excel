@@ -44,8 +44,7 @@ namespace FormulaExplorer
             bar.Controls.Add(flowCellDetails);
             flowCellDetails.CheckedChanged += delegate { if (flowResult != null) ShowFlowCategories(); };
             bar.Controls.Add(ActionButton("Retirer tous les flux", RemoveFlowColors));
-            bar.Controls.Add(ActionButton("Palette flux…", EditFlowPalette));
-            Button report = ActionButton("Rapport flux", ExportFlow); bar.Controls.Add(report); bar.SetFlowBreak(report, true);
+            InitializeFlowDirectCommands(bar);
             keepFlowColors.Text = "Conserver les couleurs à la fermeture"; keepFlowColors.AutoSize = true; keepFlowColors.Padding = new Padding(0, 6, 0, 0); bar.Controls.Add(keepFlowColors);
             bar.Controls.Add(ActionButton("Fermer en conservant", delegate { keepFlowColors.Checked = true; Close(); }));
             flowView.SelectedIndexChanged += delegate
@@ -75,15 +74,25 @@ namespace FormulaExplorer
         }
         void AnalyzeFlow()
         {
+            var bindings = FlowLiveBindings();
+            Func<Cell, Cell> current = delegate(Cell cell)
+            {
+                DirectHighlightBinding binding;
+                if (!Object.ReferenceEquals(book, flowDirectBook) || !bindings.TryGetValue(cell.Key, out binding)) return cell;
+                return binding.Valid ? new Cell { Sheet = binding.Sheet, Address = binding.Address } : null;
+            };
             var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (flowResult != null)
                 foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
                     foreach (Cell cell in flowResult.Cells(category))
-                        if (FlowRoleEnabled(category, cell)) selected.Add(FlowHighlightPlan.RoleKey(category, cell));
-            var history = flowActivations.ToList();
+                        if (FlowRoleEnabled(category, cell) && current(cell) != null) selected.Add(FlowHighlightPlan.RoleKey(category, current(cell)));
+            var history = flowActivations.Select(a => a.Cells == null ? new FlowActivation(a.Category) :
+                FlowActivation.ForCells(a.Category, a.Cells.Select(current).Where(c => c != null).ToList().AsReadOnly())).ToList();
             if (bridge != null)
             {
-                Book fresh = bridge.Refresh(book, root); string sheet = root.Sheet, address = root.Address;
+                Cell location = current(root);
+                if (location == null) throw new InvalidOperationException("Cellule racine supprimée : rechargez une sélection Excel avant d'analyser.");
+                Book fresh = bridge.RefreshDirectHighlightOwner(flowLayer, book); string sheet = location.Sheet, address = location.Address;
                 SetBook(fresh, sheet, address);
             }
             List<Cell> selection = flowScope.SelectedIndex == 2 || flowFocus.SelectedIndex == 2 ? FlowSelection() : null;
@@ -121,6 +130,11 @@ namespace FormulaExplorer
         {
             flowActivations.RemoveAll(a => a.Category == category);
             flowActivations.Add(new FlowActivation(category));
+            foreach (Cell cell in flowResult.Cells(category))
+            {
+                string key = FlowHighlightPlan.RoleKey(category, cell);
+                if (FlowRoleEnabled(category, cell)) flowDirectActivations.Add(key); else flowDirectActivations.Remove(key);
+            }
         }
         bool FlowRoleEnabled(FlowCategory category, Cell cell)
         {
@@ -187,7 +201,8 @@ namespace FormulaExplorer
             foreach (Cell cell in cells)
             {
                 string key = FlowHighlightPlan.RoleKey(category, cell);
-                if (enabled) flowExcludedRoles.Remove(key); else flowExcludedRoles.Add(key);
+                if (enabled) { flowExcludedRoles.Remove(key); flowDirectActivations.Add(key); }
+                else { flowExcludedRoles.Add(key); flowDirectActivations.Remove(key); }
             }
             flowActivations.RemoveAll(a => a.Category == category && a.Cells != null && a.Cells.All(c => keys.Contains(c.Key)));
             flowActivations.Add(FlowActivation.ForCells(category, cells.ToList().AsReadOnly()));
@@ -203,28 +218,22 @@ namespace FormulaExplorer
         void ApplyFlowColors()
         {
             if (bridge == null || flowResult == null) return;
-            IList<FlowCellStyle> styles = FlowHighlightPlan.Build(flowResult, flowPalette, flowView.SelectedIndex == 1, flowActivationOrder, flowExcludedRoles, flowActivations);
-            var highlights = styles.Select(c => new CellHighlight { Cell = c.Cell, FillColor = Ole(c.FillRgb), FontColor = Ole(c.FontRgb) }).ToList();
-            var targets = styles.Select(c => c.Cell.Sheet).Union(bridge.GetHighlightSheets(book, flowLayer), StringComparer.OrdinalIgnoreCase).ToArray();
-            if (!flowConnections.Contains(bridge)) flowConnections.Add(bridge);
-            bridge.ApplyHighlights(book, highlights, flowLayer, targets);
-            flowColorsApplied = true;
-            status.Text += " · " + styles.Count + " cellules colorées (fond et police indépendants)";
+            ApplyFlowDirectColors();
         }
         void RemoveFlowColors()
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour retirer les flux.");
-            List<string> layers = bridge.HighlightLayers(book).Where(IsFlowLayer).ToList();
-            bridge.RemoveHighlightLayers(book, layers); flowColorsApplied = flowResult != null;
-            if (flowResult != null)
-            {
-                foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
-                    foreach (Cell cell in flowResult.Cells(category)) flowExcludedRoles.Add(FlowHighlightPlan.RoleKey(category, cell));
-                flowActivations.Clear(); ShowFlowCategories();
-            }
-            status.Text = "Toutes les couleurs de flux Clair retirées du classeur chargé. Carte conservée.";
+            TrackDirectConnection(bridge); bridge.RemoveAllDirectHighlights("flow");
+            status.Text = "Toutes les couleurs directes de flux de cette session Excel retirées. Fenêtres ouvertes conservées.";
         }
         static bool IsFlowLayer(string layer) { return layer == "flow" || layer.StartsWith("flow_", StringComparison.Ordinal); }
+        void RemoveLegacyFlowColors()
+        {
+            if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel.");
+            bridge.GetDirectHighlightSheetIdentity(book, root.Sheet);
+            bridge.RemoveHighlightLayers(book, bridge.HighlightLayers(book).Where(IsFlowLayer));
+            status.Text = "Anciennes couleurs de flux CF de Clair retirées du classeur chargé.";
+        }
         void EditFlowPalette()
         {
             FlowPalette edited = flowPalette.Clone();
@@ -267,16 +276,14 @@ namespace FormulaExplorer
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
-            if (e.Cancel || keepFlowColors.Checked) return;
+            if (e.Cancel) return;
             try
             {
                 var failures = new List<Exception>();
                 foreach (ExcelBridge connection in flowConnections)
                     try
                     {
-                        foreach (Book target in connection.FindHighlightBooks(flowLayer))
-                            try { connection.RemoveHighlightLayers(target, new[] { flowLayer }); }
-                            catch (Exception ex) { failures.Add(ex); }
+                        connection.DetachDirectHighlightOwner(flowLayer, keepFlowColors.Checked);
                     }
                     catch (COMException ex)
                     {
@@ -285,11 +292,18 @@ namespace FormulaExplorer
                         if ((uint)ex.ErrorCode != 0x800706BA && (uint)ex.ErrorCode != 0x80010108) failures.Add(ex);
                     }
                     catch (Exception ex) { failures.Add(ex); }
+                foreach (ExcelBridge connection in directConnections.Values)
+                    try { connection.SaveOpenDirectHighlightData(); }
+                    catch (COMException error) { if ((uint)error.ErrorCode != 0x800706BA && (uint)error.ErrorCode != 0x80010108) failures.Add(error); }
+                    catch (Exception error) { failures.Add(error); }
                 if (failures.Count != 0) throw new AggregateException("Retrait incomplet dans une connexion Excel.", failures);
+                CleanupMapDirectColors(true);
+                UntrackDirectConnections();
             }
             catch (Exception ex)
             {
-                if (hostIsClosing || e.CloseReason == CloseReason.WindowsShutDown || e.CloseReason == CloseReason.ApplicationExitCall) return;
+                if (hostIsClosing || e.CloseReason == CloseReason.WindowsShutDown || e.CloseReason == CloseReason.ApplicationExitCall)
+                { UntrackDirectConnections(); return; }
                 e.Cancel = true;
                 MessageBox.Show(this, "Couleurs de flux non retirées : " + ex.Message + "\nRetirez la protection ou cochez « Conserver les couleurs à la fermeture » pour fermer en les gardant.", "Clair", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
