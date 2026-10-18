@@ -24,6 +24,10 @@ La matrice initiale ci-dessous sert de référence historique. Les évolutions v
 
 Voir [validation détaillée](VALIDATION.md). Toutes les autres exigences restent dans l'état initial ou sans preuve suffisante. L'objectif global reste ouvert.
 
+## Travaux locaux non livrés : couleurs directes
+
+Une première observation native d'Arixcel confirme retrait, permanence, cases décochées et fenêtre conservée sur une fixture unique. Le travail local raccorde désormais moteur de piles, transactions et adaptateur COM aux cartes, flux, commandes globales et persistance XML. **La livraison publique 0.6 reste la base publiée tant que la suite complète n'est pas validée.** Références suivies par Range, éditions manuelles, reprise après échec et dialogue de réouverture ont leur propre corpus ; détails et limites dans [DIRECT-COLOR-EVIDENCE.md](DIRECT-COLOR-EVIDENCE.md). La persistance originale par CustomXMLParts est établie statiquement, sans essai original de sauvegarde/réouverture. Cette section ne valide pas globalement C04, M03 ou M04 ; la différence de masquage des CF utilisateur dans la carte reste notamment ouverte.
+
 ## Sources et limites
 
 | Repère | Preuve réutilisée | Portée |

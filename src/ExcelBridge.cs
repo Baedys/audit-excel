@@ -110,6 +110,7 @@ namespace FormulaExplorer
         {
             dynamic workbook = workbookObject;
             Book book = new Book { Name = (string)workbook.Name, FullName = (string)workbook.FullName };
+            RegisterDirectSnapshot(book, workbookObject);
             object worksheets = null, names = null;
             long scanned = 0;
             try
@@ -136,12 +137,31 @@ namespace FormulaExplorer
                         try { relativeFormulas = OfficeCall(usedObject, "FormulaR1C1", System.Reflection.BindingFlags.GetProperty); }
                         catch (COMException) { book.Warnings.Add(sheet + " : structure relative des formules indisponible ; carte partielle."); }
                         HashSet<string> formulaCells = SpecialCellAddresses(used, -4123, startRow, startCol, height, width);
+                        // SpecialCells raises the same 1004 for an empty result
+                        // and on protected worksheets. HasFormula distinguishes
+                        // a genuinely constant range from an uncertain result.
+                        bool verifyFormulas = false;
+                        if (formulaCells.Count == 0)
+                        {
+                            object presence = used.HasFormula;
+                            verifyFormulas = !(presence is bool) || (bool)presence;
+                        }
                         HashSet<string> validationCells = SpecialCellAddresses(used, -4174, startRow, startCol, height, width);
                         for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
                         {
                             object value = At(values, y, x);
                             string address = Coordinates.Address(startRow + y, startCol + x);
                             bool hasFormula = formulaCells.Contains(address);
+                            if (verifyFormulas)
+                            {
+                                string candidate = At(formulas, y, x) as string;
+                                if (candidate != null && candidate.StartsWith("=", StringComparison.Ordinal))
+                                {
+                                    object actual = null;
+                                    try { actual = RangeAt(worksheet, address); hasFormula = (bool)((dynamic)actual).HasFormula; }
+                                    finally { Release(actual); }
+                                }
+                            }
                             bool hasValidation = validationCells.Contains(address);
                             if (value == null && !hasFormula && !hasValidation) continue;
                             // Excel Value2 numbers are VT_R8 (Double); VT_ERROR arrives as Int32 through IDispatch.

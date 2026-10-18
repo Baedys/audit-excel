@@ -30,6 +30,7 @@ namespace FormulaExplorer
             bar.Controls.Add(ActionButton("Colorer dans Excel", ApplyMap));
             bar.Controls.Add(ActionButton("Retirer couleurs", RemoveMap));
             Button paletteButton = ActionButton("Palette…", EditMapPalette); bar.Controls.Add(paletteButton); bar.SetFlowBreak(paletteButton, true);
+            InitializeMapDirectCommands(bar);
             bar.Controls.Add(ActionButton("Rapport carte", ExportMap));
             mapSummary.AutoSize = true; mapSummary.MaximumSize = new Size(690, 0); mapSummary.ForeColor = Color.DimGray;
             bar.Controls.Add(mapSummary);
@@ -49,7 +50,7 @@ namespace FormulaExplorer
                 if (style.Enabled && style.FontRgb.HasValue) row.DefaultCellStyle.ForeColor = Rgb(style.FontRgb.Value);
                 foreach (DataGridViewCell field in row.Cells) field.ToolTipText = item.Reason + (item.Warnings.Count == 0 ? "" : "\n" + String.Join("\n", item.Warnings));
             }
-            mapSummary.Text = cells.Count + " cellules capturées · copies comparées aux voisins haut/gauche · couleurs conservées jusqu’au retrait" +
+            mapSummary.Text = cells.Count + " cellules capturées · copies comparées aux voisins haut/gauche · couleurs directes, retrait dans « Toutes les cartes… »" +
                 (cells.Count > 20000 ? " · affichage limité à 20 000 lignes" : "") +
                 (mapAnalysis.Incomplete ? " · classification partielle : " + mapAnalysis.Warnings.Count + " avertissements (rapport carte)" : "") +
                 (paletteLoadWarning == null ? "" : " · " + paletteLoadWarning);
@@ -57,7 +58,7 @@ namespace FormulaExplorer
         string[] MapSheets()
         {
             if (book == null || sheets.SelectedItem == null) throw new InvalidOperationException("Aucune feuille chargée.");
-            return mapAllSheets.Checked ? book.Sheets.ToArray() : new[] { (string)sheets.SelectedItem };
+            return mapAllSheets.Checked ? book.SheetOrder.ToArray() : new[] { (string)sheets.SelectedItem };
         }
         void RequireMapExcel()
         {
@@ -68,28 +69,31 @@ namespace FormulaExplorer
         void ApplyMap()
         {
             RequireMapExcel(); string[] selectedSheets = MapSheets(); string displayed = (string)sheets.SelectedItem;
+            // Validate the old capture before Refresh can attempt a name lookup.
+            // A closed workbook reopened at the same path is a different target.
+            var selectedIdentities = new HashSet<long>(selectedSheets.Select(s => bridge.GetDirectHighlightSheetIdentity(book, s)));
+            long displayedIdentity = bridge.GetDirectHighlightSheetIdentity(book, displayed);
+            long rootIdentity = bridge.GetDirectHighlightSheetIdentity(book, root.Sheet);
             // Re-read the same workbook before applying categories. Never silently switch
             // to whichever workbook happens to be active in another Excel window.
-            Book captured = bridge.Refresh(book, root); string rootSheet = root.Sheet, rootAddress = root.Address;
+            Book captured = bridge.RefreshDirectHighlightOwner(null, book); string rootAddress = root.Address;
+            var names = captured.SheetOrder.ToDictionary(s => bridge.GetDirectHighlightSheetIdentity(captured, s));
+            if (selectedIdentities.Any(id => !names.ContainsKey(id)) || !names.ContainsKey(rootIdentity))
+                throw new InvalidOperationException("Une feuille ciblée a été supprimée. Rechargez la sélection Excel.");
+            selectedSheets = captured.SheetOrder.Where(s => selectedIdentities.Contains(bridge.GetDirectHighlightSheetIdentity(captured, s))).ToArray();
+            string rootSheet = names[rootIdentity]; displayed = names[displayedIdentity];
             FormulaMapResult analysis = FormulaMap.Analyze(captured);
-            List<CellHighlight> highlights = new List<CellHighlight>();
-            foreach (MapCell item in analysis.Cells.Where(c => selectedSheets.Contains(c.Cell.Sheet, StringComparer.OrdinalIgnoreCase)))
-            {
-                HighlightStyle style = mapPalette.Entries[item.Kind];
-                if (style.Enabled && (style.FillRgb.HasValue || style.FontRgb.HasValue))
-                    highlights.Add(new CellHighlight { Cell = item.Cell, FillColor = Ole(style.FillRgb), FontColor = Ole(style.FontRgb) });
-            }
-            bridge.ApplyHighlights(captured, highlights, "map", selectedSheets);
+            int colored = ApplyMapDirectModels(bridge, captured, analysis, selectedSheets);
             SetBook(captured, rootSheet, rootAddress); sheets.SelectedItem = displayed;
             warnings.Text = "Carte : cellules renseignées et cellules validées capturées ; les autres cellules vides sont inchangées.\r\n" +
                 (analysis.Incomplete ? String.Join("\r\n", analysis.Warnings.Take(200)) : "Classification établie pour les cellules capturées.");
-            status.Text = highlights.Count + " cellules colorées sur " + selectedSheets.Length + " feuille(s). Retirez les couleurs avec cette commande, même après réouverture du classeur.";
+            status.Text = colored + " cellules ciblées par la palette sur " + selectedSheets.Length + " feuille(s). Modifications manuelles conservées ; règles conditionnelles inchangées.";
         }
         void RemoveMap()
         {
             RequireMapExcel(); string[] selectedSheets = MapSheets();
-            bridge.RemoveHighlights(book, selectedSheets, "map");
-            status.Text = "Couleurs de carte retirées sur " + selectedSheets.Length + " feuille(s). Formats et règles préexistants conservés.";
+            RemoveMapDirectModels(bridge, book, selectedSheets);
+            status.Text = "Cartes de cette fenêtre retirées sur " + selectedSheets.Length + " feuille(s). Autres fenêtres et anciennes règles CF : commandes séparées.";
         }
         void EditMapPalette()
         {
@@ -100,8 +104,9 @@ namespace FormulaExplorer
                 delegate(string path) { edited.Save(path); },
                 delegate(FormulaMapKind kind) { return MapLabels[(int)kind]; }, PalettePath,
                 "Palette de la carte",
-                "Cliquez une couleur pour la choisir. Désactiver une catégorie ou choisir « Aucun » conserve le format existant. Les changements seront appliqués au prochain clic sur « Colorer dans Excel »."))
-                if (dialog.ShowDialog(this) == DialogResult.OK) { mapPalette = edited; paletteLoadWarning = null; ShowMap(); }
+                "Désactiver une catégorie ou choisir « Aucun » révèle les couches inférieures. Changer une couleur conserve les modifications manuelles. Activer une couleur auparavant absente crée une nouvelle couche. Seules les cartes de cette fenêtre sont mises à jour."))
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                { mapPalette = edited; paletteLoadWarning = null; UpdateMapDirectPalette(); ShowMap(); }
         }
         void ExportMap()
         {
