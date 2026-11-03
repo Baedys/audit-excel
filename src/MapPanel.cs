@@ -10,10 +10,20 @@ namespace FormulaExplorer
     public sealed partial class MainForm
     {
         FormulaMapResult mapAnalysis;
-        HighlightPalette mapPalette = HighlightPalette.Default();
+        HighlightPalette mapLocalPalette = HighlightPalette.Default();
+        HighlightPalette mapPalette
+        {
+            get { return bridge == null ? mapLocalPalette : MapDirectState(bridge).Palette; }
+            set { if (bridge == null) mapLocalPalette = value; else MapDirectState(bridge).Palette = value; }
+        }
         readonly CheckBox mapAllSheets = new CheckBox();
         readonly Label mapSummary = new Label();
-        string paletteLoadWarning;
+        string mapLocalPaletteWarning;
+        string paletteLoadWarning
+        {
+            get { return bridge == null ? mapLocalPaletteWarning : MapDirectState(bridge).PaletteLoadWarning; }
+            set { if (bridge == null) mapLocalPaletteWarning = value; else MapDirectState(bridge).PaletteLoadWarning = value; }
+        }
         static readonly string[] MapLabels = {
             "Vide", "Texte", "Nombre / booléen / erreur", "Validation de données",
             "Unique : références locales", "Unique : sans référence", "Unique : autre feuille",
@@ -21,10 +31,17 @@ namespace FormulaExplorer
             "Copiée bas et droite", "Indéterminée"
         };
         static string PalettePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Clair", "map-palette.xml"); } }
+        static HighlightPalette LoadMapPalette(out string warning)
+        {
+            warning = null;
+            try { if (File.Exists(PalettePath)) return HighlightPalette.Load(PalettePath); }
+            catch (Exception ex) { warning = "Palette enregistrée illisible : " + ex.Message + " Palette par défaut utilisée."; }
+            return HighlightPalette.Default();
+        }
         void InitializeMap(FlowLayoutPanel bar)
         {
-            try { if (File.Exists(PalettePath)) mapPalette = HighlightPalette.Load(PalettePath); }
-            catch (Exception ex) { paletteLoadWarning = "Palette enregistrée illisible : " + ex.Message + " Palette par défaut utilisée."; }
+            mapLocalPalette = LoadMapPalette(out mapLocalPaletteWarning);
+            if (bridge != null) MapDirectState(bridge);
             mapAllSheets.Text = "Toutes les feuilles"; mapAllSheets.AutoSize = true; mapAllSheets.Padding = new Padding(4, 6, 0, 0);
             bar.Controls.Add(mapAllSheets);
             bar.Controls.Add(ActionButton("Colorer dans Excel", ApplyMap));
@@ -38,6 +55,7 @@ namespace FormulaExplorer
         void ShowMap()
         {
             if (book == null || mapAnalysis == null || sheets.SelectedItem == null) return;
+            HighlightPalette palette = mapPalette;
             CellColumns(map); map.Columns[1].HeaderText = "Catégorie"; map.Columns[1].FillWeight = 170;
             string sheet = (string)sheets.SelectedItem;
             List<MapCell> cells = mapAnalysis.Cells.Where(c => String.Equals(c.Cell.Sheet, sheet, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -45,7 +63,7 @@ namespace FormulaExplorer
             {
                 Cell cell = item.Cell; int index = map.Rows.Add(cell.Location, MapLabels[(int)item.Kind], cell.Value, cell.Formula);
                 DataGridViewRow row = map.Rows[index]; row.Tag = cell;
-                HighlightStyle style = mapPalette.Entries[item.Kind];
+                HighlightStyle style = palette.Entries[item.Kind];
                 if (style.Enabled && style.FillRgb.HasValue) row.DefaultCellStyle.BackColor = Rgb(style.FillRgb.Value);
                 if (style.Enabled && style.FontRgb.HasValue) row.DefaultCellStyle.ForeColor = Rgb(style.FontRgb.Value);
                 foreach (DataGridViewCell field in row.Cells) field.ToolTipText = item.Reason + (item.Warnings.Count == 0 ? "" : "\n" + String.Join("\n", item.Warnings));
@@ -93,7 +111,7 @@ namespace FormulaExplorer
         {
             RequireMapExcel(); string[] selectedSheets = MapSheets();
             RemoveMapDirectModels(bridge, book, selectedSheets);
-            status.Text = "Cartes de cette fenêtre retirées sur " + selectedSheets.Length + " feuille(s). Autres fenêtres et anciennes règles CF : commandes séparées.";
+            status.Text = "Cartes de cette session Excel retirées sur " + selectedSheets.Length + " feuille(s), quelle que soit la fenêtre d'origine. Anciennes cartes CF : commande séparée.";
         }
         void EditMapPalette()
         {
@@ -104,7 +122,7 @@ namespace FormulaExplorer
                 delegate(string path) { edited.Save(path); },
                 delegate(FormulaMapKind kind) { return MapLabels[(int)kind]; }, PalettePath,
                 "Palette de la carte",
-                "Désactiver une catégorie ou choisir « Aucun » révèle les couches inférieures. Changer une couleur conserve les modifications manuelles. Activer une couleur auparavant absente crée une nouvelle couche. Seules les cartes de cette fenêtre sont mises à jour."))
+                "Désactiver une catégorie ou choisir « Aucun » révèle les couches inférieures. Changer une couleur conserve les modifications manuelles. Activer une couleur auparavant absente crée une nouvelle couche. Toutes les cartes de cette session Excel sont mises à jour."))
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 { mapPalette = edited; paletteLoadWarning = null; UpdateMapDirectPalette(); ShowMap(); }
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 
 namespace FormulaExplorer
@@ -17,8 +18,68 @@ namespace FormulaExplorer
             public HighlightPalette AppliedPalette;
             public bool Active, Ready;
         }
-        readonly List<MapDirectModel> mapDirectModels = new List<MapDirectModel>();
+        sealed class MapDirectSession
+        {
+            public readonly List<MapDirectModel> Models = new List<MapDirectModel>();
+            public HighlightPalette Palette;
+            public string PaletteLoadWarning;
+            readonly List<WeakReference> views = new List<WeakReference>();
+            public MapDirectSession(ExcelBridge connection)
+            {
+                Palette = LoadMapPalette(out PaletteLoadWarning);
+                // The registry, rather than any window, owns this subscription.
+                // Global commands must also clear models after the last view closes.
+                connection.DirectHighlightsChanged += HighlightsChanged;
+            }
+            void HighlightsChanged(object sender, DirectHighlightChange change)
+            { ClearOwners(change); }
+            public void ClearOwners(DirectHighlightChange change)
+            {
+                foreach (MapDirectModel model in Models)
+                    if (change.ClearedOwners.Contains(model.Owner)) model.Active = false;
+            }
+            public void Observe(MainForm view)
+            {
+                views.RemoveAll(reference => !reference.IsAlive);
+                if (!views.Any(reference => Object.ReferenceEquals(reference.Target, view))) views.Add(new WeakReference(view));
+            }
+            public void RefreshViews()
+            {
+                foreach (WeakReference reference in views.ToList())
+                {
+                    var view = reference.Target as MainForm; MapDirectSession current;
+                    if (view != null && !view.IsDisposed && view.bridge != null &&
+                        mapDirectSessions.TryGetValue(view.bridge.DirectHighlightSessionId, out current) && Object.ReferenceEquals(current, this))
+                        view.ShowMap();
+                }
+            }
+        }
+        static readonly ConditionalWeakTable<object, MapDirectSession> mapDirectSessions = new ConditionalWeakTable<object, MapDirectSession>();
+        readonly List<MapDirectModel> mapDemoModels = new List<MapDirectModel>();
+        MapDirectSession MapDirectState(ExcelBridge connection)
+        {
+            MapDirectSession state = mapDirectSessions.GetValue(connection.DirectHighlightSessionId,
+                delegate(object identity) { return new MapDirectSession(connection); });
+            state.Observe(this); return state;
+        }
+        List<MapDirectModel> mapDirectModels
+        { get { return bridge == null ? mapDemoModels : MapDirectState(bridge).Models; } }
         const string MapDirectLayer = "map";
+        static void PruneInvalidMapDirectModels(MapDirectSession state)
+        {
+            foreach (MapDirectModel model in state.Models.ToList())
+            {
+                // Reconcile checks live workbook/sheet identities and retained
+                // ranges. A failed write or !Ready alone is never proof of death.
+                var bindings = model.Connection.DirectHighlightBindings(model.Owner);
+                if (bindings.Count == 0 || bindings.Any(binding => binding.Valid)) continue;
+                // Reconcile has already abandoned these invalid color targets.
+                // Detach releases bindings without resolving the old snapshot or
+                // writing to a reopened workbook with the same name.
+                model.Connection.DetachDirectHighlightOwner(model.Owner, false);
+                state.Models.Remove(model);
+            }
+        }
 
         void InitializeMapDirectCommands(FlowLayoutPanel bar)
         {
@@ -69,27 +130,36 @@ namespace FormulaExplorer
         int ApplyMapDirectModels(ExcelBridge connection, Book snapshot, FormulaMapResult analysis, IEnumerable<string> selectedSheets)
         {
             TrackDirectConnection(connection);
+            MapDirectSession state = MapDirectState(connection);
+            PruneInvalidMapDirectModels(state);
+            List<MapDirectModel> models = state.Models; HighlightPalette palette = state.Palette;
             int colored = 0;
             foreach (string sheet in selectedSheets)
             {
                 long identity = connection.GetDirectHighlightSheetIdentity(snapshot, sheet);
-                var model = mapDirectModels.SingleOrDefault(m => m.SheetIdentity == identity &&
-                    Object.ReferenceEquals(m.Connection.DirectHighlightSessionId, connection.DirectHighlightSessionId));
+                var model = models.SingleOrDefault(m => m.SheetIdentity == identity);
                 if (model != null && !model.Ready)
                 {
                     // A failed previous reanalysis retained its owner for cleanup.
                     // An explicit retry first restores that known partial model.
                     model.Connection.DetachDirectHighlightOwner(model.Owner, false);
-                    mapDirectModels.Remove(model); model = null;
+                    models.Remove(model); model = null;
                 }
                 var members = analysis.Cells.Where(c => String.Equals(c.Cell.Sheet, sheet, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (members.Count == 0)
+                {
+                    // An empty analysis owns no map or retained target. Do not
+                    // retain an uncheckable snapshot in the session registry.
+                    if (model != null) { model.Connection.DetachDirectHighlightOwner(model.Owner, false); models.Remove(model); }
+                    continue;
+                }
                 var unchanged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (model == null)
                 {
                     model = new MapDirectModel { Connection = connection, Snapshot = snapshot, SheetIdentity = identity, Cells = members };
                     // Track before COM calls: even an interrupted operation or
                     // pending rollback remains reachable by cleanup/global commands.
-                    mapDirectModels.Add(model);
+                    models.Add(model);
                 }
                 else if (model.Active)
                 {
@@ -111,15 +181,15 @@ namespace FormulaExplorer
                     model.Ready = false;
                     model.Connection.RemoveDirectHighlightTargets(model.Snapshot, model.Owner, MapDirectLayer, removed);
                 }
-                model.Ready = false; model.Snapshot = snapshot; model.Cells = members;
+                model.Ready = false; model.Connection = connection; model.Snapshot = snapshot; model.Cells = members;
                 connection.BindDirectHighlightTargets(snapshot, model.Owner, "map", model.Cells.Select(c => c.Cell));
-                RemoveDisabledMapDirectProperties(model, mapPalette, false, unchanged);
-                connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, mapPalette, false, unchanged));
-                model.AppliedPalette = mapPalette.Clone(); model.Active = model.Ready = true;
+                RemoveDisabledMapDirectProperties(model, palette, false, unchanged);
+                connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, palette, false, unchanged));
+                model.AppliedPalette = palette.Clone(); model.Active = model.Ready = true;
                 // Each bridge operation is transactional. The whole multi-sheet
                 // reanalysis is not presented as one atomic operation.
                 colored += model.Cells.Count(c => {
-                    HighlightStyle style = mapPalette.Entries[c.Kind];
+                    HighlightStyle style = palette.Entries[c.Kind];
                     return style.Enabled && (style.FillRgb.HasValue || style.FontRgb.HasValue);
                 });
             }
@@ -127,36 +197,47 @@ namespace FormulaExplorer
         }
         void RemoveMapDirectModels(ExcelBridge connection, Book snapshot, IEnumerable<string> selectedSheets)
         {
+            MapDirectSession state = MapDirectState(connection); PruneInvalidMapDirectModels(state);
+            List<MapDirectModel> models = state.Models;
             var identities = new HashSet<long>(selectedSheets.Select(s => connection.GetDirectHighlightSheetIdentity(snapshot, s)));
-            foreach (MapDirectModel model in mapDirectModels.Where(m => identities.Contains(m.SheetIdentity) &&
-                Object.ReferenceEquals(m.Connection.DirectHighlightSessionId, connection.DirectHighlightSessionId)).ToList())
+            foreach (MapDirectModel model in models.Where(m => identities.Contains(m.SheetIdentity)).ToList())
             {
                 model.Connection.DetachDirectHighlightOwner(model.Owner, false);
-                mapDirectModels.Remove(model);
+                models.Remove(model);
             }
         }
         void UpdateMapDirectPalette()
         {
-            if (mapDirectModels.Any(m => m.Active && !m.Ready))
+            if (bridge == null) return;
+            MapDirectSession state = MapDirectState(bridge); HighlightPalette palette = state.Palette;
+            PruneInvalidMapDirectModels(state);
+            if (state.Models.Any(m => m.Active && !m.Ready))
                 throw new InvalidOperationException("Une carte a été interrompue. Cliquez sur « Colorer dans Excel » avant de modifier à nouveau sa palette.");
-            foreach (MapDirectModel model in mapDirectModels.Where(m => m.Active && m.Ready).ToList())
+            foreach (MapDirectModel model in state.Models.Where(m => m.Active && m.Ready).ToList())
             {
+                var validSources = new HashSet<string>(model.Connection.DirectHighlightBindings(model.Owner)
+                    .Where(binding => binding.Valid).Select(binding => binding.SourceKey), StringComparer.OrdinalIgnoreCase);
                 model.Ready = false;
-                RemoveDisabledMapDirectProperties(model, mapPalette, true);
-                model.Connection.ApplyDirectHighlights(model.Snapshot, model.Owner, "map", MapDirectRequests(model, mapPalette, true));
-                model.AppliedPalette = mapPalette.Clone(); model.Ready = true;
+                RemoveDisabledMapDirectProperties(model, palette, true);
+                // Palette changes use only surviving retained targets, including
+                // transparent-to-color activations. Never resolve a deleted source
+                // by its former A1 address or reinterpret a newly occupied cell.
+                model.Connection.ApplyDirectHighlights(model.Snapshot, model.Owner, "map",
+                    MapDirectRequests(model, palette, true).Where(request => validSources.Contains(request.Cell.Key)));
+                model.AppliedPalette = palette.Clone(); model.Ready = true;
             }
+            state.RefreshViews();
         }
         void MapDirectHighlightsChanged(ExcelBridge connection, DirectHighlightChange change)
         {
-            // Event runs inside the shared session operation. Only update local UI
-            // state here; never start a nested mutation of that session.
-            foreach (MapDirectModel model in mapDirectModels)
-                if (change.ClearedOwners.Contains(model.Owner)) model.Active = false;
+            // Event runs inside the shared operation. Do not mutate Excel here.
+            MapDirectSession state;
+            if (mapDirectSessions.TryGetValue(connection.DirectHighlightSessionId, out state)) state.ClearOwners(change);
         }
         void RemoveAllMapDirectColors(bool makePermanent)
         {
             RequireMapExcel(); TrackDirectConnection(bridge);
+            PruneInvalidMapDirectModels(MapDirectState(bridge));
             bridge.RemoveAllDirectHighlights("map", makePermanent);
             status.Text = makePermanent ? "Toutes les cartes de cette session Excel sont permanentes. Fenêtres ouvertes conservées." :
                 "Toutes les cartes directes de cette session Excel sont retirées. Fenêtres ouvertes conservées.";
@@ -178,6 +259,9 @@ namespace FormulaExplorer
         }
         void CleanupMapDirectColors(bool keepColors)
         {
+            // Closing a view does not detach an owner that other views still use.
+            // The session retains both its physical bindings and its map model.
+            if (keepColors) return;
             var errors = new List<Exception>();
             foreach (MapDirectModel model in mapDirectModels.ToList())
                 try

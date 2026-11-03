@@ -153,6 +153,7 @@ static class Tests
         Check("Excel formula syntax and source spans", delegate { Console.WriteLine("SYNTAX_ASSERTIONS " + FormulaSyntaxTests.Run()); });
         Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
         Check("Formula map categories and reference priorities", delegate { Console.WriteLine("MAP_ASSERTIONS " + FormulaMapTests.Run()); });
+        Check("Formula map global toggle targets", delegate { Console.WriteLine("MAP_TARGET_ASSERTIONS " + FormulaMapTargetsTests.Run()); });
         Check("Highlight palette serialization and validation", delegate { Console.WriteLine("PALETTE_ASSERTIONS " + HighlightPaletteTests.Run()); });
         Check("Flow palette serialization and validation", delegate { Console.WriteLine("FLOW_PALETTE_ASSERTIONS " + FlowPaletteTests.Run()); });
         Check("Flow highlight composition and role activation", delegate { Console.WriteLine("FLOW_HIGHLIGHT_ASSERTIONS " + FlowHighlightPlanTests.Run()); });
