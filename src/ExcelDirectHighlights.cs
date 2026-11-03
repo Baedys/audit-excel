@@ -165,6 +165,7 @@ namespace FormulaExplorer
         {
             if (ownerIds == null) throw new ArgumentNullException("ownerIds");
             var owners = ownerIds.Distinct(StringComparer.Ordinal).ToList(); foreach (string owner in owners) DirectColorLayers.CheckId(owner, "ownerIds");
+            RestoreMapConditionalFills(owners);
             DirectSession session = DirectColors; session.Enter();
             try
             {
@@ -314,6 +315,8 @@ namespace FormulaExplorer
             public void Reconcile(bool allowPendingRepair)
             {
                 PruneSavedParts();
+                ConditionalSession conditional;
+                if (!allowPendingRepair && conditionalSessions.TryGetValue(this, out conditional)) conditional.CheckRepair();
                 if (references.Count == 0) return;
                 HashSet<long> live = LiveSheets(); var dead = new List<DirectReference>();
                 foreach (DirectReference reference in references.Values.Where(r => r.Valid))

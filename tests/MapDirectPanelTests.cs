@@ -13,6 +13,8 @@ public static class MapDirectPanelTests
     static int checks;
     static readonly List<object> objects = new List<object>();
     static readonly List<string> notices = new List<string>();
+    static readonly string[] ConditionalFillFields = { "ColorIndex", "Color", "ThemeColor", "TintAndShade", "Pattern",
+        "PatternColorIndex", "PatternColor", "PatternThemeColor", "PatternTintAndShade" };
     const int BaseFill = 0x345678, BaseFont = 0x234567, ManualFill = 0x826541;
     static dynamic Keep(object value) { objects.Add(value); return value; }
     static int Ole(int rgb) { return ColorTranslator.ToOle(Color.FromArgb(255, (rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255)); }
@@ -173,6 +175,126 @@ public static class MapDirectPanelTests
             foreach (MainForm view in new[] { editor, creator })
                 if (view != null && !view.IsDisposed)
                     try { Invoke(view, "CleanupMapDirectColors", false); view.Close(); } catch { view.Dispose(); }
+            if (workbook != null) try { ((dynamic)workbook).Close(false); } catch { }
+            ExcelBridge.Release(workbook);
+        }
+    }
+    sealed class ConditionalState
+    {
+        public object Cell;
+        public string Formula, Address;
+        public int Font, Priority;
+        public bool Stop;
+        public Dictionary<string, object> Fill;
+    }
+    static Dictionary<string, object> ReadConditionalFill(object rule)
+    {
+        object fill = null;
+        try
+        {
+            fill = ((dynamic)rule).Interior; var result = new Dictionary<string, object>();
+            foreach (string field in ConditionalFillFields)
+                try { result.Add(field, fill.GetType().InvokeMember(field, BindingFlags.GetProperty, null, fill, null)); }
+                catch (Exception error)
+                {
+                    while (error.InnerException != null) error = error.InnerException;
+                    uint code = (uint)error.HResult;
+                    if ((field != "ThemeColor" && field != "PatternThemeColor") ||
+                        (code != 0x800A03EC && code != 0x80070057 && code != 0x80020003 && code != 0x80020006 && code != 0x8002000B)) throw;
+                    result.Add(field, "unavailable:" + code.ToString("X8"));
+                }
+            return result;
+        }
+        finally { ExcelBridge.Release(fill); }
+    }
+    static ConditionalState RememberConditional(object cell)
+    {
+        object conditions = null, rule = null, applies = null, font = null;
+        try
+        {
+            // Excel can invalidate rule wrappers when its collection changes.
+            // Keep only the cell; acquire and release a rule for each reading.
+            conditions = ((dynamic)cell).FormatConditions; rule = ((dynamic)conditions).Item[1]; dynamic condition = rule;
+            applies = condition.AppliesTo; font = condition.Font;
+            return new ConditionalState { Cell = cell, Formula = (string)condition.Formula1,
+                Address = (string)((dynamic)applies).Address[false, false, 1, false], Font = Convert.ToInt32(((dynamic)font).Color),
+                Priority = (int)condition.Priority, Stop = (bool)condition.StopIfTrue, Fill = ReadConditionalFill(rule) };
+        }
+        finally { ExcelBridge.Release(font); ExcelBridge.Release(applies); ExcelBridge.Release(rule); ExcelBridge.Release(conditions); }
+    }
+    static void SameConditional(ConditionalState state, bool masked, string label)
+    {
+        object conditions = null, rule = null, applies = null, font = null;
+        try
+        {
+            conditions = ((dynamic)state.Cell).FormatConditions;
+            Equal((int)((dynamic)conditions).Count, 1, label + " rule count");
+            rule = ((dynamic)conditions).Item[1]; dynamic condition = rule;
+            applies = condition.AppliesTo; font = condition.Font;
+            Equal((string)condition.Formula1, state.Formula, label + " formula");
+            Equal((string)((dynamic)applies).Address[false, false, 1, false], state.Address, label + " applies-to");
+            Equal(Convert.ToInt32(((dynamic)font).Color), state.Font, label + " font"); Equal((int)condition.Priority, state.Priority, label + " priority");
+            Equal((bool)condition.StopIfTrue, state.Stop, label + " stop-if-true");
+            Dictionary<string, object> fill = ReadConditionalFill(rule);
+            if (masked) Equal(fill["ColorIndex"], DBNull.Value, label + " fill masked");
+            else foreach (string field in ConditionalFillFields) Equal(fill[field], state.Fill[field], label + " complete fill " + field);
+        }
+        finally { ExcelBridge.Release(font); ExcelBridge.Release(applies); ExcelBridge.Release(rule); ExcelBridge.Release(conditions); }
+    }
+    static void AddConditionalRule(object cell, int fillColor, int fontColor, bool stop)
+    {
+        object conditions = null, rule = null, fill = null, font = null;
+        try
+        {
+            conditions = ((dynamic)cell).FormatConditions;
+            rule = ((dynamic)conditions).Add(2, Type.Missing, "=1=1");
+            fill = ((dynamic)rule).Interior; font = ((dynamic)rule).Font;
+            ((dynamic)fill).Color = Ole(fillColor); ((dynamic)font).Color = Ole(fontColor); ((dynamic)rule).StopIfTrue = stop;
+        }
+        finally { ExcelBridge.Release(font); ExcelBridge.Release(fill); ExcelBridge.Release(rule); ExcelBridge.Release(conditions); }
+    }
+    static void CheckUserConditionalFillLifecycle(ExcelBridge connection, object application)
+    {
+        object workbook = null; MainForm view = null;
+        try
+        {
+            workbook = Keep(((dynamic)application).Workbooks).Add(); dynamic wb = workbook;
+            dynamic worksheets = Keep(wb.Worksheets);
+            for (int i = (int)worksheets.Count; i > 1; i--) Keep(worksheets.Item[i]).Delete();
+            dynamic sheet = Keep(worksheets.Item[1]); sheet.Name = "ConditionalPanel";
+            dynamic input = Keep(sheet.Range["A1"]), formula = Keep(sheet.Range["H10"]);
+            input.Value2 = 7; formula.Formula = "=2+3"; Keep(input.Interior).Color = Ole(0x123456);
+            AddConditionalRule(input, 0x00AA11, 0x2211AA, true); AddConditionalRule(formula, 0xCCDD22, 0x3344AA, false);
+            ConditionalState inputCf = RememberConditional(input), formulaCf = RememberConditional(formula);
+            ((dynamic)application).Calculate(); sheet.Activate(); input.Select(); view = Open(connection, true); Select(view, "ConditionalPanel");
+            Invoke(view, "ApplyMap"); CaptureEventNotifications(connection);
+            SameConditional(inputCf, true, "ApplyMap input CF"); SameConditional(formulaCf, true, "ApplyMap formula CF");
+            Equal(Convert.ToInt32(Keep(Keep(input.DisplayFormat).Interior).Color), Fill(input), "ApplyMap exposes direct fill under user CF");
+            Invoke(view, "RemoveMap");
+            SameConditional(inputCf, false, "RemoveMap input CF"); SameConditional(formulaCf, false, "RemoveMap formula CF");
+            Equal(Fill(input), Ole(0x123456), "RemoveMap preserves original direct base with CF restored");
+
+            Invoke(view, "ApplyMap"); Invoke(view, "RemoveAllMapDirectColors", true);
+            SameConditional(inputCf, false, "permanence restores user input CF"); SameConditional(formulaCf, false, "permanence restores user formula CF");
+            Equal(Fill(input), Ole(0xFFFF71), "permanence retains direct map fill");
+            Equal(Convert.ToInt32(Keep(Keep(input.DisplayFormat).Interior).Color), Convert.ToInt32(inputCf.Fill["Color"]), "restored CF can mask permanent direct fill");
+
+            Invoke(view, "ApplyMap"); view.Close(); Application.DoEvents();
+            Equal(view.IsDisposed, true, "CF map creator closes normally");
+            SameConditional(inputCf, true, "closed creator keeps input CF lease"); SameConditional(formulaCf, true, "closed creator keeps formula CF lease");
+            connection.RemoveAllDirectHighlights("map");
+            SameConditional(inputCf, false, "global direct removal restores retained input CF");
+            SameConditional(formulaCf, false, "global direct removal restores retained formula CF");
+            Equal(Convert.ToDouble(input.Value2), 7.0, "CF lifecycle preserves input value");
+            Equal((string)formula.Formula, "=2+3", "CF lifecycle preserves cell formula");
+        }
+        finally
+        {
+            if (view != null)
+            {
+                try { Invoke(view, "CleanupMapDirectColors", false); } catch { }
+                if (!view.IsDisposed) try { view.Close(); } catch { view.Dispose(); }
+            }
             if (workbook != null) try { ((dynamic)workbook).Close(false); } catch { }
             ExcelBridge.Release(workbook);
         }
@@ -344,6 +466,7 @@ public static class MapDirectPanelTests
             Equal(Fill(reopenedCell), Ole(0xDDAA11), "reopened workbook untouched");
             CheckClosedWorkbookModel(bridge, application, closedBookModel, reopenedCell);
             CheckPartiallyDeletedMapModel(bridge, application);
+            CheckUserConditionalFillLifecycle(bridge, application);
             Equal((bool)app.EnableEvents, true, "events restored"); Equal((bool)app.ScreenUpdating, true, "screen restored");
             Equal(notices.Count, 0, "event callbacks report no errors");
             Console.WriteLine("MAP_DIRECT_PANEL_ASSERTIONS " + checks); return checks;

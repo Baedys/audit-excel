@@ -118,12 +118,12 @@ namespace FormulaExplorer
         }
         public long GetDirectHighlightSheetIdentity(Book snapshot, string sheet)
         { return AtDirectCell(snapshot, sheet, "A1", delegate(object worksheet, object range) { return DirectSession.Identity(worksheet); }); }
-        public ReadOnlyCollection<DirectHighlightBinding> DirectHighlightBindings(string ownerId)
+        public ReadOnlyCollection<DirectHighlightBinding> DirectHighlightBindings(string ownerId, bool allowPendingRepair = false)
         {
             DirectColorLayers.CheckId(ownerId, "ownerId"); DirectSession session = DirectColors; session.Enter();
             try
             {
-                session.Reconcile(false); DirectOwner owner;
+                session.Reconcile(allowPendingRepair); DirectOwner owner;
                 var result = new List<DirectHighlightBinding>();
                 if (session.owners.TryGetValue(ownerId, out owner))
                     foreach (var pair in owner.Bindings)

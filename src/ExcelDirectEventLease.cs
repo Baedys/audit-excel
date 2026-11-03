@@ -48,7 +48,7 @@ namespace FormulaExplorer
                 for (int i = 1; i <= (int)((dynamic)books).Count; i++)
                 {
                     object workbook = null;
-                    try { workbook = ((dynamic)books).Item[i]; if (session.TracksWorkbook(workbook)) SaveDirectHighlightData(workbook); }
+                    try { workbook = ((dynamic)books).Item[i]; if (session.TracksWorkbook(workbook) || ConditionalFills.Tracks(workbook)) SaveHighlightData(workbook); }
                     finally { Release(workbook); }
                 }
             }

@@ -32,7 +32,8 @@ namespace FormulaExplorer
             {
                 if (colorBridge == null) throw new InvalidOperationException("Excel déconnecté.");
                 if (permanent && MessageBox.Show("Rendre permanentes toutes les couleurs de " + (family == "flow" ? "flux" : "carte") +
-                    " de cette session Excel ? Les bases et couches inférieures seront remplacées. Leur retrait ne rétablira plus ces anciennes couleurs.", "Clair",
+                    " de cette session Excel ? Les bases et couches inférieures seront remplacées. Leur retrait ne rétablira plus ces anciennes couleurs." +
+                    (family == "map" ? " Les fonds conditionnels d'origine seront rétablis." : ""), "Clair",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                 colorBridge.RemoveAllDirectHighlights(family, permanent);
             }

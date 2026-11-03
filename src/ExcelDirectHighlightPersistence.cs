@@ -102,19 +102,23 @@ namespace FormulaExplorer
                     // Saving must not erase history whose open dialog was never
                     // accepted (or whose loading previously failed). Adopt its
                     // unchanged colors without setters before projecting ours.
-                    DirectHighlightDocument unloaded = DirectHighlightXmlStorage.Read(new UnloadedDirectXmlStore(store, part => session.KnownPart(workbook, part)));
-                    if (unloaded.Count != 0)
-                    {
-                        session.Update(delegate { session.Resurrect(workbook, unloaded, DirectHighlightRestoreChoice.Postpone, new DirectHighlightRestoreResult()); });
-                        session.RememberParts(workbook, store.LastReadParts);
-                    }
-                    DirectHighlightDocument document = session.Project(workbook);
+                    DirectHighlightDocument document = PrepareDirectHighlightSave(workbook, session, store);
                     session.Update(delegate { DirectHighlightXmlStorage.Replace(store, document); });
                     session.RememberReplacement(workbook, document, store.LastAddedId);
                     return document;
                 }
             }
             finally { try { session.ReleaseUnusedLeases(); } finally { session.Exit(); } }
+        }
+        DirectHighlightDocument PrepareDirectHighlightSave(object workbook, DirectSession session, ExcelDirectXmlStore store)
+        {
+            DirectHighlightDocument unloaded = DirectHighlightXmlStorage.Read(new UnloadedDirectXmlStore(store, part => session.KnownPart(workbook, part)));
+            if (unloaded.Count != 0)
+            {
+                session.Update(delegate { session.Resurrect(workbook, unloaded, DirectHighlightRestoreChoice.Postpone, new DirectHighlightRestoreResult()); });
+                session.RememberParts(workbook, store.LastReadParts);
+            }
+            return session.Project(workbook);
         }
         public DirectHighlightDocument ReadSavedDirectHighlightData(object workbook)
         {
@@ -172,9 +176,10 @@ namespace FormulaExplorer
         {
             object parts;
             readonly List<ExcelDirectXmlPart> retained = new List<ExcelDirectXmlPart>();
+            readonly Action<string, string> mutation;
             public List<IDirectHighlightXmlPart> LastReadParts { get; private set; }
             public string LastAddedId { get; private set; }
-            public ExcelDirectXmlStore(object workbook) { parts = ((dynamic)workbook).CustomXMLParts; }
+            public ExcelDirectXmlStore(object workbook, Action<string, string> mutation = null) { parts = ((dynamic)workbook).CustomXMLParts; this.mutation = mutation; }
             public IEnumerable<IDirectHighlightXmlPart> OwnParts()
             {
                 var result = new List<IDirectHighlightXmlPart>(); object selected = null;
@@ -182,11 +187,11 @@ namespace FormulaExplorer
                 {
                     selected = ((dynamic)parts).SelectByNamespace(DirectHighlightDocument.Namespace);
                     int count = (int)((dynamic)selected).Count;
-                    if (count > 65) throw new FormatException("Trop de parties XML de couleurs.");
+                    if (count > 67) throw new FormatException("Trop de parties XML de couleurs.");
                     for (int index = 1; index <= count; index++)
                     {
                         object part = null;
-                        try { part = ((dynamic)selected).Item[index]; var item = new ExcelDirectXmlPart(part); retained.Add(item); result.Add(item); part = null; }
+                        try { part = ((dynamic)selected).Item[index]; var item = new ExcelDirectXmlPart(part, mutation, "Direct"); retained.Add(item); result.Add(item); part = null; }
                         finally { Release(part); }
                     }
                     LastReadParts = result; return result;
@@ -196,7 +201,13 @@ namespace FormulaExplorer
             public IDirectHighlightXmlPart Add(string xml)
             {
                 object part = null;
-                try { part = ((dynamic)parts).Add(xml); var item = new ExcelDirectXmlPart(part); retained.Add(item); LastAddedId = item.Id; part = null; return item; }
+                try
+                {
+                    if (mutation != null) mutation("BeforeDirectXmlAdd", "");
+                    part = ((dynamic)parts).Add(xml);
+                    if (mutation != null) mutation("AfterDirectXmlAdd", (string)((dynamic)part).Id);
+                    var item = new ExcelDirectXmlPart(part, mutation, "Direct"); retained.Add(item); LastAddedId = item.Id; part = null; return item;
+                }
                 finally { Release(part); }
             }
             public void Dispose()
@@ -205,10 +216,18 @@ namespace FormulaExplorer
         sealed class ExcelDirectXmlPart : IDirectHighlightXmlPart, IDisposable
         {
             object part;
+            readonly Action<string, string> mutation;
+            readonly string family;
             public string Id { get; private set; }
             public string Xml { get { return (string)((dynamic)part).XML; } }
-            public ExcelDirectXmlPart(object value) { Id = (string)((dynamic)value).Id; part = value; }
-            public void Delete() { ((dynamic)part).Delete(); }
+            public ExcelDirectXmlPart(object value, Action<string, string> mutation = null, string family = null)
+            { Id = (string)((dynamic)value).Id; part = value; this.mutation = mutation; this.family = family; }
+            public void Delete()
+            {
+                if (mutation != null) mutation("Before" + family + "XmlDelete", Id);
+                ((dynamic)part).Delete();
+                if (mutation != null) mutation("After" + family + "XmlDelete", Id);
+            }
             public void Dispose() { Release(part); part = null; }
         }
 

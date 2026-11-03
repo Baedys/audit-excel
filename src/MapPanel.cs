@@ -105,7 +105,7 @@ namespace FormulaExplorer
             SetBook(captured, rootSheet, rootAddress); sheets.SelectedItem = displayed;
             warnings.Text = "Carte : cellules renseignées et cellules validées capturées ; les autres cellules vides sont inchangées.\r\n" +
                 (analysis.Incomplete ? String.Join("\r\n", analysis.Warnings.Take(200)) : "Classification établie pour les cellules capturées.");
-            status.Text = colored + " cellules ciblées par la palette sur " + selectedSheets.Length + " feuille(s). Modifications manuelles conservées ; règles conditionnelles inchangées.";
+            status.Text = colored + " cellules ciblées par la palette sur " + selectedSheets.Length + " feuille(s). Modifications manuelles conservées ; fonds conditionnels temporairement masqués.";
         }
         void RemoveMap()
         {

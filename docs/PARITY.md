@@ -26,7 +26,9 @@ Voir [validation détaillée](VALIDATION.md). Toutes les autres exigences resten
 
 ## Travaux locaux non livrés : couleurs directes
 
-Une première observation native d'Arixcel confirme retrait, permanence, cases décochées et fenêtre conservée sur une fixture unique. Le travail local raccorde désormais moteur de piles, transactions et adaptateur COM aux cartes, flux, commandes globales et persistance XML. **La livraison publique 0.6 reste la base publiée tant que la suite complète n'est pas validée.** Références suivies par Range, éditions manuelles, reprise après échec et dialogue de réouverture ont leur propre corpus ; détails et limites dans [DIRECT-COLOR-EVIDENCE.md](DIRECT-COLOR-EVIDENCE.md). La persistance originale par CustomXMLParts est établie statiquement, sans essai original de sauvegarde/réouverture. Cette section ne valide pas globalement C04, M03 ou M04 ; la différence de masquage des CF utilisateur dans la carte reste notamment ouverte.
+Les observations natives d'Arixcel couvrent retrait, permanence, cartes sur bandes B/H et sauvegarde/réouverture d'une copie jetable. La carte originale masque les fonds CF de toute la feuille ; retirer la première bande les restaure même si la seconde reste active. Après sauvegarde avec carte active, l'original observé perd ces fonds. L'utilisateur a explicitement choisi une restauration complète dans Clair, excluant ce défaut.
+
+Le développement raccorde formats directs partagés, références physiques, commandes globales et deux journaux XML propres à Clair. Le journal CF conserve neuf propriétés de fond, distinctes de la police et des conditions ; événements, restauration différée et réparation de métadonnées sont couverts par leur corpus. La version 0.6 empaquetée reste distincte de cette branche en brouillon. Résultats et limites dans [VALIDATION.md](VALIDATION.md) et [DIRECT-COLOR-EVIDENCE.md](DIRECT-COLOR-EVIDENCE.md). Références structurelles complexes, familles CF non couvertes, performances et chargement natif STA/MTA restent à vérifier ; C04, M03 et M04 ne sont pas déclarés entièrement identiques à Arixcel.
 
 ## Sources et limites
 

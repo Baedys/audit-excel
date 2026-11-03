@@ -65,6 +65,7 @@ namespace FormulaExplorer
                 state.Models.Add(model);
                 connection.BindDirectHighlightTargets(snapshot, model.Owner, "map", members.Select(member => member.Cell));
                 connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, palette, false));
+                connection.MaskMapConditionalFills(snapshot, model.Owner, area.SheetIdentity);
                 model.AppliedPalette = palette.Clone(); model.Active = model.Ready = true;
                 result.CreatedMaps++;
                 result.ColoredCells += members.Count(member => MapDirectColor(palette, member.Kind, DirectColorProperty.Fill).HasValue ||
@@ -77,7 +78,7 @@ namespace FormulaExplorer
             RequireMapExcel(); TrackDirectConnection(bridge);
             FormulaMapToggleResult result = ToggleExcelMap(bridge);
             status.Text = result.RemovedMaps != 0 ? result.RemovedMaps + " carte(s) intersectant la sélection retirée(s)." :
-                result.CreatedMaps + " carte(s) créée(s), " + result.ColoredCells + " cellule(s) ciblée(s). Règles conditionnelles inchangées.";
+                result.CreatedMaps + " carte(s) créée(s), " + result.ColoredCells + " cellule(s) ciblée(s). Fonds conditionnels temporairement masqués, historique conservé.";
         }
     }
 }

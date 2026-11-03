@@ -59,7 +59,7 @@ namespace FormulaExplorer
         public void WorkbookBeforeSave(object workbook, bool saveAsUI, ref bool cancel)
         {
             if (cancel || colorBridge == null) return;
-            try { colorBridge.SaveDirectHighlightData(workbook); }
+            try { colorBridge.SaveHighlightData(workbook); }
             catch (Exception error)
             {
                 cancel = true;
@@ -72,18 +72,21 @@ namespace FormulaExplorer
             restoringColors = true;
             try
             {
+                colorBridge.RepairSavedHighlightData(workbook);
                 DirectHighlightDocument document = colorBridge.ReadUnloadedDirectHighlightData(workbook);
-                if (document.Count == 0 && (!includePostponed || colorBridge.PostponedDirectHighlightCount(workbook) == 0)) return;
-                DialogResult answer = RestoreDecision != null ? RestoreDecision(workbook) : MessageBox.Show("Ce classeur contient des couleurs temporaires Clair enregistrées.\n\nOui : rétablir les couleurs d'origine.\nNon : conserver définitivement les couleurs visibles.\nAnnuler : garder les couleurs et permettre leur retrait ultérieur.",
+                ConditionalFillDocument conditional = colorBridge.ReadUnloadedConditionalFillData(workbook);
+                if (document.Count == 0 && conditional.Count == 0 && (!includePostponed ||
+                    (colorBridge.PostponedDirectHighlightCount(workbook) == 0 && colorBridge.PostponedConditionalFillCount(workbook) == 0))) return;
+                DialogResult answer = RestoreDecision != null ? RestoreDecision(workbook) : MessageBox.Show("Ce classeur contient des couleurs temporaires Clair enregistrées.\n\nOui : rétablir les couleurs directes et les fonds conditionnels d'origine.\nNon : rendre les couleurs directes permanentes et rétablir les fonds conditionnels.\nAnnuler : garder les surbrillances et permettre leur retrait ultérieur.",
                     "Couleurs enregistrées — Clair", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 DirectHighlightRestoreChoice choice = answer == DialogResult.Yes ? DirectHighlightRestoreChoice.Restore : DirectHighlightRestoreChoice.Postpone;
                 if (answer == DialogResult.No)
                 {
-                    bool keep = KeepDecision != null ? KeepDecision(workbook) : MessageBox.Show("Conserver définitivement ces couleurs ? Les anciennes couleurs enregistrées seront oubliées.", "Clair",
+                    bool keep = KeepDecision != null ? KeepDecision(workbook) : MessageBox.Show("Conserver définitivement les couleurs directes ? Leurs anciennes couleurs seront oubliées. Les fonds conditionnels d'origine seront rétablis.", "Clair",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
                     choice = keep ? DirectHighlightRestoreChoice.KeepPermanent : DirectHighlightRestoreChoice.Postpone;
                 }
-                DirectHighlightRestoreResult result = colorBridge.RestoreDirectHighlightData(workbook, choice);
+                SavedHighlightRestoreResult result = colorBridge.RestoreSavedHighlightData(workbook, choice);
                 if (result.Errors.Count != 0) Notify(String.Join("\n", result.Errors), true);
             }
             catch (Exception error)

@@ -164,6 +164,9 @@ static class Tests
         Check("Direct color layer history and permanence", delegate { Console.WriteLine("DIRECT_COLOR_LAYER_ASSERTIONS " + DirectColorLayersTests.Run()); });
         Check("Direct color transactions and repair", delegate { Console.WriteLine("DIRECT_COLOR_TRANSACTION_ASSERTIONS " + DirectColorTransactionTests.Run()); });
         Check("Direct color document and XML recovery", delegate { Console.WriteLine("DIRECT_XML_ASSERTIONS " + DirectHighlightDataTests.Run()); });
+        Check("Conditional fill snapshots and XML", delegate { Console.WriteLine("CONDITIONAL_FILL_XML_ASSERTIONS " + ConditionalFillDataTests.Run()); });
+        Check("Conditional rule reference mode witnesses", delegate { Console.WriteLine("CONDITIONAL_WITNESS_ASSERTIONS " + ConditionalRuleWitnessTests.Run()); });
+        Check("Combined highlight XML journal replacement", delegate { Console.WriteLine("COMBINED_XML_ASSERTIONS " + CombinedHighlightXmlStorageTests.Run()); });
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
@@ -174,6 +177,8 @@ static class Tests
             Check("Excel retained map areas", delegate { ExcelMapRangesTests.Run(); });
             Check("Excel map selection geometry", delegate { ExcelMapSelectionTests.Run(); });
             Check("Excel native map toggle", delegate { MapSelectionPanelTests.Run(); });
+            Check("Excel conditional fill port", delegate { ExcelConditionalFillTests.Run(); });
+            Check("Excel conditional fill lifecycle and persistence", delegate { ExcelConditionalFillSessionTests.Run(); });
             Check("Excel direct flow window regressions", delegate { FlowDirectPanelTests.Run(); });
             Check("Excel direct color persistence session", delegate { ExcelDirectHighlightPersistenceTests.Run(); });
             Check("Excel direct color event callbacks", delegate { ExcelDirectEventTests.Run(); });

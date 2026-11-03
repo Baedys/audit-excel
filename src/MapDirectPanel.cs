@@ -84,7 +84,9 @@ namespace FormulaExplorer
             {
                 // Reconcile checks live workbook/sheet identities and retained
                 // ranges. A failed write or !Ready alone is never proof of death.
-                var bindings = model.Connection.DirectHighlightBindings(model.Owner);
+                // Liveness inspection must remain possible so cleanup can
+                // reach CF repair. It does not write any color formats.
+                var bindings = model.Connection.DirectHighlightBindings(model.Owner, true);
                 bool deadArea = model.AreaRange != null && model.AreaRange.CurrentArea == null;
                 if (!deadArea && (bindings.Count == 0 || bindings.Any(binding => binding.Valid))) continue;
                 // Reconcile has already abandoned these invalid color targets.
@@ -209,6 +211,7 @@ namespace FormulaExplorer
                 connection.BindDirectHighlightTargets(snapshot, model.Owner, "map", model.Cells.Select(c => c.Cell));
                 RemoveDisabledMapDirectProperties(model, palette, false, unchanged);
                 connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, palette, false, unchanged));
+                connection.MaskMapConditionalFills(snapshot, model.Owner, identity);
                 model.AppliedPalette = palette.Clone(); model.Active = model.Ready = true;
                 // Each bridge operation is transactional. The whole multi-sheet
                 // reanalysis is not presented as one atomic operation.
@@ -269,7 +272,7 @@ namespace FormulaExplorer
         {
             RequireMapExcel();
             if (MessageBox.Show(this,
-                "Rendre permanentes toutes les cartes directes de cette session Excel ? Leurs couleurs remplaceront les bases et les couches inférieures ; le retrait de Clair ne rétablira plus ces anciennes couleurs.",
+                "Rendre permanentes toutes les cartes directes de cette session Excel ? Leurs couleurs remplaceront les bases et les couches inférieures ; le retrait de Clair ne rétablira plus ces anciennes couleurs. Les fonds conditionnels d'origine seront rétablis.",
                 "Conserver les couleurs des cartes", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 RemoveAllMapDirectColors(true);
         }
