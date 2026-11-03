@@ -109,14 +109,32 @@ namespace FormulaExplorer
         }
         public DirectColorValue Read(DirectColorProperty property)
         {
+            DirectColorValue color;
+            if (!TryRead(property, out color)) throw new InvalidOperationException("Couleurs hétérogènes non prises en charge.");
+            return color;
+        }
+        // A manual rich-text edit can replace a tracked uniform font with mixed
+        // colors. That is an external change, not a failure to read Excel. Keep
+        // ordinary COM failures distinct so they cannot discard valid history.
+        internal bool TryRead(DirectColorProperty property, out DirectColorValue color)
+        {
+            color = null;
             object format = null;
             try
             {
                 format = Format(property); dynamic f = format;
-                int index = ScalarInt(f.ColorIndex);
-                if (index == -4105) return DirectColorValue.Automatic;
-                if (index == -4142) return DirectColorValue.None;
-                return DirectColorValue.Rgb(ScalarInt(f.Color));
+                object rawIndex = f.ColorIndex;
+                if (rawIndex == null || rawIndex == DBNull.Value) return false;
+                int index = ScalarInt(rawIndex);
+                if (index == -4105) color = DirectColorValue.Automatic;
+                else if (index == -4142) color = DirectColorValue.None;
+                else
+                {
+                    object rawColor = f.Color;
+                    if (rawColor == null || rawColor == DBNull.Value) return false;
+                    color = DirectColorValue.Rgb(ScalarInt(rawColor));
+                }
+                return true;
             }
             finally { Release(format); }
         }

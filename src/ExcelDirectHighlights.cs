@@ -331,7 +331,11 @@ namespace FormulaExplorer
                 { if (allowPendingRepair) return; throw new InvalidOperationException("Réparez d'abord les couleurs incomplètement restaurées."); }
                 DirectColorLayers snapshot = Transaction.Snapshot; var invalid = new List<DirectColorTarget>();
                 foreach (DirectColorTarget target in snapshot.Targets)
-                    if (!references[target.CellKey].Port.Read(target.Property).Equals(snapshot.GetVisible(target.CellKey, target.Property))) invalid.Add(target);
+                {
+                    DirectColorValue actual;
+                    if (!references[target.CellKey].Port.TryRead(target.Property, out actual) ||
+                        !actual.Equals(snapshot.GetVisible(target.CellKey, target.Property))) invalid.Add(target);
+                }
                 if (invalid.Count != 0) Transaction.Discard(invalid);
             }
             static string IndexKey(ExcelDirectColorCell cell)

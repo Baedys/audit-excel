@@ -133,6 +133,19 @@ public static class ExcelDirectHighlightsTests
             Apply(bridge, one, "partial", paletteEdit); Equal(Fill(d1), Blue, "palette cannot resurrect discarded property");
             Apply(bridge, one, "partial", Color(one, "Z", "D1", Green)); Equal(Fill(d1), Green, "explicit reactivation applies new color");
             bridge.RemoveDirectHighlights(new[] { "partial" }); Equal(Fill(d1), Blue, "reactivation captures manual base");
+            // A manual character color makes Font.ColorIndex/Color DBNull.
+            // It invalidates only font history; other properties and cells must
+            // still restore, including when the tracked font was explicit black.
+            dynamic rich = Keep(a.Range["F1"]); rich.Value2 = "mixed"; Keep(rich.Interior).Color = Base;
+            Apply(bridge, one, "rich-edit", Color(one, "Z", "F1", Red, 0), Color(one, "Z", "E1", Red));
+            dynamic richFirst = Keep(Keep(rich.Characters[1, 1]).Font), richRest = Keep(Keep(rich.Characters[2, 4]).Font);
+            richFirst.Color = Green;
+            bridge.RemoveDirectHighlights(new[] { "rich-edit" });
+            Equal(Fill(rich), Base, "mixed manual font does not block fill restoration");
+            Equal(Convert.ToInt32(richFirst.Color), Green, "manual first character color retained");
+            Equal(Convert.ToInt32(richRest.Color), 0, "manual remaining character colors retained");
+            Equal(Convert.ToInt32(Keep(e1.Interior).ColorIndex), -4142, "mixed font does not block another cell");
+            Equal(bridge.HasDirectHighlights("rich-edit"), false, "mixed manual font history discarded");
             // All changed targets are validated before the first write.
             Apply(bridge, one, "flow-a", Color(one, "Z", "A1", Red));
             Apply(bridge, two, "flow-b", Color(two, "Other", "B2", Green));
@@ -226,7 +239,7 @@ public static class ExcelDirectHighlightsTests
                     if (bridge != null)
                     {
                         bridge.RemoveAllDirectHighlights("flow"); bridge.RemoveAllDirectHighlights("map");
-                        foreach (string owner in new[] { "flow-a", "flow-b", "flow-c", "map", "partial", "moving", "new-cell", "retained", "never", "deleted", "old-book", "new-book", "repair-dead", "healthy", "renamed" }) bridge.DetachDirectHighlightOwner(owner, false);
+                        foreach (string owner in new[] { "flow-a", "flow-b", "flow-c", "map", "partial", "rich-edit", "moving", "new-cell", "retained", "never", "deleted", "old-book", "new-book", "repair-dead", "healthy", "renamed" }) bridge.DetachDirectHighlightOwner(owner, false);
                     }
                 }
                 catch { }

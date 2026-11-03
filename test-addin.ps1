@@ -30,7 +30,9 @@ try {
     & (Join-Path $PSScriptRoot 'install-addin.ps1')
     $registered = $true
     $excelPath = (Get-ItemProperty 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\excel.exe').'(default)'
+    $startupClock = [Diagnostics.Stopwatch]::StartNew()
     $ownedProcess = Start-Process -FilePath $excelPath -ArgumentList @('/x', ('"' + $testFile + '"')) -WindowStyle Hidden -PassThru
+    'INFO owned native Excel PID {0}' -f $ownedProcess.Id
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     while ($null -eq $nativeWindow -and [DateTime]::UtcNow -lt $deadline) {
         if ($ownedProcess.HasExited) { throw 'Owned Excel process exited before exposing its object model.' }
@@ -38,6 +40,10 @@ try {
         if ($null -eq $nativeWindow) { Start-Sleep -Milliseconds 250 }
     }
     if ($null -eq $nativeWindow) { throw 'Owned Excel process did not expose its object model within 45 seconds.' }
+    'INFO native object model found after {0:0.0} seconds' -f $startupClock.Elapsed.TotalSeconds
+    # Native window discovery, COM readiness and workbook loading are distinct
+    # startup phases. A slow first phase must not consume the others' budgets.
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
     while ($null -eq $excel -and [DateTime]::UtcNow -lt $deadline) {
         try { $excel = $nativeWindow.GetType().InvokeMember('Application', [Reflection.BindingFlags]::GetProperty, $null, $nativeWindow, $null) }
         catch {
@@ -49,12 +55,16 @@ try {
     }
     if ($null -eq $excel) { throw 'Owned Excel object model remained busy during startup.' }
     if ([ExcelHost]::ProcessId($excel.Hwnd) -ne $ownedProcess.Id) { $actualProcessId = [ExcelHost]::ProcessId($excel.Hwnd); $excel = $null; throw "Excel process identity mismatch: expected $($ownedProcess.Id), got $actualProcessId; refusing to operate on this instance." }
-    $excel.DisplayAlerts = $false
     $workbooks = $excel.Workbooks
+    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    $lastWorkbookError = 'none'
     while ($null -eq $workbook -and [DateTime]::UtcNow -lt $deadline) {
-        try { $workbook = $workbooks.Item([IO.Path]::GetFileName($testFile)) } catch [Runtime.InteropServices.COMException] { Start-Sleep -Milliseconds 250 }
+        try { $workbook = $workbooks.Item([IO.Path]::GetFileName($testFile)) }
+        catch [Runtime.InteropServices.COMException] { $lastWorkbookError = '0x{0:X8}' -f $_.Exception.HResult; Start-Sleep -Milliseconds 250 }
     }
-    if ($null -eq $workbook) { throw 'Owned test workbook did not finish opening.' }
+    if ($null -eq $workbook) { throw "Owned test workbook did not finish opening within 45 seconds after Excel became available (last HRESULT: $lastWorkbookError)." }
+    'INFO owned native Excel and fixture ready after {0:0.0} seconds' -f $startupClock.Elapsed.TotalSeconds
+    $excel.DisplayAlerts = $false
     $addins = $excel.COMAddIns
     $addins.Update()
     $addin = $addins.Item('Clair.ExcelAddIn')

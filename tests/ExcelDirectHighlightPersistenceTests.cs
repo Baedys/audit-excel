@@ -118,6 +118,27 @@ public static class ExcelDirectHighlightPersistenceTests
             sheet = Keep(Keep(((dynamic)workbook).Worksheets).Item[1]); cell = Keep(sheet.Range["B3"]); Keep(cell.Font).Color = Green;
             DirectHighlightRestoreResult edited = bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Restore);
             Equal(edited.ExcludedCount, 1, "manual edit excluded independently"); Equal(edited.RestoredCount, 1, "other property restored"); Equal(Fill(cell), Base, "unchanged fill restores"); Equal(Font(cell), Green, "manual font preserved");
+            // Mixed character colors are also external edits. They cannot abort
+            // adoption of the unchanged fill from the same saved document.
+            ((dynamic)workbook).Close(false); workbook = null; workbook = Keep(app.Workbooks).Open(path);
+            sheet = Keep(Keep(((dynamic)workbook).Worksheets).Item[1]); cell = Keep(sheet.Range["B3"]); cell.Value2 = "mixed";
+            dynamic richFirst = Keep(Keep(cell.Characters[1, 1]).Font), richRest = Keep(Keep(cell.Characters[2, 4]).Font);
+            richFirst.Color = Green;
+            DirectHighlightRestoreResult mixed = bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Restore);
+            Equal(mixed.ExcludedCount, 1, "mixed font excluded on adoption"); Equal(mixed.RestoredCount, 1, "fill adopted despite mixed font");
+            Equal(mixed.Errors.Count, 0, "mixed edit is not a restore failure"); Equal(Fill(cell), Base, "fill restored beside mixed font");
+            Equal(Convert.ToInt32(richFirst.Color), Green, "mixed first run preserved on adoption"); Equal(Convert.ToInt32(richRest.Color), Blue, "mixed remaining runs preserved on adoption");
+            // A mixed edit after Postpone must be dropped before saving the
+            // remaining fill history, without saving the mixed font as uniform.
+            ((dynamic)workbook).Close(false); workbook = null; workbook = Keep(app.Workbooks).Open(path);
+            sheet = Keep(Keep(((dynamic)workbook).Worksheets).Item[1]); cell = Keep(sheet.Range["B3"]); cell.Value2 = "mixed";
+            bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Postpone);
+            richFirst = Keep(Keep(cell.Characters[1, 1]).Font); richRest = Keep(Keep(cell.Characters[2, 4]).Font); richFirst.Color = Green;
+            Equal(bridge.SaveDirectHighlightData(workbook).CellCount, 1, "save drops only mixed font history");
+            Equal(bridge.ReadSavedDirectHighlightData(workbook).Records.Single().Property, DirectColorProperty.Fill, "saved property remains fill");
+            DirectHighlightRestoreResult mixedPostponed = bridge.RestorePostponedDirectHighlightData(workbook);
+            Equal(mixedPostponed.RestoredCount, 1, "postponed fill still restores"); Equal(mixedPostponed.RemainingCount, 0, "mixed postponed history cleared");
+            Equal(Fill(cell), Base, "postponed original fill restored"); Equal(Convert.ToInt32(richFirst.Color), Green, "postponed first run preserved"); Equal(Convert.ToInt32(richRest.Color), Blue, "postponed remaining runs preserved");
             // KeepPermanent forgets metadata without changing either property.
             ((dynamic)workbook).Close(false); workbook = null; workbook = Keep(app.Workbooks).Open(path);
             sheet = Keep(Keep(((dynamic)workbook).Worksheets).Item[1]); cell = Keep(sheet.Range["B3"]);

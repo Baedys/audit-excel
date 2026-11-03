@@ -2,7 +2,7 @@
 
 Relevé du 15 octobre 2026. Cible : Arixcel Explorer **9.0.9623.19616**, installé depuis le même artefact que le MSI fourni. SHA-256 de l'assembly installé : `8684a9eb5eee58d3ab38628da5aba4cc62749b244f967391bf37c357bf3d43a6`, identité statique REA `ev_8791460ac50faf2c5956c3480900dbd89abb4b8c110bde762c61fa9ca5b0eed9`.
 
-Le nouveau moteur décrit ci-dessous est **local, non livré et non raccordé à l'interface**. La livraison publique 0.6 continue à utiliser les règles conditionnelles. Aucune parité complète n'est revendiquée.
+Le nouveau moteur décrit ci-dessous est raccordé à l'interface sur la branche de développement de la [PR #1](https://github.com/Baedys/audit-excel/pull/1), sans nouvelle livraison binaire. La livraison publique 0.6 continue à utiliser les règles conditionnelles. Aucune parité complète n'est revendiquée. L'empreinte de l'assembly original installé a été revérifiée le 3 novembre 2026 et reste identique.
 
 ## Observation réelle de l'original
 
@@ -59,6 +59,8 @@ Une reconstruction Clair doit employer son propre namespace et séparer proprié
 `DirectColorTransaction` prépare une copie, valide et capture toutes les écritures, puis publie après réussite. Une écriture qui modifie Excel avant de lever est elle aussi restaurée. Échec de restauration : journal de réparation et nouvelles mutations bloquées. La disparition vérifiée d'une référence autorise un abandon ciblé ; reçu conservé dans `AbandonedRepairHistory`, avec avertissement distinct d'une restauration réussie.
 
 `ExcelDirectColorCell` utilise les formats intrinsèques. Les snapshots riches de thème, nuances et motifs servent au **rollback d'échec** ; le retrait normal du moteur logique restitue une couleur résolue ou un index spécial, pas une liaison au thème. CF utilisateur inchangée et susceptible de masquer le format direct. Fusion, dégradés et texte multicolore restent refusés avant mutation.
+
+Contre-essai Clair du 3 novembre : après coloration uniforme d'une police en noir, modifier la couleur d'un seul caractère produit `Font.ColorIndex=DBNull` et `Font.Color=DBNull`. Le retrait levait alors « Couleurs hétérogènes non prises en charge. » et ne restaurait même plus le remplissage. La lecture de réconciliation distingue désormais ce résultat mixte d'une erreur COM : seul l'historique de la police est abandonné, sans setter sur ses caractères ; remplissage et autres cellules restent restaurables. Même exclusion avant adoption de métadonnées non chargées et avant projection Save d'un historique reporté. Le refus initial de recolorer une police déjà multicolore reste explicite. Cette correction s'appuie sur le principe statique d'exclusion des éditions externes ; aucun essai différentiel de texte enrichi sur Arixcel n'est revendiqué.
 
 `ExcelDirectHighlights` partage une session entre les bridges du même Excel. Opérations incrémentales par cible ; une modification de palette utilise ExistingOnly et ne réactive pas une propriété abandonnée après édition manuelle. Les bindings du modèle gardent les Range, même après retrait ou permanence, tant que le modèle reste ouvert. `BindDirectHighlightTargets` doit être appelé sur toute l'appartenance d'un modèle fraîchement capturé avant de rendre la main à Excel, y compris pour les cellules jamais activées. Une nouvelle capture remplace ces bindings. Cellules supprimées et classeurs fermés ne sont jamais retrouvés au nom seul.
 

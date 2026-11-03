@@ -365,7 +365,13 @@ namespace FormulaExplorer
                                         {
                                             range = ((dynamic)sheet).Range[Coordinates.Address(row, column)]; retainedSheet = ((dynamic)range).Worksheet;
                                             var port = new ExcelDirectColorCell(range, retainedSheet); range = retainedSheet = null;
-                                            DirectReference reference = Resolve(port, index); Lease(reference);
+                                            DirectReference reference = Resolve(port, index);
+                                            DirectColorValue current;
+                                            // Mixed manual font colors cannot match a saved
+                                            // uniform top. Exclude only this property, just
+                                            // as for any other external color edit.
+                                            if (!reference.Port.TryRead(record.Property, out current)) continue;
+                                            Lease(reference);
                                             saved.Add(new DirectColorAdoption(new DirectColorTarget(reference.Key, record.Property), record.BaseColor, record.TopColor, layer, owner));
                                         }
                                         finally { Release(retainedSheet); Release(range); }
