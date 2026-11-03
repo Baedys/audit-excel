@@ -17,6 +17,8 @@ namespace FormulaExplorer
             public List<MapCell> Cells;
             public HighlightPalette AppliedPalette;
             public bool Active, Ready;
+            public bool AreaScoped;
+            public ExcelMapRange AreaRange;
         }
         sealed class MapDirectSession
         {
@@ -58,9 +60,20 @@ namespace FormulaExplorer
         readonly List<MapDirectModel> mapDemoModels = new List<MapDirectModel>();
         MapDirectSession MapDirectState(ExcelBridge connection)
         {
-            MapDirectSession state = mapDirectSessions.GetValue(connection.DirectHighlightSessionId,
-                delegate(object identity) { return new MapDirectSession(connection); });
+            MapDirectSession state = GetMapDirectState(connection);
             state.Observe(this); return state;
+        }
+        static MapDirectSession GetMapDirectState(ExcelBridge connection)
+        {
+            if (connection == null) throw new ArgumentNullException("connection");
+            return mapDirectSessions.GetValue(connection.DirectHighlightSessionId,
+                delegate(object identity) { return new MapDirectSession(connection); });
+        }
+        static void ReleaseMapDirectModel(MapDirectSession state, MapDirectModel model)
+        {
+            model.Connection.DetachDirectHighlightOwner(model.Owner, false);
+            if (model.AreaRange != null) model.AreaRange.Dispose();
+            state.Models.Remove(model);
         }
         List<MapDirectModel> mapDirectModels
         { get { return bridge == null ? mapDemoModels : MapDirectState(bridge).Models; } }
@@ -72,18 +85,20 @@ namespace FormulaExplorer
                 // Reconcile checks live workbook/sheet identities and retained
                 // ranges. A failed write or !Ready alone is never proof of death.
                 var bindings = model.Connection.DirectHighlightBindings(model.Owner);
-                if (bindings.Count == 0 || bindings.Any(binding => binding.Valid)) continue;
+                bool deadArea = model.AreaRange != null && model.AreaRange.CurrentArea == null;
+                if (!deadArea && (bindings.Count == 0 || bindings.Any(binding => binding.Valid))) continue;
                 // Reconcile has already abandoned these invalid color targets.
                 // Detach releases bindings without resolving the old snapshot or
                 // writing to a reopened workbook with the same name.
-                model.Connection.DetachDirectHighlightOwner(model.Owner, false);
-                state.Models.Remove(model);
+                ReleaseMapDirectModel(state, model);
             }
         }
 
         void InitializeMapDirectCommands(FlowLayoutPanel bar)
         {
             var menu = new ContextMenuStrip();
+            menu.Items.Add("Carte de la sélection Excel (bascule)", null, delegate { Safe(ToggleSelectedExcelMap); });
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Retirer toutes les cartes", null, delegate { Safe(delegate { RemoveAllMapDirectColors(false); }); });
             menu.Items.Add("Rendre toutes les cartes permanentes…", null, delegate { Safe(KeepAllMapDirectColors); });
             menu.Items.Add(new ToolStripSeparator());
@@ -117,7 +132,7 @@ namespace FormulaExplorer
             HighlightStyle style = palette.Entries[kind];
             return Ole(property == DirectColorProperty.Fill ? style.FillRgb : style.FontRgb);
         }
-        void RemoveDisabledMapDirectProperties(MapDirectModel model, HighlightPalette palette, bool allRetained, ISet<string> unchanged = null)
+        static void RemoveDisabledMapDirectProperties(MapDirectModel model, HighlightPalette palette, bool allRetained, ISet<string> unchanged = null)
         {
             foreach (DirectColorProperty property in new[] { DirectColorProperty.Fill, DirectColorProperty.Font })
             {
@@ -137,20 +152,23 @@ namespace FormulaExplorer
             foreach (string sheet in selectedSheets)
             {
                 long identity = connection.GetDirectHighlightSheetIdentity(snapshot, sheet);
+                // This explicit whole-sheet action replaces any band maps on
+                // that sheet. Native selection toggles retain separate bands.
+                foreach (MapDirectModel band in models.Where(m => m.SheetIdentity == identity && m.AreaScoped).ToList())
+                    ReleaseMapDirectModel(state, band);
                 var model = models.SingleOrDefault(m => m.SheetIdentity == identity);
                 if (model != null && !model.Ready)
                 {
                     // A failed previous reanalysis retained its owner for cleanup.
                     // An explicit retry first restores that known partial model.
-                    model.Connection.DetachDirectHighlightOwner(model.Owner, false);
-                    models.Remove(model); model = null;
+                    ReleaseMapDirectModel(state, model); model = null;
                 }
                 var members = analysis.Cells.Where(c => String.Equals(c.Cell.Sheet, sheet, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (members.Count == 0)
                 {
                     // An empty analysis owns no map or retained target. Do not
                     // retain an uncheckable snapshot in the session registry.
-                    if (model != null) { model.Connection.DetachDirectHighlightOwner(model.Owner, false); models.Remove(model); }
+                    if (model != null) ReleaseMapDirectModel(state, model);
                     continue;
                 }
                 var unchanged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -182,6 +200,12 @@ namespace FormulaExplorer
                     model.Connection.RemoveDirectHighlightTargets(model.Snapshot, model.Owner, MapDirectLayer, removed);
                 }
                 model.Ready = false; model.Connection = connection; model.Snapshot = snapshot; model.Cells = members;
+                var bounds = new FormulaMapArea(identity, members.Min(c => c.Cell.Row), members.Min(c => c.Cell.Column),
+                    members.Max(c => c.Cell.Row) - members.Min(c => c.Cell.Row) + 1,
+                    members.Max(c => c.Cell.Column) - members.Min(c => c.Cell.Column) + 1);
+                ExcelMapRange retainedArea = connection.RetainMapRange(snapshot, bounds);
+                if (model.AreaRange != null) model.AreaRange.Dispose();
+                model.AreaRange = retainedArea;
                 connection.BindDirectHighlightTargets(snapshot, model.Owner, "map", model.Cells.Select(c => c.Cell));
                 RemoveDisabledMapDirectProperties(model, palette, false, unchanged);
                 connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, palette, false, unchanged));
@@ -202,8 +226,7 @@ namespace FormulaExplorer
             var identities = new HashSet<long>(selectedSheets.Select(s => connection.GetDirectHighlightSheetIdentity(snapshot, s)));
             foreach (MapDirectModel model in models.Where(m => identities.Contains(m.SheetIdentity)).ToList())
             {
-                model.Connection.DetachDirectHighlightOwner(model.Owner, false);
-                models.Remove(model);
+                ReleaseMapDirectModel(state, model);
             }
         }
         void UpdateMapDirectPalette()
@@ -267,6 +290,7 @@ namespace FormulaExplorer
                 try
                 {
                     model.Connection.DetachDirectHighlightOwner(model.Owner, keepColors);
+                    if (model.AreaRange != null) model.AreaRange.Dispose();
                     mapDirectModels.Remove(model);
                 }
                 catch (Exception error) { errors.Add(error); }

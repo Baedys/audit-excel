@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
@@ -106,7 +107,32 @@ namespace FormulaExplorer
             finally { Release(areas); Release(formulas); }
             return result;
         }
-        public Book Capture(object workbookObject)
+        public Book Capture(object workbookObject) { return CaptureWorkbook(workbookObject, null); }
+        public Book ActiveDirectHighlightBook()
+        {
+            object workbook = null;
+            try
+            {
+                workbook = ((dynamic)application).ActiveWorkbook;
+                if (workbook == null) throw new InvalidOperationException("Ouvrez un classeur dans Excel.");
+                return DirectHighlightBook(workbook);
+            }
+            finally { Release(workbook); }
+        }
+        public Book CaptureMapAreas(Book descriptor, IEnumerable<FormulaMapArea> areas)
+        {
+            if (descriptor == null) throw new ArgumentNullException("descriptor");
+            DirectSnapshot ticket;
+            if (!directSnapshots.TryGetValue(descriptor, out ticket))
+                throw new InvalidOperationException("La carte exige une capture physique du classeur Excel.");
+            if (areas == null) throw new ArgumentNullException("areas");
+            var selected = areas.ToList();
+            if (selected.Any(area => area == null)) throw new ArgumentException("Zone de carte absente.", "areas");
+            foreach (FormulaMapArea area in selected)
+                GetDirectHighlightSheetIdentity(descriptor, CapturedMapSheetName(descriptor, area.SheetIdentity));
+            return WithDirectSnapshotWorkbook(descriptor, delegate(object workbook) { return CaptureWorkbook(workbook, selected); });
+        }
+        Book CaptureWorkbook(object workbookObject, IList<FormulaMapArea> selectedAreas)
         {
             dynamic workbook = workbookObject;
             Book book = new Book { Name = (string)workbook.Name, FullName = (string)workbook.FullName };
@@ -118,61 +144,29 @@ namespace FormulaExplorer
                 worksheets = workbook.Worksheets; dynamic sheets = worksheets;
                 for (int s = 1; s <= (int)sheets.Count; s++)
                 {
-                    object worksheet = null, usedObject = null, rows = null, columns = null;
+                    object worksheet = null, usedObject = null;
                     try
                     {
                         worksheet = sheets.Item[s]; dynamic ws = worksheet;
                         string sheet = (string)ws.Name; book.SetSheetIndex(sheet, (int)ws.Index);
-                        usedObject = ws.UsedRange; dynamic used = usedObject;
-                        rows = used.Rows; columns = used.Columns;
-                        int height = (int)((dynamic)rows).Count, width = (int)((dynamic)columns).Count;
-                        scanned += (long)height * width;
-                        if (scanned > 250000) throw new InvalidOperationException("Limite du prototype : 250 000 cellules dans les zones utilisées. Réduisez le classeur ou les zones formatées inutilisées.");
-                        int startRow = (int)used.Row, startCol = (int)used.Column;
-                        object values = used.Value2, formulas;
-                        try { formulas = used.Formula2; }
-                        catch (COMException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
-                        catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
-                        object relativeFormulas = null;
-                        try { relativeFormulas = OfficeCall(usedObject, "FormulaR1C1", System.Reflection.BindingFlags.GetProperty); }
-                        catch (COMException) { book.Warnings.Add(sheet + " : structure relative des formules indisponible ; carte partielle."); }
-                        HashSet<string> formulaCells = SpecialCellAddresses(used, -4123, startRow, startCol, height, width);
-                        // SpecialCells raises the same 1004 for an empty result
-                        // and on protected worksheets. HasFormula distinguishes
-                        // a genuinely constant range from an uncertain result.
-                        bool verifyFormulas = false;
-                        if (formulaCells.Count == 0)
+                        if (selectedAreas == null)
                         {
-                            object presence = used.HasFormula;
-                            verifyFormulas = !(presence is bool) || (bool)presence;
+                            usedObject = ws.UsedRange;
+                            CaptureRange(book, worksheet, usedObject, ref scanned);
                         }
-                        HashSet<string> validationCells = SpecialCellAddresses(used, -4174, startRow, startCol, height, width);
-                        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
+                        else
                         {
-                            object value = At(values, y, x);
-                            string address = Coordinates.Address(startRow + y, startCol + x);
-                            bool hasFormula = formulaCells.Contains(address);
-                            if (verifyFormulas)
+                            long identity = DirectSession.Identity(worksheet);
+                            foreach (FormulaMapArea area in selectedAreas.Where(area => area.SheetIdentity == identity))
                             {
-                                string candidate = At(formulas, y, x) as string;
-                                if (candidate != null && candidate.StartsWith("=", StringComparison.Ordinal))
-                                {
-                                    object actual = null;
-                                    try { actual = RangeAt(worksheet, address); hasFormula = (bool)((dynamic)actual).HasFormula; }
-                                    finally { Release(actual); }
-                                }
+                                string first = Coordinates.Address(area.Row, area.Column), last = Coordinates.Address(area.LastRow, area.LastColumn);
+                                usedObject = RangeAt(worksheet, first == last ? first : first + ":" + last);
+                                try { CaptureRange(book, worksheet, usedObject, ref scanned); }
+                                finally { Release(usedObject); usedObject = null; }
                             }
-                            bool hasValidation = validationCells.Contains(address);
-                            if (value == null && !hasFormula && !hasValidation) continue;
-                            // Excel Value2 numbers are VT_R8 (Double); VT_ERROR arrives as Int32 through IDispatch.
-                            bool isError = value is ErrorWrapper || value is Int32;
-                            string kind = value == null ? "Vide" : isError ? "Erreur" : value is bool ? "Booléen" : value is string ? "Texte" : "Nombre";
-                            string text = isError ? ErrorText(value) : Convert.ToString(value, CultureInfo.InvariantCulture);
-                            book.Add(new Cell { Sheet = sheet, Address = address, Row = startRow + y, Column = startCol + x, Value = text, Kind = kind, Formula = hasFormula ? Convert.ToString(At(formulas, y, x), CultureInfo.InvariantCulture) : null,
-                                FormulaR1C1 = hasFormula && relativeFormulas != null ? Convert.ToString(At(relativeFormulas, y, x), CultureInfo.InvariantCulture) : null, HasValidation = hasValidation });
                         }
                     }
-                    finally { Release(columns); Release(rows); Release(usedObject); Release(worksheet); }
+                    finally { Release(usedObject); Release(worksheet); }
                 }
                 names = workbook.Names; dynamic nameList = names;
                 for (int n = 1; n <= (int)nameList.Count; n++)
@@ -197,6 +191,63 @@ namespace FormulaExplorer
                 return book;
             }
             finally { Release(names); Release(worksheets); }
+        }
+
+        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned)
+        {
+            object rows = null, columns = null;
+            dynamic used = usedObject; string sheet = (string)((dynamic)worksheet).Name;
+            try
+            {
+                rows = used.Rows; columns = used.Columns;
+                int height = (int)((dynamic)rows).Count, width = (int)((dynamic)columns).Count;
+                scanned += (long)height * width;
+                if (scanned > 250000) throw new InvalidOperationException("Limite du prototype : 250 000 cellules dans les zones utilisées. Réduisez le classeur ou les zones formatées inutilisées.");
+                int startRow = (int)used.Row, startCol = (int)used.Column;
+                object values = used.Value2, formulas;
+                try { formulas = used.Formula2; }
+                catch (COMException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
+                catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
+                object relativeFormulas = null;
+                try { relativeFormulas = OfficeCall(usedObject, "FormulaR1C1", System.Reflection.BindingFlags.GetProperty); }
+                catch (COMException) { book.Warnings.Add(sheet + " : structure relative des formules indisponible ; carte partielle."); }
+                HashSet<string> formulaCells = SpecialCellAddresses(used, -4123, startRow, startCol, height, width);
+                // SpecialCells raises the same 1004 for an empty result
+                // and on protected worksheets. HasFormula distinguishes
+                // a genuinely constant range from an uncertain result.
+                bool verifyFormulas = false;
+                if (formulaCells.Count == 0)
+                {
+                    object presence = used.HasFormula;
+                    verifyFormulas = !(presence is bool) || (bool)presence;
+                }
+                HashSet<string> validationCells = SpecialCellAddresses(used, -4174, startRow, startCol, height, width);
+                for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
+                {
+                    object value = At(values, y, x);
+                    string address = Coordinates.Address(startRow + y, startCol + x);
+                    bool hasFormula = formulaCells.Contains(address);
+                    if (verifyFormulas)
+                    {
+                        string candidate = At(formulas, y, x) as string;
+                        if (candidate != null && candidate.StartsWith("=", StringComparison.Ordinal))
+                        {
+                            object actual = null;
+                            try { actual = RangeAt(worksheet, address); hasFormula = (bool)((dynamic)actual).HasFormula; }
+                            finally { Release(actual); }
+                        }
+                    }
+                    bool hasValidation = validationCells.Contains(address);
+                    if (value == null && !hasFormula && !hasValidation) continue;
+                    // Excel Value2 numbers are VT_R8 (Double); VT_ERROR arrives as Int32 through IDispatch.
+                    bool isError = value is ErrorWrapper || value is Int32;
+                    string kind = value == null ? "Vide" : isError ? "Erreur" : value is bool ? "Booléen" : value is string ? "Texte" : "Nombre";
+                    string text = isError ? ErrorText(value) : Convert.ToString(value, CultureInfo.InvariantCulture);
+                    book.Add(new Cell { Sheet = sheet, Address = address, Row = startRow + y, Column = startCol + x, Value = text, Kind = kind, Formula = hasFormula ? Convert.ToString(At(formulas, y, x), CultureInfo.InvariantCulture) : null,
+                        FormulaR1C1 = hasFormula && relativeFormulas != null ? Convert.ToString(At(relativeFormulas, y, x), CultureInfo.InvariantCulture) : null, HasValidation = hasValidation });
+                }
+            }
+            finally { Release(columns); Release(rows); }
         }
     }
 }

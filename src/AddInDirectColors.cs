@@ -9,7 +9,18 @@ namespace FormulaExplorer
         ExcelBridge colorBridge;
         IDisposable colorEventLease;
         void ConnectColorEvents() { colorBridge = new ExcelBridge(application); colorEventLease = colorBridge.WatchDirectHighlightEvents(); }
-        void DisconnectColorEvents() { if (colorEventLease != null) colorEventLease.Dispose(); colorEventLease = null; colorBridge = null; }
+        void DisconnectColorEvents()
+        {
+            // Native maps have no explorer window to flush their history when
+            // the add-in is disabled. Project it before releasing the watcher;
+            // a later Save without Clair must still retain restoration data.
+            try { if (colorBridge != null) colorBridge.SaveOpenDirectHighlightData(); }
+            finally
+            {
+                try { if (colorEventLease != null) colorEventLease.Dispose(); }
+                finally { colorEventLease = null; colorBridge = null; }
+            }
+        }
         public void RestoreSavedColors([MarshalAs(UnmanagedType.IDispatch)] object control)
         {
             try { if (colorBridge != null) colorBridge.RestoreSavedDirectHighlightColors(); }

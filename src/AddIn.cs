@@ -57,7 +57,15 @@ namespace FormulaExplorer
             application = app; ((dynamic)addIn).Object = this;
             ConnectColorEvents();
         }
-        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(true); DisconnectColorEvents(); application = null; ribbonLoaded = false; }
+        public void OnDisconnection(int removeMode, ref Array custom)
+        {
+            try { CloseWindows(true); }
+            finally
+            {
+                try { DisconnectColorEvents(); }
+                finally { application = null; ribbonLoaded = false; }
+            }
+        }
         public void OnAddInsUpdate(ref Array custom) { }
         public void OnStartupComplete(ref Array custom) { }
         public void OnBeginShutdown(ref Array custom) { CloseWindows(true); }
@@ -67,7 +75,15 @@ namespace FormulaExplorer
         public int OpenWindowCount() { return windows.Count; }
         public void Explore([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("precedents"); }
         public void ExploreDependents([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("dependents"); }
-        public void ShowMap([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("map"); }
+        public void ShowMap([MarshalAs(UnmanagedType.IDispatch)] object control)
+        {
+            try
+            {
+                if (application == null) throw new InvalidOperationException("Excel déconnecté.");
+                MainForm.ToggleExcelMap(colorBridge ?? new ExcelBridge(application));
+            }
+            catch (Exception error) { MessageBox.Show(error.Message, "Clair"); }
+        }
         public void ShowFlow([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("flow"); }
         public void ShowComparison([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("compare"); }
         public void CloseAll([MarshalAs(UnmanagedType.IDispatch)] object control) { CloseWindows(); }

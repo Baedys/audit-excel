@@ -171,6 +171,9 @@ static class Tests
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });
             Check("Excel direct highlight lifecycle session", delegate { ExcelDirectHighlightsTests.Run(); });
             Check("Excel direct map window session", delegate { MapDirectPanelTests.Run(); });
+            Check("Excel retained map areas", delegate { ExcelMapRangesTests.Run(); });
+            Check("Excel map selection geometry", delegate { ExcelMapSelectionTests.Run(); });
+            Check("Excel native map toggle", delegate { MapSelectionPanelTests.Run(); });
             Check("Excel direct flow window regressions", delegate { FlowDirectPanelTests.Run(); });
             Check("Excel direct color persistence session", delegate { ExcelDirectHighlightPersistenceTests.Run(); });
             Check("Excel direct color event callbacks", delegate { ExcelDirectEventTests.Run(); });

@@ -45,13 +45,42 @@ namespace FormulaExplorer
             }
             return new FormulaMapResult(result, warnings.Where(w => !String.IsNullOrWhiteSpace(w)).Distinct(StringComparer.Ordinal).ToList());
         }
+        // A selected band has its own top/left boundaries. A matching formula
+        // outside that band is not a directional neighbour in the original map.
+        public static FormulaMapResult Analyze(Book book, string sheet, FormulaMapArea area, bool includeEmpty)
+        {
+            if (book == null) throw new ArgumentNullException("book");
+            if (String.IsNullOrWhiteSpace(sheet) || !book.Sheets.Contains(sheet)) throw new ArgumentException("Feuille absente de la capture.", "sheet");
+            if (area == null) throw new ArgumentNullException("area");
+            var result = new List<MapCell>(); var warnings = new List<string>(book.Warnings);
+            IEnumerable<Cell> cells;
+            if (includeEmpty)
+            {
+                if ((long)area.RowCount * area.ColumnCount > 250000)
+                    throw new InvalidOperationException("Limite de capture : 250 000 cellules pour une carte incluant les cellules vides.");
+                var all = new List<Cell>();
+                for (int row = area.Row; row < area.Row + area.RowCount; row++)
+                    for (int column = area.Column; column < area.Column + area.ColumnCount; column++)
+                        all.Add(book.Get(sheet, Coordinates.Address(row, column)));
+                cells = all;
+            }
+            else cells = book.Cells.Values.Where(cell => String.Equals(cell.Sheet, sheet, StringComparison.OrdinalIgnoreCase) &&
+                cell.Row >= area.Row && cell.Row < area.Row + area.RowCount && cell.Column >= area.Column && cell.Column < area.Column + area.ColumnCount)
+                .OrderBy(cell => cell.Row).ThenBy(cell => cell.Column);
+            foreach (Cell cell in cells)
+            {
+                MapCell mapped = Classify(book, cell, area.Row, area.Column); result.Add(mapped);
+                warnings.AddRange(mapped.Warnings.Select(w => cell.Location + " : " + w));
+            }
+            return new FormulaMapResult(result, warnings.Where(w => !String.IsNullOrWhiteSpace(w)).Distinct(StringComparer.Ordinal).ToList());
+        }
         static MapCell Item(Cell cell, FormulaMapKind kind, string reason, List<string> warnings)
         { return new MapCell(cell, kind, reason, warnings); }
         static MapCell Unknown(Cell cell, string reason, List<string> warnings)
         {
             warnings.Add(reason); return Item(cell, FormulaMapKind.Unknown, reason, warnings);
         }
-        static MapCell Classify(Book book, Cell cell)
+        static MapCell Classify(Book book, Cell cell, int firstRow = 1, int firstColumn = 1)
         {
             var warnings = new List<string>();
             if (!cell.IsFormula)
@@ -72,9 +101,9 @@ namespace FormulaExplorer
             try { syntax = FormulaSyntax.Parse(cell.Formula); }
             catch (FormatException ex) { warnings.Add("Syntaxe non établie : " + ex.Message); }
 
-            bool leftUnknown, upUnknown;
-            bool left = Matches(book, cell, cell.Row, cell.Column - 1, out leftUnknown);
-            bool up = Matches(book, cell, cell.Row - 1, cell.Column, out upUnknown);
+            bool leftUnknown = false, upUnknown = false;
+            bool left = cell.Column > firstColumn && Matches(book, cell, cell.Row, cell.Column - 1, out leftUnknown);
+            bool up = cell.Row > firstRow && Matches(book, cell, cell.Row - 1, cell.Column, out upUnknown);
             if (leftUnknown || upUnknown) return Unknown(cell, "Formule R1C1 d'un voisin gauche/haut absente : catégorie de copie indéterminée.", warnings);
             if (left && up) return Item(cell, FormulaMapKind.FormulaCopiedDownAndAcross, "Même formule R1C1 que les voisins immédiats gauche et haut.", warnings);
             if (left) return Item(cell, FormulaMapKind.FormulaCopiedAcross, "Même formule R1C1 que le voisin immédiat gauche.", warnings);
