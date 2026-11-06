@@ -229,12 +229,18 @@ namespace FormulaExplorer
             }
             catch { RefreshTraceHighlights(); throw; }
             SetCapturedBook(captured, current.Sheet, current.Address, selection, peers);
+            if (tabs.SelectedIndex == 0)
+            {
+                bridge.RememberNavigationCursor(relationNavigationCursor, captured);
+                bridge.RememberNavigationCursor(expressionNavigationCursor, captured);
+            }
         }
         void SetBook(Book captured, string sheet, string address)
         { SetCapturedBook(captured, sheet, address, null); }
 
         void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection, IReadOnlyList<Book> peers = null)
         {
+            relationNavigationCursor.Clear(); expressionNavigationCursor.Clear();
             ClearTraceHighlightOwners();
             UpdateCapturedBook(captured, sheet, address, peers);
             history.Clear();
@@ -412,7 +418,8 @@ namespace FormulaExplorer
         {
             if (bridge == null) { status.Text = "Démonstration : aucune connexion Excel."; return; }
             TraceLocation selection = NavigableRelationSelection();
-            if (selection != null) NavigatePaneTarget(selection.Workbook ?? book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress }, false);
+            if (selection != null) NavigatePaneTarget(selection.Workbook ?? book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress },
+                false, relationNavigationCursor);
         }
         static void CellColumns(DataGridView grid)
         {

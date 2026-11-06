@@ -155,6 +155,7 @@ static class Tests
         Check("Conditional formula branches and operand coercion", delegate { FormulaBranchesTests.Run(); });
         Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
         Check("Direct dependencies of cell ranges", delegate { DependencyRangeTests.Run(); });
+        Check("Navigation corner transitions", ExcelNavigationShortcutTests.RunGeometry);
         Check("Formula map categories and reference priorities", delegate { Console.WriteLine("MAP_ASSERTIONS " + FormulaMapTests.Run()); });
         Check("Formula map analysis options", delegate { FormulaMapOptionsTests.Run(); });
         Check("Formula criterion matching", delegate { FormulaCriterionTests.Run(); });
@@ -184,6 +185,7 @@ static class Tests
             Check("Excel direct dependencies across workbooks", ExcelExternalDependencyTests.Run);
             Check("Excel formula text, tree and cell selection", ExcelFormulaSelectionTests.Run);
             Check("Excel temporary navigation visibility", ExcelNavigationVisibilityTests.Run);
+            Check("Excel navigation corner shortcuts", ExcelNavigationShortcutTests.Run);
             Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });

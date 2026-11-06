@@ -40,6 +40,7 @@ namespace FormulaExplorer
             };
             expressions.KeyDown += delegate(object sender, KeyEventArgs e)
             {
+                if (HandleExplorerNavigationKey(expressions, e)) return;
                 if (e.Shift && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
                 {
                     TreeNode current = expressions.SelectedNode;
@@ -54,6 +55,7 @@ namespace FormulaExplorer
             {
                 if (formula.Focused) SelectExpressionAtCaret(Control.ModifierKeys);
             };
+            formula.KeyDown += delegate(object sender, KeyEventArgs e) { HandleExplorerNavigationKey(expressions, e); };
         }
 
         static Tuple<ExpressionNode, bool> ExpressionSelectionKey(TreeNode node)
@@ -260,9 +262,9 @@ namespace FormulaExplorer
                 RefreshTraceHighlights();
                 if (!IsDocked) return;
                 TraceLocation location = CurrentExpressionLocation();
-                if (location == null) bridge.FollowRelationSelection(book, null);
+                if (location == null) NavigatePaneTarget(book, null, true, expressionNavigationCursor);
                 else if (location.Workbook == book)
-                    NavigatePaneTarget(book, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress }, true);
+                    NavigatePaneTarget(book, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress }, true, expressionNavigationCursor);
             }
             catch (COMException error) { status.Text = error.Message; RefreshTraceHighlights(); }
             catch (InvalidOperationException error) { status.Text = error.Message; RefreshTraceHighlights(); }
@@ -274,7 +276,7 @@ namespace FormulaExplorer
             ReadExpressionLocations(true);
             TraceLocation location = CurrentExpressionLocation();
             if (location == null) return false;
-            NavigatePaneTarget(location.Workbook, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress }, false);
+            NavigatePaneTarget(location.Workbook, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress }, false, expressionNavigationCursor);
             status.Text = "Cible sélectionnée dans Excel";
             return true;
         }

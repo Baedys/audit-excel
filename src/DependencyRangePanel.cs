@@ -103,6 +103,7 @@ namespace FormulaExplorer
             };
             tree.KeyDown += delegate(object sender, KeyEventArgs e)
             {
+                if (HandleExplorerNavigationKey(tree, e)) return;
                 if (e.Shift && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
                 {
                     TreeNode current = tree.SelectedNode;
@@ -114,8 +115,6 @@ namespace FormulaExplorer
                     }
                 }
                 else if (e.KeyCode == Keys.Enter && selectedRelations.Count > 0) Safe(Navigate);
-                else if (e.Control && e.KeyCode == Keys.Q && selectedRelations.Count > 0)
-                    Safe(delegate { ExploreSelectedRelation(e.Shift); });
                 else return;
                 e.Handled = e.SuppressKeyPress = true;
             };
@@ -340,8 +339,8 @@ namespace FormulaExplorer
             bool keepFocus = tree.Focused;
             try
             {
-                if (selection == null) bridge.FollowRelationSelection(book, null);
-                else NavigatePaneTarget(book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress }, true);
+                NavigatePaneTarget(book, selection == null ? null : new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress },
+                    true, relationNavigationCursor);
             }
             catch (COMException) { status.Text = "Excel ne peut pas sélectionner cette plage pour le moment."; }
             catch (InvalidOperationException error) { status.Text = error.Message; }

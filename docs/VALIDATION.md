@@ -1,5 +1,9 @@
 # Revue et validation
 
+## Raccourcis de navigation — 6 novembre 2026
+
+Témoins Excel sur Ctrl+flèches, zones disjointes, coins, bouclage, autre fenêtre, retour à l'union, expansion et relance du tracé. Les transitions géométriques tournent aussi sans Excel. Contrat Arixcel relevé par le CIL.
+
 ## Dévoilement temporaire — 6 novembre 2026
 
 Le témoin Excel couvre les feuilles masquées et très masquées, l'option des axes, la fermeture avec sélection active, deux propriétaires, les feuilles groupées et une sauvegarde suivie d'une réouverture. La protection empêche le dévoilement et déclenche le retour au masquage initial. Le comportement Arixcel provient du CIL. [Range.Hidden](https://learn.microsoft.com/en-us/office/vba/api/excel.range.hidden) · [Worksheet.Visible](https://learn.microsoft.com/en-us/office/vba/api/excel.worksheet.visible)

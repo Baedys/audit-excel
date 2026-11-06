@@ -23,18 +23,22 @@ namespace FormulaExplorer
             }));
         }
 
-        void NavigatePaneTarget(Book targetBook, Cell target, bool follow)
+        void NavigatePaneTarget(Book targetBook, Cell target, bool follow, ExcelNavigationCursor cursor)
         {
-            TrackDirectConnection(bridge);
-            if (follow) bridge.FollowRelationSelection(targetBook, target, navigationVisibilityOwner, revealNavigationAxes.Checked);
+            if (target != null) TrackDirectConnection(bridge);
+            if (follow)
+            {
+                if (!bridge.FollowRelationSelection(targetBook, target, navigationVisibilityOwner, revealNavigationAxes.Checked)) return;
+            }
             else bridge.NavigateDependency(targetBook, target, navigationVisibilityOwner, revealNavigationAxes.Checked);
+            bridge.RememberNavigationCursor(cursor, targetBook);
         }
 
         void NavigatePaneExpressionTarget(ExpressionTarget target)
         {
             Book targetBook = traceEngine.TraceWorkbooks.FirstOrDefault(b => String.Equals(b.FullName, target.Workbook, StringComparison.OrdinalIgnoreCase));
             var cell = new Cell { Sheet = target.Sheet, Address = target.Address };
-            NavigatePaneTarget(targetBook ?? bridge.CaptureNavigationTargetBook(target.Workbook), cell, false);
+            NavigatePaneTarget(targetBook ?? bridge.CaptureNavigationTargetBook(target.Workbook), cell, false, expressionNavigationCursor);
         }
 
         void RestorePaneVisibility(bool keepSelection, ICollection<Exception> failures)

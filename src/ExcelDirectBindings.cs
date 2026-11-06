@@ -111,25 +111,25 @@ namespace FormulaExplorer
             });
         }
 
-        internal void FollowRelationSelection(Book book, Cell target, string revealOwner = null, bool revealAxes = false)
+        internal bool FollowRelationSelection(Book book, Cell target, string revealOwner = null, bool revealAxes = false)
         {
             dynamic app = application;
             object activeBook = null, activeSheet = null, activeCell = null;
             try
             {
                 DirectSnapshot snapshot;
-                if (!directSnapshots.TryGetValue(book, out snapshot)) return;
+                if (!directSnapshots.TryGetValue(book, out snapshot)) return false;
                 activeBook = app.ActiveWorkbook;
                 // The pane belongs to the active Excel window. Never activate
                 // another window to follow a stale or background pane.
-                if (activeBook == null || DirectSession.Identity(activeBook) != snapshot.Workbook.ToInt64()) return;
+                if (activeBook == null || DirectSession.Identity(activeBook) != snapshot.Workbook.ToInt64()) return false;
                 if (target == null)
                 {
                     activeCell = app.ActiveCell;
                     if (activeCell != null) ((dynamic)activeCell).Select();
-                    return;
+                    return activeCell != null;
                 }
-                AtDirectCell(book, target.Sheet, target.Address, delegate(object sheet, object range)
+                return AtDirectCell(book, target.Sheet, target.Address, delegate(object sheet, object range)
                 {
                     SelectNavigationTarget(book, sheet, range, revealOwner, revealAxes, delegate
                     {

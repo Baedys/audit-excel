@@ -86,13 +86,19 @@ D03 couvre maintenant la sélection de plusieurs résultats, y compris depuis un
 
 Un clic ou une sélection au clavier dans le volet sélectionne automatiquement l'union sur la feuille du résultat courant. `FormulaForm.SelectOnSheet` (RVA `134056`) distingue les couleurs et la sélection Excel. Clair suit le résultat dans la fenêtre Excel active. Il conserve le masquage des feuilles. **Entrée** ou **Voir cellule** permet aussi la navigation explicite.
 
-La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles ou classeurs ouverts. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. Les coins de zones au clavier restent ouverts. [Validation](VALIDATION.md)
+La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles ou classeurs ouverts. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. [Validation](VALIDATION.md)
 
 ## Sélection de sous-expressions dans le volet
 
 `SelectFromFormulaBox` (RVA `192800`) descend vers le composant explicite sous le curseur. Ctrl conserve les sélections existantes ou rend courant un ancêtre déjà sélectionné. Dans l'arbre, Ctrl bascule un nœud et Maj étend la sélection visible. `HighlightFormula` (RVA `193772`) souligne les portions choisies en bleu et conserve un curseur sans sélection de caractères.
 
 `FormulaForm.SelectOnSheet` (RVA `134056`) colore la source rose et les plages résolues bleues. `SelectorForm.SelectOnSheet` (RVA `65920`) sélectionne l'union sur la feuille du nœud courant. Clair réutilise la pile de couleurs de trace et garde la fenêtre du volet active lorsque le résultat appartient à un autre classeur. Entrée permet d'y aller. [Validation](VALIDATION.md)
+
+## Raccourcis dans le volet
+
+`SelectorForm.MoveActiveCell` (RVA `64992`) part du coin haut gauche de la première zone Excel. Ctrl+flèche rejoint le bord demandé ou passe à la zone suivante avec bouclage. Le coin sur l'autre axe reste choisi si sa dimension le permet. Une seule zone est sélectionnée dans Excel pendant le parcours. Alt+S rétablit la sélection complète avec la zone mémorisée en tête. Clair garde la fenêtre du volet et reprend le parcours depuis son dernier état.
+
+Alt+Z déplie ou replie la branche courante en gardant le premier nœud ouvert au repli. Clair limite le dépliage de l'arbre des dépendances à 5 000 nœuds par commande. Ctrl+Q et Ctrl+Maj+Q explorent les plages sélectionnées dans les deux arbres. Sur la racine seule, dans le même mode, le raccourci bascule l'expansion. [Validation](VALIDATION.md)
 
 ## Dévoilement pendant la navigation
 
@@ -153,7 +159,7 @@ Le produit documente un arbre de composants avec valeurs et emplacements, des ch
 | F09 | Sélection synchronisée entre arbre, portion de formule et cellules ; multisélection. | Sous-expressions sélectionnables par l'arbre ou le curseur, Ctrl/Maj, union Excel sur la feuille courante et couleurs sur les autres feuilles. | Plages physiques, portions disjointes, restauration des fonds et lien externe. |
 | F10 | Surlignage source/antécédents/dépendants configurable. | Absent. | Couleurs distinctes ; nettoyage à fermeture et changement de sélection ; formats antérieurs intacts. |
 | F11 | Édition de composant ou formule, validation, annulation, undo. | Absent. | F2, Entrée, Échap, Ctrl+Z ; protection et erreurs gérées ; formule exacte restaurée ; une édition invalide n'écrase pas la cellule. |
-| F12 | Navigation clavier et refresh, expansion/réduction, réexploration. | Partiel : TreeView et exploration de cellule. | Tester Ctrl+Q, Ctrl+Backspace, flèches, Ctrl+flèches, Échap/Entrée selon option ; ordre et focus comparés au produit. |
+| F12 | Navigation clavier et refresh, expansion/réduction, réexploration. | Ctrl+flèches, Alt+S, Alt+Z et Ctrl+Q/Ctrl+Maj+Q dans le volet. | Coins et bouclage, sélection multizone, autre fenêtre, dépliage et nouvelle trace. Ctrl+Retour arrière, Alt+R et Échap restent à couvrir. |
 | F13 | Mode d'évaluation précis et signal d'imprécision. | Absent. | E3 `PreciseEvaluation`, `MayBeImprecise` : déterminer différences runtime avant de promettre ce réglage ; couvrir fonctions volatiles/UDF sans effets involontaires. |
 
 ## 3. Antécédents et dépendants de plusieurs cellules

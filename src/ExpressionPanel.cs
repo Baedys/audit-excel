@@ -64,6 +64,7 @@ namespace FormulaExplorer
             expressionValue.Dock = DockStyle.Fill; expressionValue.ReadOnly = true; expressionValue.Multiline = true; expressionValue.ScrollBars = ScrollBars.Both; expressionValue.WordWrap = false;
             expressionValue.Font = new Font("Consolas", 10); panel.Controls.Add(expressionValue, 0, 2); parent.Controls.Add(panel, 0, 2);
             InitializeExternalWorkbookOffer(panel);
+            Disposed += delegate { relationNavigationCursor.Dispose(); expressionNavigationCursor.Dispose(); };
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e)
             {
@@ -247,6 +248,7 @@ namespace FormulaExplorer
         void ShowExpression(Cell cell)
         {
             SetWorkbookOffer(null);
+            if (!Object.ReferenceEquals(expressionOwner, cell)) expressionNavigationCursor.Clear();
             expressionOwner = cell; syntaxRoot = null; buildingExpressions = true;
             expressionTargets.Clear();
             criterionResults.Clear();
