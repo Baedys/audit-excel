@@ -39,6 +39,13 @@ namespace FormulaExplorer
 
     public sealed partial class ExcelBridge
     {
+        internal int ActiveNavigationWindowHandle()
+        {
+            object window = ((dynamic)application).ActiveWindow;
+            try { return window == null ? 0 : (int)((dynamic)window).Hwnd; }
+            finally { Release(window); }
+        }
+
         internal void RememberNavigationCursor(ExcelNavigationCursor cursor, Book book)
         {
             if (cursor == null) throw new ArgumentNullException("cursor");

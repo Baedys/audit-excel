@@ -27,11 +27,11 @@ namespace FormulaExplorer
         internal const string ControlId = "Clair.ExcelTaskPane";
         MainForm explorer;
 
-        internal void ShowCommand(ExcelBridge connection, string command)
+        internal void ShowCommand(ExcelBridge connection, string command, int window)
         {
             if (explorer == null || explorer.IsDisposed)
             {
-                explorer = new MainForm(connection, true);
+                explorer = new MainForm(connection, true, window);
                 Controls.Add(explorer);
                 explorer.Show();
             }
@@ -101,9 +101,11 @@ namespace FormulaExplorer
             object window = null;
             try
             {
-                window = ActivePaneWindow(); DockedExplorer pane;
-                if (window != null && panes.TryGetValue((int)((dynamic)window).Hwnd, out pane) && pane.Visible)
-                    pane.Control.ShowCommand(colorBridge, "back");
+                window = ActivePaneWindow();
+                if (window == null) return;
+                int hwnd = (int)((dynamic)window).Hwnd;
+                DockedExplorer pane;
+                if (panes.TryGetValue(hwnd, out pane) && pane.Visible) pane.Control.ShowCommand(colorBridge, "back", hwnd);
             }
             catch (Exception error) { MessageBox.Show(error.Message, "Clair"); }
             finally { ExcelBridge.Release(window); }
@@ -127,7 +129,7 @@ namespace FormulaExplorer
                     panes.Add(hwnd, pane);
                 }
                 if (!pane.Visible) pane.Visible = true;
-                pane.Control.ShowCommand(colorBridge, command);
+                pane.Control.ShowCommand(colorBridge, command, hwnd);
                 if (created && pane.Control.IsHandleCreated) pane.Control.BeginInvoke((Action)delegate
                 {
                     DockedExplorer current;

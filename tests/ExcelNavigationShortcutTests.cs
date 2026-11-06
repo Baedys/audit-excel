@@ -142,6 +142,7 @@ public static class ExcelNavigationShortcutTests
                 Equal(selection(), "$J$9", "background shortcut leaves its selection alone");
                 Press(expressions, Keys.Alt | Keys.S);
                 Equal(selection(), "$J$9", "background reselect leaves the other window alone");
+                extraWindow.Close(false);
                 ((dynamic)firstWindow).Activate();
 
                 expressions.SelectedNode = expressionRoot;
@@ -169,6 +170,86 @@ public static class ExcelNavigationShortcutTests
                 Press(relations, Keys.Control | Keys.Down);
                 Equal(active(), "$C$4", "relations tree shares the corner commands");
                 Equal(relations.SelectedNode, block, "relations caret stays put");
+
+                keep(sheet.Range["J2"]).Value2 = 5d;
+                keep(sheet.Range["J4"]).Value2 = 7d;
+                keep(sheet.Range["K2"]).Formula2 = "=J2+1";
+                keep(sheet.Range["K4"]).Formula2 = "=J4+1";
+                keep(sheet.Range["L4"]).Value2 = 10d;
+                keep(sheet.Range["M4"]).Value2 = 11d;
+                keep(sheet.Range["L13"]).Formula2 = "=SUM(K2,K4,L4)";
+                keep(sheet.Range["L13"]).Select();
+                Invoke(form, "ExecuteDockedRibbonCommand", "precedents");
+                Equal(Field<int>(form, "explorerWindow"), originalHwnd, "refresh owns the window where the trace was launched");
+                Func<string, TreeNode> relationAt = address => relations.Nodes[0].Nodes.Cast<TreeNode>()
+                    .Single(node => ((Cell)node.Tag).Address == address);
+                Action<TreeNode, Keys> relation = (node, key) => Invoke(form, "ApplyRelationSelection", node, key);
+                relationAt("K2").Expand();
+                relation(relationAt("K2"), Keys.None);
+                relation(relationAt("K4"), Keys.Control);
+                keep(sheet.Range["L13"]).Formula2 = "=SUM(K2,K4,M4)";
+                keep(sheet.Range["J9"]).Select();
+                Equal((int)keep(app.ActiveWindow).Hwnd, originalHwnd, "refresh fixture activates the owning window");
+                Message keyMessage = Message.Create(relations.Handle, 0x0104, new IntPtr((int)Keys.R), IntPtr.Zero);
+                Equal(Invoke(form, "ProcessCmdKey", keyMessage, Keys.Alt | Keys.R), true, "docked command processing consumes Alt+R");
+                Equal(((Cell)relations.Nodes[0].Tag).Address, "L13", "refresh keeps the launch cell when Excel selects another cell");
+                Equal(((Cell)relations.Nodes[0].Tag).Formula, "=SUM(K2,K4,M4)", "refresh reads the new formula");
+                Equal(relationAt("K2").IsExpanded, true, "refresh restores an expanded dependency branch");
+                Equal(relations.SelectedNode, relationAt("K4"), "refresh restores the current dependency");
+                Equal(Field<List<TreeNode>>(form, "selectedRelations").Count, 2, "refresh restores both dependencies");
+                Equal(active(), "$K$4", "refresh reselects the current dependency in Excel");
+
+                relation(relations.Nodes[0], Keys.None);
+                choose(expressions.Nodes[0].Nodes[0], Keys.None);
+                choose(expressions.Nodes[0].Nodes[1], Keys.Control);
+                keep(sheet.Range["L13"]).Formula2 = "=SUM(K2,K4,L4)";
+                keep(sheet.Range["J9"]).Select();
+                Press(formula, Keys.Alt | Keys.R);
+                Equal(formula.Text, "=SUM(K2,K4,L4)", "refresh updates the formula text");
+                Equal(expressions.SelectedNode.Text, "K4", "refresh restores the current sub-expression");
+                Equal(Field<List<TreeNode>>(form, "selectedExpressions").Count, 2, "refresh restores both sub-expressions");
+                Equal(active(), "$K$4", "refresh reselects the current sub-expression");
+
+                extraWindow = keep(((dynamic)workbook).NewWindow());
+                extraWindow.Activate();
+                otherHwnd = (int)keep(app.ActiveWindow).Hwnd;
+                Equal(otherHwnd != originalHwnd, true, "refresh fixture opens a second workbook window");
+                keep(sheet.Range["J9"]).Select();
+                Equal(selection(), "$J$9", "background refresh fixture starts on the second window selection");
+                Invoke(form, "EvaluateSelectedExpression");
+                Equal((int)keep(app.ActiveWindow).Hwnd, otherHwnd, "evaluation returns to the second window of the same workbook");
+                Equal(selection(), "$J$9", "evaluation restores the selection in the second window");
+                Press(formula, Keys.Alt | Keys.R);
+                Equal((int)keep(app.ActiveWindow).Hwnd, otherHwnd, "refresh keeps a second window active");
+                Equal(selection(), "$J$9", "refresh does not reselect a result in a second window");
+                extraWindow.Close(false);
+                ((dynamic)firstWindow).Activate();
+
+                relation(relationAt("K2"), Keys.None);
+                Press(relations, Keys.Control | Keys.Q);
+                keep(sheet.Rows[2]).Insert();
+                sheet.Name = "Analyse O'Brien";
+                keep(sheet.Range["J10"]).Select();
+                Press(relations, Keys.Alt | Keys.R);
+                Equal(((Cell)relations.Nodes[0].Tag).Address, "K3", "refresh follows the source across row insertion");
+                Equal(((Cell)relations.Nodes[0].Tag).Sheet, "Analyse O'Brien", "refresh follows the physical worksheet across rename");
+                Invoke(form, "Back");
+                Equal(((Cell)relations.Nodes[0].Tag).Address, "L14", "history follows the original source across row insertion");
+
+                dynamic other = keep(keep(((dynamic)workbook).Worksheets).Add());
+                other.Name = "To remove";
+                keep(other.Range["B2"]).Formula2 = "=1+2";
+                keep(other.Range["B2:B3"]).Select();
+                Invoke(form, "ExecuteDockedRibbonCommand", "precedents");
+                TreeNode previousRoot = relations.Nodes[0];
+                other.Delete();
+                dynamic replacement = keep(keep(((dynamic)workbook).Worksheets).Add());
+                replacement.Name = "To remove";
+                keep(replacement.Range["G8"]).Select();
+                Press(relations, Keys.Alt | Keys.R);
+                Equal(relations.Nodes[0], previousRoot, "a deleted source does not bind to a replacement sheet with the same name");
+                Equal(selection(), "$G$8", "failed refresh does not alter Excel selection");
+                Equal(Field<Label>(form, "status").Text.Contains("ne sont plus accessibles"), true, "failed refresh reports the stale source");
             }
         }
         finally

@@ -34,10 +34,13 @@ namespace FormulaExplorer
 
         public MainForm(ExcelBridge excel) : this(excel, false) { }
 
-        internal MainForm(ExcelBridge excel, bool docked)
+        internal MainForm(ExcelBridge excel, bool docked) : this(excel, docked, 0) { }
+
+        internal MainForm(ExcelBridge excel, bool docked, int window)
         {
             IsDocked = docked;
             bridge = excel;
+            explorerWindow = window;
             Text = "Clair — Explorateur Excel · 0.6 en développement";
             if (IsDocked)
             {
@@ -213,6 +216,7 @@ namespace FormulaExplorer
         {
             if (bridge == null) bridge = ExcelBridge.Connect();
             ClearTraceHighlightOwners();
+            int window = IsDocked && explorerWindow == 0 ? bridge.ActiveNavigationWindowHandle() : explorerWindow;
             Book captured;
             Cell current;
             TraceLocation selection = null;
@@ -229,6 +233,7 @@ namespace FormulaExplorer
             }
             catch { RefreshTraceHighlights(); throw; }
             SetCapturedBook(captured, current.Sheet, current.Address, selection, peers);
+            explorerWindow = window;
             if (tabs.SelectedIndex == 0)
             {
                 bridge.RememberNavigationCursor(relationNavigationCursor, captured);
@@ -243,7 +248,7 @@ namespace FormulaExplorer
             relationNavigationCursor.Clear(); expressionNavigationCursor.Clear();
             ClearTraceHighlightOwners();
             UpdateCapturedBook(captured, sheet, address, peers);
-            history.Clear();
+            ClearExplorerHistory();
             if (selection == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + traceWarningCount + " avertissements";
             SetExplorerRoot(capturedRoot, false, selection, null);
         }
@@ -291,8 +296,11 @@ namespace FormulaExplorer
 
         void SetExplorerRoot(Cell cell, bool remember, TraceLocation selection, bool? downstream)
         {
+            ExplorerLiveSource nextSource = bridge == null ? null : new ExplorerLiveSource(bridge, book, cell, selection);
             if (remember && root != null)
-                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, Reverse = reverse, Selection = CaptureExplorerSelection(), HighlightOwner = traceHighlightOwner });
+                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, LiveSource = liveSource, Reverse = reverse, Selection = CaptureExplorerSelection(), HighlightOwner = traceHighlightOwner });
+            else if (liveSource != null) liveSource.Dispose();
+            liveSource = nextSource;
             traceHighlightOwner = "trace-" + Guid.NewGuid().ToString("N");
             root = cell; traceSource = selection;
             if (downstream.HasValue) reverse = downstream.Value;
@@ -303,6 +311,8 @@ namespace FormulaExplorer
             if (history.Count == 0) return;
             RemoveTraceHighlightOwner(traceHighlightOwner);
             ExplorerHistory previous = history.Pop();
+            if (liveSource != null) liveSource.Dispose();
+            liveSource = previous.LiveSource;
             root = previous.Cell; traceSource = previous.Source; reverse = previous.Reverse;
             traceHighlightOwner = previous.HighlightOwner;
             ResetFlowDisplay(); ShowTreeSelection(previous.Selection);
@@ -372,8 +382,12 @@ namespace FormulaExplorer
             {
                 tree.Nodes.Clear();
                 TreeNode node = traceSource == null ? Node(root, null) : RangeTraceTree();
-                tree.Nodes.Add(node); node.Expand();
-                if (traceSource != null && traceSource.SeparateSources) node.Nodes["results"].Expand();
+                tree.Nodes.Add(node);
+                if (restore == null)
+                {
+                    node.Expand();
+                    if (traceSource != null && traceSource.SeparateSources) node.Nodes["results"].Expand();
+                }
                 RestoreExplorerSelection(node, restore);
             }
             finally { tree.EndUpdate(); updatingExplorer = false; }

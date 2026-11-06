@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Actualiser un tracé Excel — 6 novembre 2026
+
+Alt+R reconstruit depuis la cellule ou les plages de lancement. Le témoin Excel modifie la formule pendant que la sélection Excel pointe ailleurs, restaure deux nœuds et une branche ouverte, puis exerce le même raccourci depuis le texte de formule. Le nœud courant donne la première zone resélectionnée. Un raccourci reçu pendant qu'une deuxième fenêtre du même classeur est active laisse sa sélection intacte. Une insertion de ligne et un renommage déplacent le tracé et son historique. Une feuille supprimée puis recréée sous le même nom laisse l'ancien tracé visible et signale sa source indisponible. La comparaison Arixcel repose sur le CIL. Clair retrouve les nœuds par leur chemin, et les branches d'expression par type et contenu correspondant.
+
+Le volet reçoit l'identité de sa fenêtre depuis l'hôte Office. Pour évaluer une formule du classeur actif, la sélection temporaire reste dans cette fenêtre. Après évaluation, Clair restaure la fenêtre, la feuille, la plage et la cellule active.
+
 ## Raccourcis de navigation — 6 novembre 2026
 
 Témoins Excel sur Ctrl+flèches, zones disjointes, coins, bouclage, autre fenêtre, retour à l'union, expansion et relance du tracé. Les transitions géométriques tournent aussi sans Excel. Contrat Arixcel relevé par le CIL.

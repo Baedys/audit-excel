@@ -183,12 +183,13 @@ namespace FormulaExplorer
                 RequireCurrentFormula(range, owner);
                 dynamic app = application;
                 if ((int)((dynamic)worksheet).Visible != -1) throw new InvalidOperationException("Affichez la feuille dans Excel pour évaluer dans son contexte.");
-                object priorWindow = null, priorSheet = null, priorSelection = null, priorActive = null;
+                object priorWindow = null, priorSheet = null, priorSelection = null, priorActive = null, priorWorkbook = null;
                 bool priorRange = false, moved = false, changedFlags = false;
                 bool events = app.EnableEvents, screen = app.ScreenUpdating;
                 try
                 {
                     priorWindow = app.ActiveWindow; priorSheet = app.ActiveSheet; priorSelection = app.Selection; priorActive = app.ActiveCell;
+                    priorWorkbook = app.ActiveWorkbook;
                     try { OfficeCall(priorSelection, "Row", BindingFlags.GetProperty); priorRange = true; }
                     catch (COMException) { }
                     catch (MissingMethodException) { }
@@ -198,7 +199,17 @@ namespace FormulaExplorer
                     if (preserveGroups && !alreadyAtOwner && ExcelConditionalFillContext.HasGroupedWindow(priorWindow, worksheet))
                         throw new InvalidOperationException("Activez la cellule de formule pour analyser ses expressions lorsque des feuilles sont groupées.");
                     changedFlags = true; app.EnableEvents = false; app.ScreenUpdating = false;
-                    if (!alreadyAtOwner) { moved = true; app.Goto(range, false); }
+                    if (!alreadyAtOwner)
+                    {
+                        moved = true;
+                        if (priorWindow != null && priorWorkbook != null && DirectSession.Identity(priorWorkbook) == DependencyWorkbookIdentity(book))
+                        {
+                            if (priorSheet == null || DirectSession.Identity(priorSheet) != DirectSession.Identity(worksheet))
+                                ((dynamic)worksheet).Activate();
+                            ((dynamic)range).Select();
+                        }
+                        else app.Goto(range, false);
+                    }
                     return evaluate(worksheet, range);
                 }
                 finally
@@ -208,10 +219,20 @@ namespace FormulaExplorer
                         if (moved && priorWindow != null) ((dynamic)priorWindow).Activate();
                         if (moved && priorRange && priorSelection != null)
                         {
-                            // Range.Select requires its sheet to remain active. Goto
-                            // restores the actual range's workbook/sheet as one step,
-                            // including a multi-area selection in another workbook.
-                            app.Goto(priorSelection, false);
+                            // Goto can switch to another window of the same workbook.
+                            // Restore the range in the window and worksheet already chosen.
+                            if (priorWindow == null) app.Goto(priorSelection, false);
+                            else
+                            {
+                                object activeSheet = app.ActiveSheet;
+                                try
+                                {
+                                    if (priorSheet != null && (activeSheet == null ||
+                                        DirectSession.Identity(activeSheet) != DirectSession.Identity(priorSheet))) ((dynamic)priorSheet).Activate();
+                                    ((dynamic)priorSelection).Select();
+                                }
+                                finally { Release(activeSheet); }
+                            }
                             if (priorActive != null) ((dynamic)priorActive).Activate();
                         }
                         else if (moved)
@@ -226,7 +247,7 @@ namespace FormulaExplorer
                         finally
                         {
                             try { if (changedFlags) app.EnableEvents = events; }
-                            finally { Release(priorActive); Release(priorSelection); Release(priorSheet); Release(priorWindow); }
+                            finally { Release(priorActive); Release(priorSelection); Release(priorSheet); Release(priorWindow); Release(priorWorkbook); }
                         }
                     }
                 }

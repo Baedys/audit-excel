@@ -74,7 +74,7 @@ namespace FormulaExplorer
                 SetWorkbookOffer(null);
                 bridge.OpenDependencyWorkbook(ExpressionBook, path);
                 opened = true;
-                RefreshTraceAfterOpening();
+                RefreshExplorerModel(null);
                 if (expressionOwner != null && expressionOwner.IsFormula && String.Equals(
                     traceEngine.SheetOf(expressionOwner).CellKey(expressionOwner.Address), cellKey, StringComparison.OrdinalIgnoreCase))
                     RestoreLinkedExpression(indexes);
@@ -104,66 +104,5 @@ namespace FormulaExplorer
             if (path.Length == 0 && evaluateOnSelect.Checked) EvaluateExpressionInline();
         }
 
-        void RefreshTraceAfterOpening()
-        {
-            ExplorerSelection selection = CaptureExplorerSelection();
-            Book previous = book;
-            Book fresh = bridge.RefreshDependencyWorkbook(previous);
-            IReadOnlyList<Book> peers = bridge.CaptureDependencyPeers(fresh);
-            var oldBooks = traceEngine.TraceWorkbooks.ToDictionary(bridge.DependencyWorkbookIdentity);
-            var replacements = new Dictionary<Book, Book>();
-            foreach (Book next in new[] { fresh }.Concat(peers))
-            {
-                Book old;
-                if (!oldBooks.TryGetValue(bridge.DependencyWorkbookIdentity(next), out old)) continue;
-                next.TraceId = old.TraceId;
-                replacements.Add(old, next);
-            }
-            Func<Book, Book> replace = old =>
-            {
-                Book result;
-                return replacements.TryGetValue(old ?? previous, out result) ? result : null;
-            };
-            Func<Cell, Cell> replaceCell = cell =>
-            {
-                Book owner = replace(cell.Workbook);
-                return owner != null && owner.Sheets.Contains(cell.Sheet) ? owner.Get(cell.Sheet, cell.Address) : null;
-            };
-            Cell nextRoot = replaceCell(root);
-            TraceLocation nextSource = RemapTraceSource(traceSource, replace);
-            string primarySheet = fresh.Sheets.Contains(capturedRoot.Sheet) ? capturedRoot.Sheet : fresh.SheetOrder.First();
-            UpdateCapturedBook(fresh, primarySheet, capturedRoot.Address, peers);
-            root = nextRoot ?? capturedRoot;
-            traceSource = nextSource;
-            ExplorerHistory[] previousHistory = history.Reverse().ToArray();
-            history.Clear();
-            foreach (ExplorerHistory item in previousHistory)
-            {
-                Cell replacement = replaceCell(item.Cell);
-                if (replacement == null) { RemoveTraceHighlightOwner(item.HighlightOwner); continue; }
-                item.Cell = replacement;
-                item.Source = RemapTraceSource(item.Source, replace);
-                history.Push(item);
-            }
-            ResetFlowDisplay();
-            ShowTreeSelection(selection);
-        }
-
-        static TraceLocation RemapTraceSource(TraceLocation source, Func<Book, Book> replace)
-        {
-            if (source == null) return null;
-            var ranges = new List<Reference>();
-            foreach (Reference range in source.Ranges)
-            {
-                Book owner = replace(range.Workbook);
-                if (owner != null && owner.Sheets.Contains(range.Sheet))
-                    ranges.Add(Reference.FromBounds(range.Sheet, range.FirstRow, range.FirstColumn, range.LastRow, range.LastColumn, owner));
-            }
-            if (ranges.Count == 0) return null;
-            Book launch = replace(source.LaunchWorkbook);
-            return launch == null || !launch.Sheets.Contains(source.LaunchSheet) ?
-                new TraceLocation(ranges, source.SeparateSources ? ranges[0].Sheet : null) :
-                new TraceLocation(ranges, source.SeparateSources ? source.LaunchSheet : null, launch);
-        }
     }
 }

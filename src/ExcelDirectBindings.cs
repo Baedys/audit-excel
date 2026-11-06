@@ -85,12 +85,22 @@ namespace FormulaExplorer
         }
         T AtDirectCell<T>(Book snapshot, string sheetName, string address, Func<object, object, T> action)
         {
+            return AtDirectSheet(snapshot, sheetName, delegate(object sheet)
+            {
+                object range = RangeAt(sheet, address);
+                try { return action(sheet, range); }
+                finally { Release(range); }
+            });
+        }
+
+        T AtDirectSheet<T>(Book snapshot, string sheetName, Func<object, T> action)
+        {
             return WithDirectSnapshotWorkbook(snapshot, delegate(object workbook)
             {
                 DirectSnapshot ticket; directSnapshots.TryGetValue(snapshot, out ticket);
                 IntPtr identity;
                 if (ticket == null || !ticket.Sheets.TryGetValue(sheetName, out identity)) throw new InvalidOperationException("Feuille absente de cette capture.");
-                object sheets = null, range = null;
+                object sheets = null;
                 try
                 {
                     sheets = ((dynamic)workbook).Worksheets;
@@ -101,13 +111,13 @@ namespace FormulaExplorer
                         {
                             sheet = ((dynamic)sheets).Item[i];
                             if (DirectSession.Identity(sheet) != identity.ToInt64()) continue;
-                            range = RangeAt(sheet, address); return action(sheet, range);
+                            return action(sheet);
                         }
                         finally { Release(sheet); }
                     }
                     throw new InvalidOperationException("Feuille de cette capture supprimée : actualisez l'analyse.");
                 }
-                finally { Release(range); Release(sheets); }
+                finally { Release(sheets); }
             });
         }
 

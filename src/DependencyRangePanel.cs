@@ -29,13 +29,14 @@ namespace FormulaExplorer
             internal Cell Cell;
             internal TraceLocation Source;
             internal ExplorerSelection Selection;
+            internal ExplorerLiveSource LiveSource;
             internal string HighlightOwner;
             internal bool Reverse;
         }
 
         sealed class ExplorerSelection
         {
-            internal string[][] Selected;
+            internal string[][] Selected, Expanded;
             internal string[] Current, Anchor;
         }
 
@@ -70,6 +71,8 @@ namespace FormulaExplorer
             };
             Disposed += delegate
             {
+                ClearExplorerHistory();
+                if (liveSource != null) { liveSource.Dispose(); liveSource = null; }
                 ClearTraceHighlightOwners();
                 RestorePaneVisibility(false, new List<Exception>());
                 UntrackDirectConnections();
@@ -255,8 +258,24 @@ namespace FormulaExplorer
         {
             return new ExplorerSelection {
                 Current = RelationPath(tree.SelectedNode), Anchor = RelationPath(relationAnchor),
-                Selected = selectedRelations.Select(RelationPath).ToArray()
+                Selected = selectedRelations.Select(RelationPath).ToArray(),
+                Expanded = ExpandedRelationPaths().ToArray()
             };
+        }
+
+        IEnumerable<string[]> ExpandedRelationPaths()
+        {
+            var pending = new Stack<TreeNode>(tree.Nodes.Cast<TreeNode>());
+            while (pending.Count != 0)
+            {
+                TreeNode node = pending.Pop();
+                // An empty root or results group cannot be expanded by WinForms.
+                // Reopen it on rebuild if the refreshed graph now has results.
+                bool opensWhenPopulated = node.Nodes.Count == 0 && (node.Parent == null || node.Name == "results");
+                if (!node.IsExpanded && !opensWhenPopulated) continue;
+                yield return RelationPath(node);
+                foreach (TreeNode child in node.Nodes) pending.Push(child);
+            }
         }
 
         TreeNode FindRelationNode(string[] path)
@@ -287,7 +306,15 @@ namespace FormulaExplorer
         {
             selectedRelations.Clear();
             if (restore == null) selectedRelations.Add(rootNode);
-            else selectedRelations.AddRange(restore.Selected.Select(FindRelationNode).Where(node => node != null));
+            else
+            {
+                foreach (string[] path in restore.Expanded)
+                {
+                    TreeNode expanded = FindRelationNode(path);
+                    if (expanded != null) expanded.Expand();
+                }
+                selectedRelations.AddRange(restore.Selected.Select(FindRelationNode).Where(node => node != null));
+            }
             tree.SelectedNode = restore == null ? rootNode : FindRelationNode(restore.Current) ?? selectedRelations.LastOrDefault() ?? rootNode;
             if (restore != null && restore.Selected.Length > 0 && selectedRelations.Count == 0)
                 selectedRelations.Add(tree.SelectedNode);
@@ -318,7 +345,7 @@ namespace FormulaExplorer
                 traceSource == null ? root.Workbook : traceSource.LaunchWorkbook);
         }
 
-        TraceLocation NavigableRelationSelection()
+        TraceLocation NavigableRelationSelection(bool currentFirst = false)
         {
             TraceLocation selection = SelectedTraceLocation();
             if (selection == null) return null;
@@ -327,13 +354,18 @@ namespace FormulaExplorer
                 : selectedRelations.Select(RelationLocation).LastOrDefault(item => item != null);
             if (location == null) return null;
             WorkbookSheet target = traceEngine.SheetOf(location.Ranges[0]);
-            return new TraceLocation(selection.Ranges.Where(range => traceEngine.SheetOf(range).Equals(target)).ToArray());
+            IEnumerable<Reference> ranges = selection.Ranges;
+            if (currentFirst) ranges = location.Ranges.Concat(ranges).GroupBy(TraceRangeKey, StringComparer.OrdinalIgnoreCase).Select(group => group.First());
+            return new TraceLocation(ranges.Where(range => traceEngine.SheetOf(range).Equals(target)).ToArray());
         }
 
         void FollowRelationInExcel()
+        { FollowRelationSelection(false); }
+
+        void FollowRelationSelection(bool currentFirst)
         {
             if (!IsDocked || bridge == null || book == null || tabs.SelectedIndex != 0) return;
-            TraceLocation selection = NavigableRelationSelection();
+            TraceLocation selection = NavigableRelationSelection(currentFirst);
             // Switching windows on an ordinary tree selection would hide this docked pane.
             if (selection != null && selection.Workbook != null && selection.Workbook != book) return;
             bool keepFocus = tree.Focused;

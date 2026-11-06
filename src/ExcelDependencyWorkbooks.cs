@@ -19,6 +19,40 @@ namespace FormulaExplorer
         internal long DependencyWorkbookIdentity(Book snapshot)
         { return RequireDependencySnapshot(snapshot).Workbook.ToInt64(); }
 
+        internal Dictionary<string, string> DependencyWorksheetNames(Book previous, Book current)
+        {
+            DirectSnapshot before = RequireDependencySnapshot(previous), after = RequireDependencySnapshot(current);
+            var names = after.Sheets.ToDictionary(sheet => sheet.Value, sheet => sheet.Key);
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var sheet in before.Sheets)
+            {
+                string name;
+                if (names.TryGetValue(sheet.Value, out name)) result.Add(sheet.Key, name);
+            }
+            return result;
+        }
+
+        internal object RetainDependencyRange(Book book, Reference range)
+        { return AtDirectSheet(book, range.Sheet, sheet => RangeAt(sheet, range.Address)); }
+
+        internal Reference ReadRetainedDependencyRange(Book book, object range)
+        {
+            object sheet = null;
+            try
+            {
+                sheet = ((dynamic)range).Worksheet;
+                string name = (string)((dynamic)sheet).Name;
+                IntPtr identity;
+                if (!RequireDependencySnapshot(book).Sheets.TryGetValue(name, out identity) ||
+                    identity.ToInt64() != DirectSession.Identity(sheet)) return null;
+                Reference result = Reference.Parse(name, (string)((dynamic)range).Address);
+                if (result != null) result.Workbook = book;
+                return result;
+            }
+            catch (COMException) { return null; }
+            finally { Release(sheet); }
+        }
+
         internal static string NormalizeDependencyWorkbookPath(string path)
         {
             Uri address;

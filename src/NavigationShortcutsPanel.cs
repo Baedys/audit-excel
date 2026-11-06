@@ -11,6 +11,16 @@ namespace FormulaExplorer
         readonly ExcelNavigationCursor relationNavigationCursor = new ExcelNavigationCursor();
         readonly ExcelNavigationCursor expressionNavigationCursor = new ExcelNavigationCursor();
 
+        protected override bool ProcessCmdKey(ref Message message, Keys keyData)
+        {
+            if (keyData == (Keys.Alt | Keys.R))
+            {
+                TreeView view = expressions.ContainsFocus || formula.Focused || expressionValue.Focused ? expressions : tree;
+                if (HandleExplorerNavigationKey(view, new KeyEventArgs(keyData))) return true;
+            }
+            return base.ProcessCmdKey(ref message, keyData);
+        }
+
         bool HandleExplorerNavigationKey(TreeView view, KeyEventArgs e)
         {
             if (e.Handled || tabs.SelectedIndex != 0) return false;
@@ -41,10 +51,12 @@ namespace FormulaExplorer
                     else FollowRelationInExcel();
                 };
             else if (e.KeyData == (Keys.Alt | Keys.Z)) action = delegate { ToggleNavigationSubtree(view); };
+            else if (e.KeyData == (Keys.Alt | Keys.R)) action = delegate { RefreshExplorerModel(view); };
             else return false;
 
             e.Handled = e.SuppressKeyPress = true;
-            Control focus = formula.Focused ? (Control)formula : view.Focused ? view : null;
+            Control focus = formula.Focused ? (Control)formula : view.Focused ? view :
+                e.KeyData == (Keys.Alt | Keys.R) ? ActiveControl : null;
             try { action(); }
             catch (COMException error) { status.Text = "Navigation Excel indisponible · " + error.Message; }
             catch (InvalidOperationException error) { status.Text = error.Message; }
