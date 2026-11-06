@@ -24,7 +24,13 @@ namespace FormulaExplorer
         internal object Target;
         public bool Undone { get; internal set; }
         public string Location { get { return "'" + (DisplaySheet ?? Sheet).Replace("'", "''") + "'!" + Address; } }
-        internal void ReleaseTarget() { ExcelBridge.Release(Target); Target = null; }
+        internal void ReleaseTarget()
+        {
+            object target = Target;
+            Target = null;
+            try { ExcelBridge.Release(target); }
+            catch (InvalidComObjectException) { }
+        }
     }
 
     sealed class FormulaCellContent
@@ -477,8 +483,38 @@ namespace FormulaExplorer
         }
         public void UndoFormula(FormulaChange change)
         {
+            UndoFormulaCore(change);
+            change.ReleaseTarget();
+        }
+
+        internal void UndoFormulaBatch(FormulaChange[] newestFirst)
+        {
+            var formats = new string[newestFirst.Length];
+            int completed = 0;
+            try
+            {
+                for (; completed < newestFirst.Length; completed++)
+                    formats[completed] = UndoFormulaCore(newestFirst[completed]);
+            }
+            catch (Exception undoError)
+            {
+                var errors = new List<Exception> { undoError };
+                for (int index = completed - 1; index >= 0; index--)
+                {
+                    try { RestoreUndoneFormula(newestFirst[index], formats[index]); }
+                    catch (Exception rollbackError) { errors.Add(rollbackError); }
+                }
+                if (errors.Count == 1) throw;
+                throw new InvalidOperationException("Restauration du lot d’annulation incomplète. " +
+                    String.Join(" · ", errors.Select(error => error.Message)), new AggregateException(errors));
+            }
+            foreach (FormulaChange change in newestFirst) change.ReleaseTarget();
+        }
+
+        string UndoFormulaCore(FormulaChange change)
+        {
             if (change == null || change.Undone || change.Target == null) throw new InvalidOperationException("Aucune édition à annuler.");
-            AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
+            return AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
             {
                 object range = change.Target;
                 bool isArray = change.BeforeArray != null;
@@ -509,8 +545,44 @@ namespace FormulaExplorer
                     throw;
                 }
                 change.DisplaySheet = sheet; change.Address = address; change.Undone = true;
-                change.ReleaseTarget();
+                return format;
+            });
+        }
+
+        void RestoreUndoneFormula(FormulaChange change, string format)
+        {
+            AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
+            {
+                object range = change.Target;
+                bool array = change.BeforeArray != null;
+                if (array) RequireEditableLegacyArray(worksheet, range);
+                else RequireEditable(range);
+                bool same = array ? SameLegacyArrayContent(ReadLegacyArrayContent(range), change.BeforeArray) :
+                    SameFormulaContent(ReadFormulaContent(range), change.Before);
+                if (!same) throw new InvalidOperationException("Le contenu a changé pendant l’annulation · " + change.Location);
+                RestoreEditContent(range, change, false, format);
+                change.Undone = false;
                 return true;
+            });
+        }
+
+        internal void SelectFormulaUndoTarget(FormulaChange change)
+        {
+            AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
+            {
+                object workbook = null, windows = null, window = null, range = null;
+                try
+                {
+                    workbook = ((dynamic)worksheet).Parent;
+                    windows = ((dynamic)workbook).Windows;
+                    window = ((dynamic)windows).Item[1];
+                    range = RangeAt(worksheet, change.Address);
+                    ((dynamic)window).Activate();
+                    ((dynamic)worksheet).Activate();
+                    ((dynamic)range).Select();
+                    return true;
+                }
+                finally { Release(range); Release(window); Release(windows); Release(workbook); }
             });
         }
 

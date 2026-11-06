@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Annulation des éditions depuis Excel — 6 novembre 2026
+
+Le CIL d’Arixcel transfère l’historique local lors de la perte de focus. L’application inscrit une seule action `OnUndo`. Son lot est exécuté du changement le plus récent au plus ancien. Une sélection sûre est tentée après l’écriture. Clair enregistre une commande XLL dédiée, sélectionne la cible la plus ancienne après succès et conserve ses contrôles de conflit. Si un élément du lot échoue, les écritures déjà annulées sont compensées. [Application.OnUndo](https://learn.microsoft.com/en-us/office/vba/api/excel.application.onundo)
+
+Le témoin dans le processus Excel x64 masqué utilise le bouton natif via `ExecuteMso("Undo")`. Il empile d’abord un effacement natif par-dessus deux éditions Clair. Le premier Undo restaure l’effacement et le suivant restaure les deux formules, sélectionne la cible la plus ancienne et actualise le volet. Arixcel connecté garde son raccourci Ctrl+Retour arrière. Le test du volet couvre aussi la fermeture, une saisie intervenue avant la publication, le changement de classeur et la compensation d’un conflit. Le focus du volet est simulé. La frappe physique et le chemin Excel x86 restent à vérifier. [Commande Office](https://learn.microsoft.com/en-us/office/vba/api/office.commandbars.executemso)
+
 ## Langue et notation des formules — 6 novembre 2026
 
 Le CIL d’Arixcel distingue la langue, activée par défaut, de la notation Excel relue au retour du focus. Le changement redessine les composants et leurs positions dans le même arbre. Le témoin Clair compare le texte du champ aux quatre membres Excel `Formula2*`, conserve le nœud courant et la sélection de la grille, et vérifie la préférence entre deux volets. La sélection de texte utilise les positions recalculées, tandis que l’évaluation utilise toujours le texte A1 invariant.
@@ -16,7 +22,7 @@ Les témoins CSE partent d’une cellule intérieure ou d’une sélection du bl
 
 L’analyse CIL d’Arixcel suit `StartEditing`, `AcceptEditing` et le callback d’annulation. F2 reprend le curseur de la formule entière, y compris depuis une sous-expression. Entrée valide et reconstruit depuis la source du tracé. Un échec de reconstruction déclenche une restauration. Ctrl+Z porte d’abord sur la saisie, puis sur une écriture au niveau de l’explorateur.
 
-Le témoin Clair utilise un volet WinForms et une instance Excel masquée. Il édite un antécédent situé sur une autre feuille, vérifie les commandes clavier, la sélection du texte, la racine, les branches et l’historique. La limite de capture provoque un échec après une écriture qui aurait généré un format de date. La formule et le format initial sont restaurés, avec le brouillon toujours ouvert. Un autre témoin vérifie qu’une cellule au format Texte reçoit une vraie formule et retrouve son contenu et son format après annulation. Il déplace aussi la cellule éditée par insertion de ligne et renomme sa feuille. Ctrl+Z retrouve la cellule physique, même si l’adresse précédente contient une formule identique. L’annulation globale via `Application.OnUndo` et la frappe physique dans le volet Office restent à valider.
+Le témoin Clair utilise un volet WinForms et une instance Excel masquée. Il édite un antécédent situé sur une autre feuille, vérifie les commandes clavier, la sélection du texte, la racine, les branches et l’historique. La limite de capture provoque un échec après une écriture qui aurait généré un format de date. La formule et le format initial sont restaurés, avec le brouillon toujours ouvert. Un autre témoin vérifie qu’une cellule au format Texte reçoit une vraie formule et retrouve son contenu et son format après annulation. Il déplace aussi la cellule éditée par insertion de ligne et renomme sa feuille. Ctrl+Z retrouve la cellule physique, même si l’adresse précédente contient une formule identique. Ces témoins portent sur l’annulation locale dans le volet.
 
 ## Reprendre un tracé depuis Excel — 6 novembre 2026
 

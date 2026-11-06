@@ -28,6 +28,7 @@ namespace FormulaExplorer
         MainForm explorer;
         internal Action HideClosedExplorerPane;
         internal Func<bool> LeaveExplorerForWorksheet;
+        internal Func<WorksheetFormulaUndo> FormulaUndoSession;
         internal bool HasWorksheetShortcutTrace { get { return explorer != null && explorer.HasWorksheetShortcutTrace; } }
 
         internal bool ResumeExplorerFromWorksheet()
@@ -40,6 +41,7 @@ namespace FormulaExplorer
                 explorer = new MainForm(connection, true, window);
                 explorer.HideClosedExplorerPane = HideClosedExplorerPane;
                 explorer.LeaveExplorerForWorksheet = LeaveExplorerForWorksheet;
+                explorer.FormulaUndoSession = FormulaUndoSession;
                 Controls.Add(explorer);
                 explorer.Show();
             }
@@ -58,6 +60,20 @@ namespace FormulaExplorer
             base.OnEnter(e);
             if (explorer != null && !explorer.IsDisposed) explorer.RefreshFormulaDisplayStyle(true);
         }
+
+        protected override void OnLeave(EventArgs e)
+        {
+            base.OnLeave(e);
+            MainForm source = explorer;
+            if (source == null || source.IsDisposed || !IsHandleCreated) return;
+            BeginInvoke((Action)delegate
+            {
+                if (ReferenceEquals(explorer, source) && !ContainsFocus) TransferFormulaUndo();
+            });
+        }
+
+        internal void TransferFormulaUndo()
+        { if (explorer != null && !explorer.IsDisposed) explorer.TransferFormulaUndo(); }
 
         protected override void Dispose(bool disposing)
         {

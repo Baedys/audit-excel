@@ -42,30 +42,46 @@ public static class WorksheetShortcutTests
         checks = 0;
         IntPtr module = LoadLibrary(NativePath);
         Equal(module != IntPtr.Zero, true, "the matching XLL loads");
-        int calls = 0;
+        int calls = 0, undoCalls = 0;
         Callback callback = () => calls++;
-        SetCallback set = null;
+        Callback undoCallback = () => undoCalls++;
+        SetCallback set = null, setUndo = null;
         try
         {
             set = (SetCallback)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "ClairSetShortcutCallback"), typeof(SetCallback));
             var run = (RunCommand)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "ClairReturnFromWorksheet"), typeof(RunCommand));
+            setUndo = (SetCallback)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "ClairSetFormulaUndoCallback"), typeof(SetCallback));
+            var undo = (RunCommand)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "ClairUndoFormulaEdits"), typeof(RunCommand));
             var close = (RunCommand)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "xlAutoClose"), typeof(RunCommand));
             Equal(run(), 1, "the native command returns success without a subscriber");
             Equal(calls, 0, "the default callback is empty");
+            Equal(undo(), 1, "the Undo command returns success without a subscriber");
+            Equal(undoCalls, 0, "the Undo callback starts empty");
             set(Marshal.GetFunctionPointerForDelegate(callback));
+            setUndo(Marshal.GetFunctionPointerForDelegate(undoCallback));
             run(); run();
+            undo();
             Equal(calls, 2, "the command enters the managed callback exactly once");
-            close(); run();
+            Equal(undoCalls, 1, "the Undo command uses its independent callback");
+            close(); run(); undo();
             Equal(calls, 2, "Excel XLL close clears the callback");
+            Equal(undoCalls, 1, "Excel XLL close clears the Undo callback");
             set(Marshal.GetFunctionPointerForDelegate(callback));
+            setUndo(Marshal.GetFunctionPointerForDelegate(undoCallback));
             set(IntPtr.Zero); run();
+            undo();
             Equal(calls, 2, "managed disconnect clears the callback");
+            Equal(undoCalls, 2, "clearing the shortcut leaves the Undo callback bound");
+            setUndo(IntPtr.Zero); undo();
+            Equal(undoCalls, 2, "managed disconnect clears the Undo callback");
         }
         finally
         {
             if (set != null) set(IntPtr.Zero);
+            if (setUndo != null) setUndo(IntPtr.Zero);
             FreeLibrary(module);
             GC.KeepAlive(callback);
+            GC.KeepAlive(undoCallback);
         }
         Console.WriteLine("NATIVE_WORKSHEET_SHORTCUT_ASSERTIONS " + checks);
     }

@@ -7,12 +7,16 @@
 #pragma comment(linker, "/export:xlAutoClose=_xlAutoClose@0")
 #pragma comment(linker, "/export:ClairReturnFromWorksheet=_ClairReturnFromWorksheet@0")
 #pragma comment(linker, "/export:ClairSetShortcutCallback=_ClairSetShortcutCallback@4")
+#pragma comment(linker, "/export:ClairUndoFormulaEdits=_ClairUndoFormulaEdits@0")
+#pragma comment(linker, "/export:ClairSetFormulaUndoCallback=_ClairSetFormulaUndoCallback@4")
 #else
 #pragma comment(linker, "/entry:ShortcutDllEntry")
 #pragma comment(linker, "/export:xlAutoOpen")
 #pragma comment(linker, "/export:xlAutoClose")
 #pragma comment(linker, "/export:ClairReturnFromWorksheet")
 #pragma comment(linker, "/export:ClairSetShortcutCallback")
+#pragma comment(linker, "/export:ClairUndoFormulaEdits")
+#pragma comment(linker, "/export:ClairSetFormulaUndoCallback")
 #endif
 
 using ShortcutCallback = void (WINAPI*)();
@@ -59,9 +63,11 @@ namespace
     };
 
     CountedText commandName(L"ClairReturnFromWorksheet");
+    CountedText undoCommandName(L"ClairUndoFormulaEdits");
     CountedText commandSignature(L"J");
     CountedText emptyText(L"");
     PVOID volatile shortcutCallback = nullptr;
+    PVOID volatile formulaUndoCallback = nullptr;
 
     ExcelValue Text(wchar_t* text)
     {
@@ -69,6 +75,27 @@ namespace
         value.value.text = text;
         value.type = ExcelText;
         return value;
+    }
+
+    bool RegisterCommand(ExcelCall excel, ExcelValue& module, wchar_t* command)
+    {
+        auto entry = Text(command);
+        auto signature = Text(commandSignature.characters);
+        auto name = Text(command);
+        auto arguments = Text(emptyText.characters);
+        ExcelValue kind{};
+        kind.type = ExcelInteger;
+        kind.value.integer = 2;
+        ExcelValue* inputs[] = { &module, &entry, &signature, &name, &arguments, &kind };
+        ExcelValue registration{};
+        return excel(ExcelRegister, _countof(inputs), inputs, &registration) == ExcelSuccess && registration.type == ExcelNumber;
+    }
+
+    int RunCallback(PVOID volatile* target)
+    {
+        auto callback = reinterpret_cast<ShortcutCallback>(InterlockedCompareExchangePointer(target, nullptr, nullptr));
+        if (callback) callback();
+        return 1;
     }
 }
 
@@ -83,12 +110,15 @@ extern "C" void WINAPI ClairSetShortcutCallback(ShortcutCallback callback)
 }
 
 extern "C" int WINAPI ClairReturnFromWorksheet()
+{ return RunCallback(&shortcutCallback); }
+
+extern "C" void WINAPI ClairSetFormulaUndoCallback(ShortcutCallback callback)
 {
-    auto callback = reinterpret_cast<ShortcutCallback>(
-        InterlockedCompareExchangePointer(&shortcutCallback, nullptr, nullptr));
-    if (callback) callback();
-    return 1;
+    InterlockedExchangePointer(&formulaUndoCallback, reinterpret_cast<PVOID>(callback));
 }
+
+extern "C" int WINAPI ClairUndoFormulaEdits()
+{ return RunCallback(&formulaUndoCallback); }
 
 extern "C" int WINAPI xlAutoOpen()
 {
@@ -103,24 +133,17 @@ extern "C" int WINAPI xlAutoOpen()
     ExcelValue module{};
     if (excel(ExcelGetName, 0, nullptr, &module) != ExcelSuccess) return 0;
 
-    auto entry = Text(commandName.characters);
-    auto signature = Text(commandSignature.characters);
-    auto name = Text(commandName.characters);
-    auto arguments = Text(emptyText.characters);
-    ExcelValue kind{};
-    kind.type = ExcelInteger;
-    kind.value.integer = 2;
-    ExcelValue* inputs[] = { &module, &entry, &signature, &name, &arguments, &kind };
-    ExcelValue registration{};
-    const int result = excel(ExcelRegister, _countof(inputs), inputs, &registration);
+    const bool registered = RegisterCommand(excel, module, commandName.characters) &&
+        RegisterCommand(excel, module, undoCommandName.characters);
 
     ExcelValue* release[] = { &module };
     excel(ExcelFree, _countof(release), release, nullptr);
-    return result == ExcelSuccess && registration.type == ExcelNumber ? 1 : 0;
+    return registered ? 1 : 0;
 }
 
 extern "C" int WINAPI xlAutoClose()
 {
     ClairSetShortcutCallback(nullptr);
+    ClairSetFormulaUndoCallback(nullptr);
     return 1;
 }

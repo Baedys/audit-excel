@@ -11,18 +11,27 @@ namespace FormulaExplorer
         ExplorerShortcutHistory shortcutHistory;
         bool shortcutAttempted, replayingShortcut;
 
-        public bool IsWorksheetShortcutLoaded() { return worksheetShortcut != null; }
+        public bool IsWorksheetShortcutLoaded() { return worksheetShortcut != null && worksheetShortcut.HasShortcut; }
 
         void EnsureWorksheetShortcut()
         {
-            if (application == null || shortcutAttempted || worksheetShortcut != null) return;
+            if (application == null) return;
             try
             {
-                if (ArixcelShortcutProviderConnected()) return;
-                shortcutAttempted = true;
-                worksheetShortcut = WorksheetShortcutBinding.Bind(application, Path.GetDirectoryName(typeof(ExcelAddIn).Assembly.Location),
-                    DispatchWorksheetShortcut);
-                if (worksheetShortcut != null) shortcutHistory = new ExplorerShortcutHistory();
+                if (!shortcutAttempted)
+                {
+                    shortcutAttempted = true;
+                    worksheetShortcut = WorksheetShortcutBinding.Bind(application, Path.GetDirectoryName(typeof(ExcelAddIn).Assembly.Location),
+                        DispatchWorksheetShortcut, DispatchWorksheetFormulaUndo);
+                }
+                if (worksheetShortcut == null) return;
+                try
+                {
+                    if (!worksheetShortcut.HasShortcut && !ArixcelShortcutProviderConnected() && worksheetShortcut.EnableShortcut())
+                        shortcutHistory = new ExplorerShortcutHistory();
+                }
+                catch (Exception error) { Trace.WriteLine("Clair · Raccourci Excel · " + error.Message); }
+                if (worksheetShortcut.HasFormulaUndo) EnsureWorksheetFormulaUndo();
             }
             catch (Exception error) { Trace.WriteLine("Clair · Raccourci Excel · " + error.Message); }
         }
@@ -52,6 +61,7 @@ namespace FormulaExplorer
 
         void DisconnectWorksheetShortcut()
         {
+            DisconnectWorksheetFormulaUndo();
             WorksheetShortcutBinding binding = worksheetShortcut;
             worksheetShortcut = null;
             shortcutAttempted = false;
@@ -80,10 +90,12 @@ namespace FormulaExplorer
 
         void AttachWorksheetShortcut(DockedExplorer pane)
         {
+            pane.Control.FormulaUndoSession = () => worksheetFormulaUndo;
             pane.Control.LeaveExplorerForWorksheet = delegate
             {
                 if (shortcutHistory == null || !WorksheetWindowFocus.Focus(pane.WindowHandle)) return false;
                 RememberWorksheetView(pane);
+                pane.Control.TransferFormulaUndo();
                 return true;
             };
             pane.Control.Enter += delegate

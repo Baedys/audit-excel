@@ -11,6 +11,9 @@ namespace FormulaExplorer
         const string FormulaEditingHint = "Entrée applique · Échap annule · Alt+Entrée ajoute une ligne";
         readonly RichTextBox formulaEditor = new RichTextBox();
         readonly Stack<FormulaChange> formulaChanges = new Stack<FormulaChange>();
+        internal Func<WorksheetFormulaUndo> FormulaUndoSession;
+        WorksheetFormulaUndo formulaUndoOwner;
+        long formulaUndoRevision;
         Cell formulaDisplayCell, formulaEditCell;
         FormulaEditorKind formulaDisplayKind;
         FormulaDisplayStyle explorerFormulaStyle = FormulaDisplayStyle.Invariant;
@@ -56,12 +59,12 @@ namespace FormulaExplorer
             Activated += delegate { RefreshFormulaDisplayStyle(true); };
             ExplorerFormulaLanguageChanged += OnExplorerFormulaLanguageChanged;
             tabs.Selecting += delegate(object sender, TabControlCancelEventArgs e) { if (formulaEditCell != null) e.Cancel = true; };
+            FormClosed += delegate { if (!hostIsClosing) TransferFormulaUndo(); };
             Disposed += delegate
             {
                 ExplorerFormulaLanguageChanged -= OnExplorerFormulaLanguageChanged;
                 ReleaseFormulaEditTarget();
-                foreach (FormulaChange change in formulaChanges) change.ReleaseTarget();
-                formulaChanges.Clear();
+                ReleaseLocalFormulaUndo();
             };
         }
 
@@ -294,6 +297,8 @@ namespace FormulaExplorer
                 RequireFormulaEditWindow();
                 if (formulaEditStyle.Local && !formulaEditStyle.SameLanguage(bridge.ReadFormulaDisplayStyle(true)))
                     throw new InvalidOperationException("La syntaxe locale d’Excel a changé. Rouvrez l’édition pour l’utiliser.");
+                WorksheetFormulaUndo session = CurrentFormulaUndoSession();
+                long revision = session == null ? 0 : session.Revision;
                 FormulaChange change = bridge.EditDisplayedCell(previous, formulaEditCell, formulaEditTarget, formulaEditArray, draft, formulaEditStyle);
                 try
                 {
@@ -320,7 +325,11 @@ namespace FormulaExplorer
                     }
                     throw;
                 }
+                if (session != null && (!ReferenceEquals(formulaUndoOwner, session) || formulaUndoRevision != revision))
+                    ReleaseLocalFormulaUndo();
                 formulaChanges.Push(change);
+                formulaUndoOwner = session;
+                formulaUndoRevision = session == null ? 0 : session.Revision;
                 CloseFormulaEdit("Cellule modifiée · " + change.Location + " · Ctrl+Z dans Clair", caret + formulaDisplayPrefix);
             }
             catch (ArgumentException error) { status.Text = error.Message; }
@@ -339,14 +348,60 @@ namespace FormulaExplorer
                 RequireFormulaEditWindow();
                 if (bridge.DependencyWorkbookIdentity(change.Workbook) != bridge.DependencyWorkbookIdentity(book))
                     throw new InvalidOperationException("La dernière édition Clair appartient à un autre classeur.");
+                WorksheetFormulaUndo session = CurrentFormulaUndoSession();
+                bool fresh = session != null && ReferenceEquals(formulaUndoOwner, session) && formulaUndoRevision == session.Revision;
                 bridge.UndoFormula(change);
                 formulaChanges.Pop();
+                if (fresh) formulaUndoRevision = session.Revision;
                 RefreshExplorerModelCore(null, false, true);
                 status.Text = "Édition annulée · " + change.Location;
             }
             catch (InvalidOperationException error) { status.Text = (change.Undone ? "Édition annulée · actualisation impossible · " : "") + error.Message; }
             catch (COMException error) { status.Text = (change.Undone ? "Édition annulée · actualisation impossible · " : "Annulation indisponible · ") + error.Message; }
             catch (AggregateException error) { status.Text = (change.Undone ? "Édition annulée · actualisation impossible · " : "") + error.Message; }
+        }
+
+        WorksheetFormulaUndo CurrentFormulaUndoSession()
+        { return FormulaUndoSession == null ? null : FormulaUndoSession(); }
+
+        void ReleaseLocalFormulaUndo()
+        {
+            foreach (FormulaChange change in formulaChanges) change.ReleaseTarget();
+            formulaChanges.Clear();
+            formulaUndoOwner = null;
+        }
+
+        internal void TransferFormulaUndo()
+        {
+            WorksheetFormulaUndo session = CurrentFormulaUndoSession();
+            if (formulaChanges.Count == 0 || session == null || !ReferenceEquals(formulaUndoOwner, session)) return;
+            if (formulaUndoRevision != session.Revision) { ReleaseLocalFormulaUndo(); return; }
+            try
+            {
+                if (session.Publish(formulaUndoRevision, formulaChanges.ToArray(), WorksheetUndoFinished))
+                {
+                    formulaChanges.Clear();
+                    formulaUndoOwner = null;
+                    status.Text = "Annulation Clair disponible dans Excel · Ctrl+Z";
+                }
+            }
+            catch (COMException error) { status.Text = "Annulation Excel indisponible · " + error.Message; }
+            catch (InvalidOperationException error) { status.Text = "Annulation Excel indisponible · " + error.Message; }
+        }
+
+        void WorksheetUndoFinished(int count, string failure)
+        {
+            if (IsDisposed || Disposing) return;
+            if (failure != null) { status.Text = "Annulation Excel refusée · " + failure; return; }
+            string message = count == 1 ? "Édition Clair annulée depuis Excel" : count + " éditions Clair annulées depuis Excel";
+            try
+            {
+                if (formulaEditCell == null && bridge != null && liveSource != null) RefreshExplorerModelCore(null, false, true);
+            }
+            catch (COMException error) { message += " · Actualisation indisponible · " + error.Message; }
+            catch (InvalidOperationException error) { message += " · Actualisation indisponible · " + error.Message; }
+            catch (AggregateException error) { message += " · Actualisation indisponible · " + error.Message; }
+            status.Text = message;
         }
 
         void RequireFormulaEditWindow()
