@@ -1,10 +1,18 @@
 # Revue et validation
 
+## Appliquer et retirer un alignement — 7 novembre 2026
+
+Le CIL 213848 insère les axes entiers dans la feuille du côté le plus court. 214836 utilise un style nommé dont les six propriétés d’inclusion sont désactivées. La hauteur ou la largeur est lue sur le côté excédentaire et reprise lors de l’insertion. 218136 et 277676 distinguent le retrait d’axes marqués et l’annulation des plages retenues. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Clair applique la proposition sélectionnée après l’avoir recalculée sur les feuilles physiques retenues. Un repère masqué par axe complète le style `Clair Alignment`. Un nom couvrant plusieurs axes peut s’étendre quand un utilisateur insère un axe à l’intérieur. Le retrait exige une géométrie entière, le style attendu et une vacuité contrôlée par Excel sur tout l’axe. Le retrait conserve les axes occupés et ceux qui traversent le corps d’un tableau, d’un filtre ou d’un tableau croisé.
+
+Le témoin Excel masqué vérifie l’insertion, les références ajustées par Excel, les dimensions, l’annulation et le retrait après sauvegarde, réouverture et renommage. La comparaison de hauteur tient compte de l’arrondi de l’affectation Excel. Une formule renvoyant du texte vide en XFD bloque la suppression de la ligne. Un axe non marqué portant le style Clair reste intact. L’application de plusieurs propositions en une commande et le comportement sur d’autres installations Excel restent à comparer.
+
 ## Détection d’alignement — 7 novembre 2026
 
 Le CIL de `RowColumnString` 219896, 220436 et 220992 utilise jusqu’à trois textes utiles dans les cinquante premières cellules perpendiculaires à l’axe. La lecture s’arrête aux zones exclues. Le CIL 221308 normalise les références locales dans les formules. Le Common 78972 et 79736 cherche une plus longue sous-séquence avec une distance maximale de 2 000. Le CIL 376920 traite les colonnes avant les lignes, déplace certains repères sur des blancs ou des doublons et peut annuler deux décalages opposés. Un écart ajouté après la dernière ancre non vide reste dans la comparaison ordinaire. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
 
-Le comparateur Common et Clair donnent les mêmes correspondances et le même dépassement de seuil sur 20 000 paires synthétiques. Les témoins Clair vérifient les décalages initiaux et intermédiaires, les ajouts finaux, les doublons, les formules et les zones exclues. Dans Excel masqué, le volet présente les propositions avant les écarts et sélectionne la plage excédentaire. Le passage aux écarts utilise la même capture. Le témoin différentiel couvre la recherche des correspondances. La construction complète du modèle Arixcel et les commandes d’insertion, de retrait et d’annulation restent à couvrir.
+Le comparateur Common et Clair donnent les mêmes correspondances et le même dépassement de seuil sur 20 000 paires synthétiques. Les témoins Clair vérifient les décalages initiaux et intermédiaires, les ajouts finaux, les doublons, les formules et les zones exclues. Dans Excel masqué, le volet présente les propositions avant les écarts et sélectionne la plage excédentaire. Le passage aux écarts utilise la même capture. Le témoin différentiel couvre la recherche des correspondances. La construction complète du modèle Arixcel reste à couvrir.
 
 ## Blocs d’écarts et navigation — 6 novembre 2026
 

@@ -53,6 +53,7 @@ namespace FormulaExplorer
             skipComparisonAlignment = ActionButton("Comparer sans aligner", ShowComparisonDifferences);
             skipComparisonAlignment.Enabled = false;
             bar.Controls.Add(skipComparisonAlignment); bar.SetFlowBreak(skipComparisonAlignment, true);
+            ConfigureAlignmentActions(bar);
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
             bar.Controls.Add(target); bar.SetFlowBreak(target, true);
@@ -173,7 +174,11 @@ namespace FormulaExplorer
             }
             if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
             ShowComparisonReference();
-            ComparisonResult next = bridge.CompareSelection();
+            ShowComparisonResult(bridge.CompareSelection());
+        }
+
+        void ShowComparisonResult(ComparisonResult next)
+        {
             if (next.Alignment.Count == 0) next.ReadDifferences();
             currentComparison = next;
             comparisonScope.SelectedIndex = (int)bridge.ReferenceScope;
@@ -242,6 +247,7 @@ namespace FormulaExplorer
         void UpdateComparisonSelection()
         {
             ComparisonRow row = SelectedComparisonRow();
+            RefreshAlignmentActions(row);
             comparisonDetails.Text = row == null ? "" : String.Join(Environment.NewLine + Environment.NewLine,
                 comparisonSwapped ? new[] { SideDetail(row, true), SideDetail(row, false) } :
                     new[] { SideDetail(row, false), SideDetail(row, true) });
@@ -288,6 +294,11 @@ namespace FormulaExplorer
 
         bool HandleComparisonKey(Keys keyData)
         {
+            if (tabs.SelectedIndex == 3 && keyData == (Keys.Control | Keys.Z) && comparisonAlignmentUndo.Count != 0)
+            {
+                Safe(UndoLastComparisonAlignment);
+                return true;
+            }
             if (tabs.SelectedIndex != 3 || !comparisonTree.ContainsFocus || SelectedComparisonRow() == null) return false;
             if (keyData == (Keys.Control | Keys.Tab))
                 Safe(delegate { NavigateComparison(SelectedComparisonRow(), !comparisonRight); });

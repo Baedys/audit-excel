@@ -21,6 +21,7 @@ namespace FormulaExplorer
         internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
         internal bool AlignmentLimited;
         internal Action<List<ComparisonRow>> CompareSheets;
+        internal Func<ComparisonResult> Recompare;
 
         internal List<ComparisonRow> ReadDifferences()
         {

@@ -55,8 +55,13 @@ namespace FormulaExplorer
         internal ComparisonResult CompareSelection()
         {
             if (comparisonBook == null) throw new InvalidOperationException("Définissez d’abord une référence Excel.");
+            return CompareSelectionFor(ActiveDirectHighlightBook(), ReferenceScope == ComparisonScope.Worksheet ? ActiveComparisonSheets(true) : null);
+        }
+
+        ComparisonResult CompareSelectionFor(Book right, string[] selectedSheets)
+        {
+            Book savedReference = comparisonBook;
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
-            Book right = ActiveDirectHighlightBook();
             bool valuesOnly = ComparisonOptions.ValuesOnly, relative = ComparisonOptions.Relative, ignoreInputs = ComparisonOptions.IgnoreInputs;
             double tolerance = (double)ComparisonOptions.Tolerance;
             var result = new ComparisonResult();
@@ -94,7 +99,7 @@ namespace FormulaExplorer
                 if (!DependencyWorksheetNames(comparisonBook, left).TryGetValue(comparisonArea.Sheet, out leftName))
                     throw new InvalidOperationException("La feuille de référence a été supprimée.");
                 bool sameBook = DependencyWorkbookIdentity(left) == DependencyWorkbookIdentity(right);
-                foreach (string sheet in ActiveComparisonSheets(true))
+                foreach (string sheet in selectedSheets)
                     if (!sameBook || !String.Equals(leftName, sheet, StringComparison.OrdinalIgnoreCase))
                         pairs.Add(SheetPair(left, leftName, right, sheet));
                 if (pairs.Count == 0) throw new InvalidOperationException("Sélectionnez une autre feuille à comparer.");
@@ -148,6 +153,21 @@ namespace FormulaExplorer
                         Reference.FromBounds(b.Sheet, row, col, endRow, endCol, right), rightCells[b.Sheet],
                         valuesOnly, relative, ignoreInputs, tolerance);
                 }
+            };
+            result.Recompare = () =>
+            {
+                if (!ReferenceEquals(comparisonBook, savedReference))
+                    throw new InvalidOperationException("La référence a changé. Lancez une nouvelle comparaison.");
+                Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
+                string[] sheets = null;
+                if (selectedSheets != null)
+                {
+                    var names = DependencyWorksheetNames(right, current);
+                    if (selectedSheets.Any(sheet => !names.ContainsKey(sheet)))
+                        throw new InvalidOperationException("Une feuille comparée a été supprimée. Lancez une nouvelle comparaison.");
+                    sheets = selectedSheets.Select(sheet => names[sheet]).ToArray();
+                }
+                return CompareSelectionFor(current, sheets);
             };
             return result;
         }

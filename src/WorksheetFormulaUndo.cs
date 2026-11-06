@@ -7,7 +7,8 @@ namespace FormulaExplorer
     {
         readonly ExcelBridge bridge;
         readonly Action<string> register, unregister;
-        FormulaChange[] pending;
+        Action pending, pendingRelease;
+        int pendingCount;
         Action<int, string> completed;
         string label;
         bool running, disposed;
@@ -26,11 +27,27 @@ namespace FormulaExplorer
 
         internal bool Publish(long revision, FormulaChange[] newestFirst, Action<int, string> report)
         {
-            if (disposed || running || revision != Revision || newestFirst.Length == 0) return false;
             string nextLabel = newestFirst.Length == 1 ? "Annuler l’édition Clair" : "Annuler les éditions Clair";
+            return PublishAction(revision, nextLabel, newestFirst.Length, () =>
+            {
+                bridge.UndoFormulaBatch(newestFirst);
+                try { bridge.SelectFormulaUndoTarget(newestFirst[newestFirst.Length - 1]); }
+                catch (Exception error) { Trace.WriteLine("Clair · Sélection après annulation · " + error.Message); }
+            }, () =>
+            {
+                foreach (FormulaChange change in newestFirst) change.ReleaseTarget();
+            }, report);
+        }
+
+        internal bool PublishAlignment(long revision, int count, Action undo, Action<int, string> report)
+        { return PublishAction(revision, "Annuler l’alignement Clair", count, undo, null, report); }
+
+        bool PublishAction(long revision, string nextLabel, int count, Action undo, Action release, Action<int, string> report)
+        {
+            if (disposed || running || revision != Revision || count == 0) return false;
             register(nextLabel);
             ReleasePending();
-            pending = newestFirst;
+            pending = undo; pendingRelease = release; pendingCount = count;
             completed = report;
             label = nextLabel;
             return true;
@@ -39,17 +56,13 @@ namespace FormulaExplorer
         internal void Run()
         {
             if (disposed || running || pending == null) return;
-            FormulaChange[] changes = pending;
+            Action undo = pending, release = pendingRelease;
+            int count = pendingCount;
             Action<int, string> report = completed;
-            pending = null; completed = null; label = null;
+            pending = null; pendingRelease = null; pendingCount = 0; completed = null; label = null;
             running = true;
             string failure = null;
-            try
-            {
-                bridge.UndoFormulaBatch(changes);
-                try { bridge.SelectFormulaUndoTarget(changes[changes.Length - 1]); }
-                catch (Exception error) { Trace.WriteLine("Clair · Sélection après annulation · " + error.Message); }
-            }
+            try { undo(); }
             catch (Exception error)
             {
                 failure = error.Message;
@@ -59,17 +72,16 @@ namespace FormulaExplorer
             {
                 running = false;
                 Revision++;
-                foreach (FormulaChange change in changes) change.ReleaseTarget();
+                if (release != null) release();
             }
-            if (report != null) report(changes.Length, failure);
+            if (report != null) report(count, failure);
         }
 
         void ReleasePending()
         {
-            FormulaChange[] changes = pending;
-            pending = null; completed = null; label = null;
-            if (changes != null)
-                foreach (FormulaChange change in changes) change.ReleaseTarget();
+            Action release = pendingRelease;
+            pending = null; pendingRelease = null; pendingCount = 0; completed = null; label = null;
+            if (release != null) release();
         }
 
         public void Dispose()

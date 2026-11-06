@@ -427,6 +427,7 @@ namespace FormulaExplorer
 
         internal void TransferFormulaUndo()
         {
+            TransferComparisonAlignmentUndo();
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             if (session == null) return;
             if (formulaUndo.Latest() == null) { formulaUndo.ClearLinkedEntries(); return; }

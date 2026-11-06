@@ -163,7 +163,7 @@ namespace FormulaExplorer
             {
                 if (paneFactory == null) throw new InvalidOperationException("Excel n’a pas fourni le volet Clair. Réinstallez le complément puis redémarrez Excel.");
                 bool trace = command == "precedents" || command == "dependents";
-                if (trace) EnsureWorksheetShortcut();
+                if (trace || command == "compare") EnsureWorksheetShortcut();
                 window = ActivePaneWindow();
                 if (window == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
                 PruneClosedPaneWindows();
