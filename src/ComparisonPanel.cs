@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 
@@ -15,6 +17,13 @@ namespace FormulaExplorer
         readonly CheckBox ignoreComparisonInputs = new CheckBox { Text = "Ignorer les entrées", AutoSize = true };
         readonly NumericUpDown tolerance = new NumericUpDown { DecimalPlaces = 6, Maximum = 1000000, Width = 92 };
         readonly Label referenceLabel = new Label { AutoSize = true };
+        readonly CheckBox highlightComparison = new CheckBox { Text = "Surligner les écarts", Checked = true, AutoSize = true };
+        readonly TreeView comparisonTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false };
+        readonly TextBox comparisonDetails = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical };
+        readonly string comparisonHighlightOwner = "compare-" + Guid.NewGuid().ToString("N");
+        TableLayoutPanel comparisonResults;
+        List<ComparisonRow> comparisonRows;
+        bool comparisonRight = true, comparisonSwapped, loadingComparisonRows;
         string liveComparisonReportHeading;
         bool readingComparisonOptions;
 
@@ -39,23 +48,37 @@ namespace FormulaExplorer
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
             bar.Controls.Add(target); bar.SetFlowBreak(target, true);
+            bar.Controls.Add(highlightComparison);
             bar.Controls.Add(referenceLabel);
             if (IsDocked) WrapPaneLabel(bar, referenceLabel);
             PlaceCommandBar(layout, bar, 0);
-            layout.Controls.Add(differences, 0, 1);
+            var results = new Panel { Dock = DockStyle.Fill };
+            comparisonResults = StackPaneControls(comparisonTree, comparisonDetails, 73);
+            comparisonResults.Visible = false;
+            results.Controls.Add(comparisonResults);
+            results.Controls.Add(differences);
+            layout.Controls.Add(results, 0, 1);
             comparisonScope.SelectedIndexChanged += delegate { UpdateComparisonOptions(); ShowComparisonReference(); };
             valuesOnly.CheckedChanged += delegate { UpdateComparisonOptions(); ChangeComparisonOption(options => options.ValuesOnly = valuesOnly.Checked); };
             compareRelative.CheckedChanged += delegate { ChangeComparisonOption(options => options.Relative = compareRelative.Checked); };
             ignoreComparisonInputs.CheckedChanged += delegate { ChangeComparisonOption(options => options.IgnoreInputs = ignoreComparisonInputs.Checked); };
             tolerance.ValueChanged += delegate { ChangeComparisonOption(options => options.Tolerance = tolerance.Value); };
-            tabs.SelectedIndexChanged += delegate { if (tabs.SelectedTab == tab) ShowComparisonReference(); };
+            tabs.SelectedIndexChanged += delegate
+            {
+                if (tabs.SelectedTab == tab) { ShowComparisonReference(); UpdateComparisonSelection(); }
+                else RemoveTraceHighlightOwner(comparisonHighlightOwner);
+            };
+            comparisonTree.AfterSelect += delegate { if (!loadingComparisonRows) UpdateComparisonSelection(); };
+            comparisonTree.NodeMouseDoubleClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left)
+                    Safe(delegate { NavigateComparison((ComparisonRow)e.Node.Tag, comparisonRight); });
+            };
+            highlightComparison.CheckedChanged += delegate { UpdateComparisonSelection(); };
             differences.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e)
             {
                 if (e.RowIndex < 0) return;
-                object item = differences.Rows[e.RowIndex].DataBoundItem;
-                var row = item as ComparisonRow;
-                if (row != null) Safe(delegate { NavigateComparison(row, row.Right != null); });
-                var snapshot = item as Difference;
+                var snapshot = differences.Rows[e.RowIndex].DataBoundItem as Difference;
                 if (snapshot != null && book.Sheets.Contains(snapshot.Sheet))
                 { SetRoot(book.Get(snapshot.Sheet, snapshot.Address), true); tabs.SelectedIndex = 0; }
             };
@@ -96,7 +119,7 @@ namespace FormulaExplorer
         }
 
         internal void RefreshComparisonOnFocus()
-        { if (tabs.SelectedIndex == 3) ShowComparisonReference(); }
+        { if (tabs.SelectedIndex == 3) { ShowComparisonReference(); UpdateComparisonSelection(); } }
 
         void ChangeComparisonOption(Action<ComparisonSettings> change)
         {
@@ -109,6 +132,7 @@ namespace FormulaExplorer
             if (SelectedComparisonScope == ComparisonScope.Snapshot)
             {
                 if (book == null) LoadExcel();
+                ShowComparisonRows(null);
                 RememberSnapshot();
             }
             else
@@ -116,6 +140,7 @@ namespace FormulaExplorer
                 if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
                 bridge.SetComparisonReference(SelectedComparisonScope);
                 differences.DataSource = null;
+                ShowComparisonRows(null);
                 ShowComparisonReference();
                 status.Text = "Référence Excel définie. Sélectionnez le comparateur.";
             }
@@ -123,7 +148,12 @@ namespace FormulaExplorer
 
         void CompareSelection()
         {
-            if (SelectedComparisonScope == ComparisonScope.Snapshot) { CompareSnapshot(); return; }
+            if (SelectedComparisonScope == ComparisonScope.Snapshot)
+            {
+                CompareSnapshot();
+                ShowComparisonRows(null);
+                return;
+            }
             if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
             ShowComparisonReference();
             var rows = bridge.CompareSelection();
@@ -131,32 +161,133 @@ namespace FormulaExplorer
             string mode = valuesOnly.Checked ? "valeurs · tolérance " + tolerance.Value.ToString(CultureInfo.InvariantCulture) :
                 "formules " + (compareRelative.Checked ? "R1C1" : "A1") + (ignoreComparisonInputs.Checked ? " · entrées ignorées" : "");
             liveComparisonReportHeading = referenceLabel.Text + Environment.NewLine + mode;
-            differences.DataSource = rows;
-            status.Text = rows.Count + " écarts · " + mode;
+            differences.DataSource = null;
+            status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts · " + mode;
+            ShowComparisonRows(rows);
         }
 
         ComparisonRow SelectedComparisonRow()
-        { return differences.CurrentRow == null ? null : differences.CurrentRow.DataBoundItem as ComparisonRow; }
+        { return comparisonTree.SelectedNode == null ? null : comparisonTree.SelectedNode.Tag as ComparisonRow; }
+
+        void ShowComparisonRows(List<ComparisonRow> rows)
+        {
+            comparisonRows = rows;
+            loadingComparisonRows = true;
+            comparisonTree.BeginUpdate();
+            try
+            {
+                comparisonTree.Nodes.Clear();
+                if (rows != null)
+                    foreach (ComparisonRow row in rows) comparisonTree.Nodes.Add(ComparisonNode(row));
+                differences.Visible = rows == null;
+                comparisonResults.Visible = rows != null;
+                if (comparisonTree.Nodes.Count != 0) comparisonTree.SelectedNode = comparisonTree.Nodes[0];
+            }
+            finally { comparisonTree.EndUpdate(); loadingComparisonRows = false; }
+            UpdateComparisonSelection();
+        }
+
+        TreeNode ComparisonNode(ComparisonRow row)
+        {
+            var node = new TreeNode(ComparisonNodeText(row)) { Tag = row };
+            if (row.Écart == "Formule") node.ForeColor = Color.Firebrick;
+            if (row.Children != null)
+                foreach (ComparisonRow child in row.Children) node.Nodes.Add(ComparisonNode(child));
+            return node;
+        }
+
+        string ComparisonNodeText(ComparisonRow row)
+        {
+            Reference area = (comparisonSwapped ? row.Left : row.Right) ?? row.Left ?? row.Right;
+            string location = area.Sheet + (area.FirstRow == 0 ? "" : "!" + area.Address);
+            return location + " · " + (row.Children == null ? row.Écart : row.Children.Count + " écarts");
+        }
+
+        void UpdateComparisonSelection()
+        {
+            ComparisonRow row = SelectedComparisonRow();
+            comparisonDetails.Text = row == null ? "" : String.Join(Environment.NewLine + Environment.NewLine,
+                comparisonSwapped ? new[] { SideDetail(row, true), SideDetail(row, false) } :
+                    new[] { SideDetail(row, false), SideDetail(row, true) });
+            if (row == null || !highlightComparison.Checked || tabs.SelectedIndex != 3 || bridge == null)
+            {
+                RemoveTraceHighlightOwner(comparisonHighlightOwner);
+                return;
+            }
+            try
+            {
+                Reference left = row.Left != null && row.Left.FirstRow > 0 ? row.Left : null;
+                Reference right = row.Right != null && row.Right.FirstRow > 0 ? row.Right : null;
+                if (left == null || right == null) { RemoveTraceHighlightOwner(comparisonHighlightOwner); return; }
+                if (bridge.DependencyWorkbookIdentity(left.Workbook) == bridge.DependencyWorkbookIdentity(right.Workbook))
+                    right = Reference.FromBounds(right.Sheet, right.FirstRow, right.FirstColumn, right.LastRow, right.LastColumn, left.Workbook);
+                TrackDirectConnection(bridge);
+                traceHighlightConnections[comparisonHighlightOwner] = bridge;
+                Book primary = bridge.DependencyBookIsOpen(right.Workbook) ? right.Workbook : left.Workbook;
+                if (!bridge.ReplaceTraceHighlights(primary, comparisonHighlightOwner, new[] {
+                    new TraceHighlightRange { Range = left, Color = traceDependentsColor },
+                    new TraceHighlightRange { Range = right, Color = tracePrecedentsColor }
+                })) status.Text = "Surbrillance partielle · un classeur comparé a été fermé.";
+            }
+            catch (Exception error) { status.Text = "Surbrillance Excel indisponible · " + error.Message; }
+        }
+
+        string SideDetail(ComparisonRow row, bool right)
+        {
+            string label = right ? row.Comparateur : row.Référence;
+            string value = right ? row.Après : row.Avant;
+            return (comparisonRight == right ? "● " : "") + (right ? "Comparateur" : "Référence") +
+                (String.IsNullOrEmpty(label) ? "" : " · " + label) +
+                (String.IsNullOrEmpty(value) ? "" : Environment.NewLine + value);
+        }
 
         void NavigateComparison(ComparisonRow row, bool right)
         {
-            Reference area = row == null ? null : right ? row.Right : row.Left;
+            Reference area = row == null ? null : (right ? row.Right : row.Left) ?? row.Left ?? row.Right;
             if (area == null || bridge == null) return;
+            comparisonRight = ReferenceEquals(area, row.Right);
+            UpdateComparisonSelection();
             bridge.NavigateDependency(area.Workbook, new Cell { Sheet = area.Sheet, Address = area.FirstRow == 0 ? "A1" : area.Address });
+        }
+
+        bool HandleComparisonKey(Keys keyData)
+        {
+            if (tabs.SelectedIndex != 3 || !comparisonTree.ContainsFocus || SelectedComparisonRow() == null) return false;
+            if (keyData == (Keys.Control | Keys.Tab))
+                Safe(delegate { NavigateComparison(SelectedComparisonRow(), !comparisonRight); });
+            else if (keyData == (Keys.Control | Keys.S))
+            {
+                comparisonSwapped = !comparisonSwapped;
+                foreach (TreeNode node in comparisonTree.Nodes)
+                {
+                    node.Text = ComparisonNodeText((ComparisonRow)node.Tag);
+                    foreach (TreeNode child in node.Nodes) child.Text = ComparisonNodeText((ComparisonRow)child.Tag);
+                }
+                UpdateComparisonSelection();
+            }
+            else if (keyData == Keys.Enter) Safe(delegate { NavigateComparison(SelectedComparisonRow(), comparisonRight); });
+            else return false;
+            return true;
         }
 
         void AppendComparisonReport(StringBuilder report)
         {
-            var live = differences.DataSource as List<ComparisonRow>;
-            if (live != null)
+            if (comparisonRows != null)
             {
                 report.AppendLine(liveComparisonReportHeading);
-                foreach (ComparisonRow row in live)
-                    report.AppendLine(String.Join("\t", row.Référence, row.Comparateur, row.Écart, row.Avant, row.Après));
+                foreach (ComparisonRow row in comparisonRows)
+                {
+                    AppendComparisonRow(report, row);
+                    if (row.Children != null)
+                        foreach (ComparisonRow child in row.Children) AppendComparisonRow(report, child);
+                }
             }
             var snapshot = differences.DataSource as List<Difference>;
             if (snapshot != null)
                 foreach (Difference d in snapshot) report.AppendLine(d.Sheet + "!" + d.Address + "\t" + d.Change + "\t" + d.Before + "\t" + d.After);
         }
+
+        static void AppendComparisonRow(StringBuilder report, ComparisonRow row)
+        { report.AppendLine(String.Join("\t", row.Référence, row.Comparateur, row.Écart, row.Avant, row.Après)); }
     }
 }

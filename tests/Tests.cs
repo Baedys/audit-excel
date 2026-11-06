@@ -179,6 +179,7 @@ static class Tests
         Check("Conditional rule reference mode witnesses", delegate { Console.WriteLine("CONDITIONAL_WITNESS_ASSERTIONS " + ConditionalRuleWitnessTests.Run()); });
         Check("Combined highlight XML journal replacement", delegate { Console.WriteLine("COMBINED_XML_ASSERTIONS " + CombinedHighlightXmlStorageTests.Run()); });
         Check("Formula presentation spans across Excel styles", delegate { Console.WriteLine("FORMULA_PRESENTATION_ASSERTIONS " + ExcelFormulaStyleTests.RunMapping()); });
+        Check("Sparse comparison block geometry", ExcelComparisonTests.RunGeometry);
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);

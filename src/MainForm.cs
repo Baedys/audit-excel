@@ -267,7 +267,7 @@ namespace FormulaExplorer
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
             flow.Rows.Clear();
-            if (!(differences.DataSource is List<ComparisonRow>)) differences.DataSource = null;
+            differences.DataSource = null;
             TraceWarnings();
         }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
@@ -25,6 +26,39 @@ public static class ExcelComparisonTests
     }
 
     static string Text(object row, string property) { return (string)row.GetType().GetProperty(property).GetValue(row, null); }
+    static IList Children(object row) { return Field<IList>(row, "Children"); }
+    static IList Leaves(IList rows)
+    { return rows.Cast<object>().SelectMany(row => Children(row) == null ? new[] { row } : Children(row).Cast<object>()).ToList(); }
+
+    public static void RunGeometry()
+    {
+        checks = 0;
+        MethodInfo scan = typeof(ExcelBridge).Assembly.GetType("FormulaExplorer.ComparisonAreaScanner", true)
+            .GetMethod("Scan", BindingFlags.Static | BindingFlags.NonPublic);
+        Func<Rectangle, Dictionary<Point, bool?>, Rectangle[]> find = (area, data) =>
+        {
+            Func<Point, bool?> classify = point => data.ContainsKey(point) ? data[point] : null;
+            Func<Point, Point, bool> extend = (anchor, point) => true;
+            return ((IEnumerable<Rectangle>)scan.Invoke(null, new object[] {
+                area, data.Keys.OrderBy(point => point.Y).ThenBy(point => point.X), classify, extend
+            })).ToArray();
+        };
+        var small = new Rectangle(0, 0, 3, 1);
+        var leftEdge = find(small, new Dictionary<Point, bool?> { { Point.Empty, true } });
+        Equal(leftEdge.Single(), small, "a run beginning at the left edge keeps its trailing blanks");
+        var inside = find(small, new Dictionary<Point, bool?> { { Point.Empty, false }, { new Point(1, 0), true } });
+        Equal(inside.Single(), new Rectangle(1, 0, 1, 1), "an interior run trims trailing blanks");
+        var far = new Dictionary<Point, bool?>();
+        foreach (int row in new[] { 10, 1048570 })
+        {
+            far.Add(new Point(2, row), false);
+            far.Add(new Point(3, row), true);
+            far.Add(new Point(4, row), false);
+        }
+        var sparse = find(new Rectangle(0, 0, 16384, 1048576), far);
+        Equal(sparse.Single(), new Rectangle(3, 10, 1, 1048561), "missing rows carry the rectangle across a full-sheet scope");
+        Console.WriteLine("COMPARISON_SCANNER_ASSERTIONS " + checks);
+    }
 
     public static void Run()
     {
@@ -79,11 +113,12 @@ public static class ExcelComparisonTests
                 Invoke(targetPane, "ShowCommand", bridge, "compare", (int)keep(app.ActiveWindow).Hwnd);
                 MainForm targetView = Field<MainForm>(targetPane, "explorer");
                 var mode = Field<ComboBox>(targetView, "comparisonScope");
-                var grid = Field<DataGridView>(targetView, "differences");
+                var tree = Field<TreeView>(targetView, "comparisonTree");
                 var ignore = Field<CheckBox>(targetView, "ignoreComparisonInputs");
                 var relative = Field<CheckBox>(targetView, "compareRelative");
                 var values = Field<CheckBox>(targetView, "valuesOnly");
-                Func<IList> compare = () => { Invoke(targetView, "CompareSelection"); return (IList)grid.DataSource; };
+                Func<IList> groups = () => Field<IList>(targetView, "comparisonRows");
+                Func<IList> compare = () => { Invoke(targetView, "CompareSelection"); return Leaves(groups()); };
                 Equal(mode.SelectedIndex, 2, "the reference is shared with a newly opened pane");
                 Equal(ignore.Checked, true, "comparison options follow the reference across panes");
                 ignore.Checked = false;
@@ -92,7 +127,8 @@ public static class ExcelComparisonTests
                 Equal(Text(rows[0], "Référence").EndsWith("Audit!C3"), true, "source address is physical");
                 Equal(Text(rows[0], "Comparateur").EndsWith("Audit!F6"), true, "target address is shifted");
                 Equal(Text(rows[0], "Écart"), "Formule", "changed formula is identified");
-                Equal(grid.Columns.Count, 5, "the normal pane binds both addresses and contents");
+                Equal(tree.Nodes.Count, 1, "the result tree shows the single mismatch");
+                Equal(Field<TextBox>(targetView, "comparisonDetails").Text.Contains("Audit!F6"), true, "the normal pane shows both addresses and contents");
                 Invoke(targetView, "NavigateComparison", rows[0], false);
                 Equal((string)keep(app.ActiveCell).Address, "$C$3", "navigation activates the reference");
                 Invoke(targetView, "NavigateComparison", rows[0], true);
@@ -120,7 +156,7 @@ public static class ExcelComparisonTests
                 try { compare(); }
                 catch (InvalidOperationException) { rejected = true; }
                 Equal(rejected, true, "a partial non-anchor comparator is refused");
-                Equal(((IList)grid.DataSource).Count, 2, "failed comparison leaves the preceding result available");
+                Equal(Leaves(groups()).Count, 2, "failed comparison leaves the preceding result available");
 
                 keep(right.Range["E5"]).Select();
                 values.Checked = true;
@@ -148,8 +184,8 @@ public static class ExcelComparisonTests
                 rows = compare();
                 Equal(mode.SelectedIndex, 1, "the remembered scope governs the comparison");
                 Equal(relative.Checked, false, "an existing comparator pane loads updated options");
-                Equal(rows.Cast<object>().Any(row => Text(row, "Référence").EndsWith("Modèle!B2") &&
-                    Text(row, "Comparateur").EndsWith("Audit!B2")), true, "renamed source is matched by identity and sheet coordinates stay absolute");
+                Equal(rows.Cast<object>().Any(row => Text(row, "Référence").Contains("Modèle!B2") &&
+                    Text(row, "Comparateur").Contains("Audit!B2")), true, "renamed source is matched by identity and sheet coordinates stay absolute");
                 Equal(rows.Cast<object>().Any(row => Text(row, "Comparateur").Contains("Autre!")), true, "all selected worksheets become comparators");
 
                 ((dynamic)before).Activate(); left.Activate();
@@ -161,8 +197,88 @@ public static class ExcelComparisonTests
                 Equal(rows.Cast<object>().Count(row => Text(row, "Écart") == "Feuille ajoutée"), 2, "target-only sheets are reported separately");
                 right.Name = "Modèle";
                 rows = compare();
-                Equal(rows.Cast<object>().Any(row => Text(row, "Référence").EndsWith("Modèle!B2") &&
-                    Text(row, "Comparateur").EndsWith("Modèle!B2")), true, "workbook mode pairs matching names and addresses");
+                Equal(rows.Cast<object>().Any(row => Text(row, "Référence").Contains("Modèle!B2") &&
+                    Text(row, "Comparateur").Contains("Modèle!B2")), true, "workbook mode pairs matching names and addresses");
+
+                dynamic leftBlocks = keep(keep(((dynamic)before).Worksheets).Add());
+                leftBlocks.Name = "Blocs";
+                dynamic rightBlocks = keep(keep(((dynamic)after).Worksheets).Add());
+                rightBlocks.Name = "Blocs";
+                dynamic lb = keep(leftBlocks.Range["B2"]), ld = keep(leftBlocks.Range["D2"]);
+                dynamic rb = keep(rightBlocks.Range["J10"]), rd = keep(rightBlocks.Range["L10"]);
+                dynamic ldFill = keep(ld.Interior), rdFill = keep(rd.Interior);
+                int oldLeft = ColorTranslator.ToOle(Color.Purple), oldRight = ColorTranslator.ToOle(Color.Orange);
+                ldFill.Color = oldLeft; rdFill.Color = oldRight;
+                lb.Formula2 = "=1"; ld.Formula2 = "=1"; rb.Formula2 = "=2"; rd.Formula2 = "=2";
+                keep(leftBlocks.Range["E2"]).Value2 = 7d; keep(rightBlocks.Range["M10"]).Value2 = 7d;
+                ((dynamic)before).Activate(); leftBlocks.Activate(); keep(leftBlocks.Range["B2:E2"]).Select();
+                Field<ComboBox>(sourceView, "comparisonScope").SelectedIndex = 2;
+                Invoke(sourceView, "SetComparisonReference");
+                Action selectBlock = () =>
+                {
+                    ((dynamic)after).Activate(); rightBlocks.Activate(); rb.Select();
+                };
+                selectBlock();
+                rows = compare();
+                Equal(groups().Count, 1, "the blank interior bridges two differences into one block");
+                Equal(rows.Count, 2, "the formula subgroups stop at the blank signature");
+                object block = groups()[0];
+                Equal(Text(block, "Référence").EndsWith("Blocs!B2:D2"), true, "the reference block includes the blank interior");
+                Equal(Text(block, "Comparateur").EndsWith("Blocs!J10:L10"), true, "the entire right block is translated");
+                Equal(Convert.ToInt32(ldFill.Color), ColorTranslator.ToOle(Color.FromArgb(153, 255, 204)), "left range is highlighted");
+                Equal(Convert.ToInt32(rdFill.Color), ColorTranslator.ToOle(Color.FromArgb(102, 204, 255)), "right range is highlighted");
+                Invoke(targetView, "NavigateComparison", block, false);
+                Equal((string)keep(app.Selection).Address, "$B$2:$D$2", "navigation selects the whole reference range");
+                Invoke(targetView, "NavigateComparison", block, true);
+                Equal((string)keep(app.Selection).Address, "$J$10:$L$10", "navigation selects the translated comparator range");
+
+                ignore.Checked = true; selectBlock();
+                Equal(compare().Count, 2, "ignoring inputs splits the same block at the blank");
+                Equal(tree.Nodes.Count, 1, "two signatures appear beneath one block");
+                Equal(tree.Nodes[0].Nodes.Count, 2, "sub-differences are expandable");
+                tree.Nodes[0].Expand();
+                tree.SelectedNode = tree.Nodes[0].Nodes[0];
+                Equal(Convert.ToInt32(ldFill.Color), oldLeft, "selecting one subgroup restores the unselected left cell");
+                Equal(Convert.ToInt32(rdFill.Color), oldRight, "selecting one subgroup restores the unselected right cell");
+                var highlight = Field<CheckBox>(targetView, "highlightComparison");
+                tree.SelectedNode = tree.Nodes[0];
+                highlight.Checked = false;
+                Equal(Convert.ToInt32(ldFill.Color), oldLeft, "turning off highlights restores the left format");
+                Equal(Convert.ToInt32(rdFill.Color), oldRight, "turning off highlights restores the right format");
+
+                highlight.Checked = true; ignore.Checked = false;
+                keep(leftBlocks.Range["C2"]).Value2 = 8d; keep(rightBlocks.Range["K10"]).Value2 = 8d;
+                selectBlock();
+                Equal(compare().Count, 2, "an equal populated cell splits adjacent difference groups");
+                Equal(groups().Count, 2, "equal values cut the parent block too");
+
+                lb.Value2 = 10d; ld.Value2 = 20d; rb.Value2 = 11d; rd.Value2 = 21d;
+                keep(leftBlocks.Range["C2"]).ClearContents(); keep(rightBlocks.Range["K10"]).ClearContents();
+                selectBlock();
+                rows = compare();
+                Equal(rows.Count, 1, "differing constants share one formula-mode subgroup");
+                Equal(Children(groups()[0]) == null, true, "a single subgroup hides its block wrapper");
+                Equal(Text(rows[0], "Avant"), "<données>", "mixed constants have a data preview marker");
+
+                values.Checked = true; selectBlock();
+                Equal(compare().Count, 2, "values mode splits at the blank in the second pass");
+                lb.Value2 = 1d; keep(leftBlocks.Range["C2"]).Value2 = 1d + 0.00000075d; ld.Value2 = 1d + 0.0000015d;
+                rb.Value2 = 6d; keep(rightBlocks.Range["K10"]).Value2 = 6d + 0.00000075d; rd.Value2 = 6d + 0.0000015d;
+                selectBlock(); rows = compare();
+                Equal(rows.Count, 2, "value subgroup tolerance compares to the anchor rather than the preceding cell");
+                Equal(Text(rows[0], "Comparateur").EndsWith("Blocs!J10:K10"), true, "the first two value pairs share a subgroup");
+                Field<TabControl>(targetView, "tabs").SelectedIndex = 0;
+                Equal(Convert.ToInt32(ldFill.Color), oldLeft, "leaving the comparison tab restores the source fill");
+                Equal(Convert.ToInt32(rdFill.Color), oldRight, "leaving the comparison tab restores the comparator fill");
+
+                Field<TabControl>(targetView, "tabs").SelectedIndex = 3;
+                mode.SelectedIndex = 3;
+                Invoke(targetView, "SetComparisonReference");
+                rb.Value2 = 40d;
+                Invoke(targetView, "CompareSelection");
+                var snapshot = Field<DataGridView>(targetView, "differences");
+                Equal(((IList)snapshot.DataSource).Count > 0, true, "the historical snapshot comparison still binds its grid");
+                Equal(tree.Nodes.Count, 0, "switching to snapshot results clears the live tree");
             }
             Console.WriteLine("EXCEL_COMPARISON_ASSERTIONS " + checks);
         }

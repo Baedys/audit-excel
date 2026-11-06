@@ -207,6 +207,8 @@ W5 décrit référence classeur/feuille/plage, plusieurs comparateurs, modes for
 
 P01 et P02 progressent dans le volet. La référence physique est partagée entre les fenêtres et ses données sont lues au lancement. Les plages comparent par décalage. Les feuilles comparent aux mêmes adresses, et les classeurs apparient leurs feuilles par nom. Les options couvrent R1C1, A1, valeurs calculées et ignorance des entrées. Le mode Instantané conserve la comparaison d’états enregistrés. Les témoins Excel et les écarts connus sont décrits dans la [validation](VALIDATION.md).
 
+P05 ajoute deux passes de regroupement, un arbre de blocs et sous-écarts, la sélection des rectangles sur les deux côtés et des fonds temporaires réversibles. Le scanner livré dans Arixcel et celui de Clair concordent sur 40 000 grilles synthétiques. Le surlignage des segments de texte dans les formules et l’arbre complet des tâches restent ouverts. [Validation](VALIDATION.md)
+
 | ID | Exigence | État initial | Acceptation requise |
 | --- | --- | --- | --- |
 | P01 | Référence et comparateurs aux trois échelles, plusieurs cibles. | Partiel : deux captures classeur par nom de feuille/adresse. | Feuille renommée, plages décalées, comparateurs multiples et sélection de coin supérieur gauche ; appariement explicite. |

@@ -38,6 +38,7 @@ namespace FormulaExplorer
 
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
+            if (HandleComparisonKey(keyData)) return true;
             Control source = keyData == Keys.Enter || keyData == (Keys.Alt | Keys.Enter) ? Control.FromChildHandle(message.HWnd) : null;
             if (!(source is ButtonBase) && HandleFormulaEditingKey(keyData, source)) return true;
             if (formulaEditCell == null && keyData == (Keys.Control | Keys.Back) && tabs.SelectedIndex == 0 &&

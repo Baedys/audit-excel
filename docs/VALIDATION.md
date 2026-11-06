@@ -1,10 +1,16 @@
 # Revue et validation
 
+## Blocs d’écarts et navigation — 6 novembre 2026
+
+Le CIL de `TaskItem` 378176 classe les cellules en différentes, égales ou neutres. Le scanner Common 75764 étend les rectangles en conservant leurs limites et peut traverser une zone neutre. La seconde passe de `BlockItem` 380076 subdivise chaque bloc selon la paire de formules R1C1 ou les valeurs des deux cellules d’ancrage avec tolérance. Les constantes variées d’un sous-écart affichent un marqueur. Chaque sous-rectangle compte pour un écart. Un bloc avec un seul sous-écart se replie sur cet écart. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Le scanner livré a été exécuté seul dans un processus .NET Framework sans Excel. Sur 40 000 grilles synthétiques avec quatre politiques de cases absentes et d’extension, ses rectangles correspondent à ceux de Clair. Un témoin pur couvre aussi un périmètre de la taille d’une feuille avec deux lignes occupées. Dans Excel masqué, les témoins Clair vérifient les rectangles translatés, les signatures, la tolérance par rapport à l’ancre, la navigation physique et la restauration des fonds. Le témoin différentiel couvre le scanner. La construction du modèle complet Arixcel, les frappes physiques et les segments de formule restent à comparer.
+
 ## Comparaison de classeurs, de feuilles et de plages — 6 novembre 2026
 
 Le CIL de `RangeJobSpec` 264776 étend un coin cible à la taille de la référence et découpe les sélections plus grandes en blocs complets, avec saut des lignes ou colonnes séparatrices vides. `TaskItem` 378176 compare les plages par décalage. `JobItem` 247420 et 249272 apparie les feuilles de classeur par nom ou prend les onglets cibles sélectionnés, puis compare aux mêmes coordonnées. `Options` 247276 et les comparateurs 378940 et 379328 établissent R1C1 par défaut, A1 au choix, l’ignorance des entrées sans formule et la tolérance absolue inclusive de 0,000001 sur les valeurs. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
 
-Le témoin Clair utilise deux volets et deux classeurs dans Excel masqué. Il modifie la référence après l’avoir définie, compare une plage ancrée puis plusieurs blocs, vérifie la sélection physique des deux côtés, change la notation et le mode de comparaison, groupe deux onglets cibles et renomme la feuille de référence. Les feuilles présentes d’un seul côté sont listées séparément. Les blocs de résultats, l’alignement et les opérations d’écriture restent à couvrir. Clair utilise ici les valeurs typées de `Value2` et la formule invariante d’Excel. Les conversions de types propres à `Value`, la présentation locale d’Arixcel et les grandes plages au-delà de la limite de capture restent ouvertes.
+Le témoin Clair utilise deux volets et deux classeurs dans Excel masqué. Il modifie la référence après l’avoir définie, compare une plage ancrée puis plusieurs blocs, vérifie la sélection physique des deux côtés, change la notation et le mode de comparaison, groupe deux onglets cibles et renomme la feuille de référence. Les feuilles présentes d’un seul côté sont listées séparément. L’alignement et les opérations d’écriture restent à couvrir. Clair utilise ici les valeurs typées de `Value2` et la formule invariante d’Excel. Les conversions de types propres à `Value`, la présentation locale d’Arixcel et les grandes plages au-delà de la limite de capture restent ouvertes.
 
 ## Annulation dans les sous-tracés — 6 novembre 2026
 
