@@ -1,3 +1,4 @@
+param([switch]$WithExcelShortcut)
 $ErrorActionPreference = 'Stop'
 $compilerPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compilerPath)) { $compilerPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
@@ -10,4 +11,5 @@ $references = @('/r:System.dll','/r:System.Core.dll','/r:System.Drawing.dll','/r
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 & $compilerPath /nologo /warn:4 /target:library /platform:anycpu "/out:$binPath\Clair.AddIn.dll" $references $sourcePaths
 if ($LASTEXITCODE -ne 0) { throw 'Add-in build failed.' }
+if ($WithExcelShortcut) { & (Join-Path $PSScriptRoot 'build-native-shortcut.ps1') }
 Write-Output "Build OK: $binPath\Clair.exe"

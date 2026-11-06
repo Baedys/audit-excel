@@ -55,10 +55,11 @@ namespace FormulaExplorer
         {
             application = app; ((dynamic)addIn).Object = this;
             ConnectColorEvents();
+            if (connectMode == 1) EnsureWorksheetShortcut();
         }
         public void OnDisconnection(int removeMode, ref Array custom)
         {
-            try { ClosePanes(true); }
+            try { DisconnectWorksheetShortcut(); ClosePanes(true); }
             finally
             {
                 try { DisconnectColorEvents(); }
@@ -66,8 +67,8 @@ namespace FormulaExplorer
             }
         }
         public void OnAddInsUpdate(ref Array custom) { }
-        public void OnStartupComplete(ref Array custom) { }
-        public void OnBeginShutdown(ref Array custom) { ClosePanes(true); }
+        public void OnStartupComplete(ref Array custom) { EnsureWorksheetShortcut(); }
+        public void OnBeginShutdown(ref Array custom) { DisconnectWorksheetShortcut(); ClosePanes(true); }
         public string Status() { return application == null ? "Disconnected" : "Clair 0.6 connected"; }
         public void RibbonOnLoad([MarshalAs(UnmanagedType.IDispatch)] object ribbon) { ribbonLoaded = true; }
         public bool IsRibbonLoaded() { return ribbonLoaded; }

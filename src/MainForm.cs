@@ -231,7 +231,7 @@ namespace FormulaExplorer
                     if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
                     if (IsDocked)
                     {
-                        launch = bridge.CaptureExplorerLaunch(captured, window);
+                        launch = bridge.CaptureExplorerLaunch(window);
                         if (launch.Group.Count > 1 && (reverse || !current.IsFormula))
                             throw new InvalidOperationException("Dégroupez les feuilles Excel avant de tracer cette sélection.");
                     }

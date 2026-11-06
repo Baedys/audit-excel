@@ -1,5 +1,9 @@
 # Revue et validation
 
+## Reprendre un tracé depuis Excel — 6 novembre 2026
+
+Le modèle d'historique couvre la limite de 100 entrées, les dédoublonnages, la reprise du parcours après restauration d'une sélection et l'éviction des vues fermées. Les deux XLL compilent. Le témoin natif appelle le délégué géré puis vérifie son retrait. Dans Excel isolé, les témoins de volet utilisent une cible de focus simulée pour vérifier le choix du contrôle, l'activation de la fenêtre réelle, le rafraîchissement du tracé et le repli sur sa sélection de lancement après fermeture. Le contrat Arixcel vient du CIL. La frappe physique dans Excel reste à vérifier.
+
 ## Sortir d'un tracé Excel — 6 novembre 2026
 
 Les témoins Excel couvrent Échap et Entrée au niveau racine et enfant. Ils vérifient la sélection courante, la restitution optionnelle des plages disjointes après insertion, le coin actif du parent et le groupe d'onglets. La fermeture racine retire les couleurs du tracé et, quand Échap rétablit la source, remasque l'ancienne feuille active. Si la feuille source est supprimée, la fermeture conserve la sélection courante, même si une feuille homonyme a été recréée. Le volet en arrière-plan laisse la sélection de l'autre fenêtre intacte. L'appel de masquage du volet est observé après la fermeture dans le témoin WinForms. Le contrat Arixcel provient du CIL.

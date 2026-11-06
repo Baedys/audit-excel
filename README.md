@@ -73,10 +73,13 @@ Sur la branche de développement en brouillon, **Carte → Palette…** affiche 
 Pour ajouter le ruban à Excel :
 
 ```powershell
+.\build.ps1 -WithExcelShortcut
 .\install-addin.ps1
 # Ouvrir ensuite une nouvelle instance d'Excel.
 # Pour désinstaller : .\install-addin.ps1 -Uninstall
 ```
+
+`-WithExcelShortcut` compile le XLL natif pour Excel 32 et 64 bits avec Visual Studio Build Tools, les outils MSVC x86/x64 et le SDK Windows. L'archive Windows de CI contient les deux fichiers. Ils se placent dans `bin` à côté de `Clair.AddIn.dll`.
 
 Sur la branche de développement, **Clair → Antécédents** ouvre le volet **Formule**, ancré à droite de la feuille. **Dépendants** change le sens dans le même volet. Les onglets **Carte**, **Flux** et **Comparer** donnent accès aux autres analyses. Le bouton principal **Carte des cellules** bascule les couleurs sur la grille. Sa flèche donne accès à **Ouvrir le volet Carte** et **Couleurs de carte**. Redimensionnez le volet à la souris ou fermez-le avec sa croix pour retrouver toute la largeur de la feuille.
 
@@ -100,6 +103,8 @@ Dans l'arbre, **Ctrl+clic** ajoute ou retire un résultat et **Maj+clic** sélec
 
 Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 
+Avec le XLL chargé, **Ctrl+Retour arrière** rend le focus à la grille depuis le volet **Formule** et garde le tracé ouvert. Depuis la grille, le raccourci réactive et actualise un tracé encore ouvert ou restaure une sélection de lancement. L'historique garde jusqu'à 100 entrées dans cette instance Excel. Quand Arixcel est déjà connecté dans l'instance, Clair lui laisse la touche.
+
 Pour comparer : chargez le premier état, ouvrez **Comparaison**, puis **Mémoriser référence**. Modifiez le classeur ou activez un autre classeur dans Excel, puis cliquez sur **Comparer classeur Excel actif**. Les cellules sont appariées par nom de feuille et adresse. En mode formules, un changement de résultat calculé seul n'est pas une différence ; activez **Valeurs calculées** pour le comparer.
 
 Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle exposée par `GetActiveObject`. Le nom du classeur capturé est affiché en haut. Les noms de classeurs non enregistrés ne constituent pas une identité durable entre plusieurs instances.
@@ -108,6 +113,7 @@ Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle 
 
 ```powershell
 .\test.ps1          # moteur, syntaxe, flux, carte et palette (sans Excel)
+.\test.ps1 -WithExcelShortcut  # build et test du pont natif
 .\test.ps1 -Excel   # sessions Excel isolées, expressions, édition, couleurs et restauration
 .\test-addin.ps1    # démarrage Excel /x, ruban, volet natif et nettoyage du registre
 ```

@@ -27,6 +27,11 @@ namespace FormulaExplorer
         internal const string ControlId = "Clair.ExcelTaskPane";
         MainForm explorer;
         internal Action HideClosedExplorerPane;
+        internal Func<bool> LeaveExplorerForWorksheet;
+        internal bool HasWorksheetShortcutTrace { get { return explorer != null && explorer.HasWorksheetShortcutTrace; } }
+
+        internal bool ResumeExplorerFromWorksheet()
+        { return HasWorksheetShortcutTrace && explorer.ResumeExplorerFromWorksheet(); }
 
         internal void ShowCommand(ExcelBridge connection, string command, int window)
         {
@@ -34,6 +39,7 @@ namespace FormulaExplorer
             {
                 explorer = new MainForm(connection, true, window);
                 explorer.HideClosedExplorerPane = HideClosedExplorerPane;
+                explorer.LeaveExplorerForWorksheet = LeaveExplorerForWorksheet;
                 Controls.Add(explorer);
                 explorer.Show();
             }
@@ -71,12 +77,21 @@ namespace FormulaExplorer
             public readonly object NativePane;
             public readonly ExcelTaskPaneControl Control;
             public readonly PaneVisibilityChanged VisibilityChanged;
+            public int WindowHandle;
+            public Action ExplorerClosed;
             public DockedExplorer(object pane)
             {
                 NativePane = pane;
                 Control = (ExcelTaskPaneControl)((dynamic)pane).ContentControl;
-                Control.HideClosedExplorerPane = delegate { if (Visible) Visible = false; };
-                VisibilityChanged = delegate { if (!Visible) Control.CloseExplorer(false); };
+                Control.HideClosedExplorerPane = delegate
+                {
+                    if (Visible) Visible = false;
+                    if (ExplorerClosed != null) ExplorerClosed();
+                };
+                VisibilityChanged = delegate
+                {
+                    if (!Visible && Control.CloseExplorer(false) && ExplorerClosed != null) ExplorerClosed();
+                };
             }
             public bool Visible { get { return (bool)((dynamic)NativePane).Visible; } set { ((dynamic)NativePane).Visible = value; } }
         }
@@ -117,22 +132,32 @@ namespace FormulaExplorer
         void OpenPane(string command)
         {
             object window = null;
+            ExcelExplorerLaunchSelection launch = null;
             try
             {
                 if (paneFactory == null) throw new InvalidOperationException("Excel n’a pas fourni le volet Clair. Réinstallez le complément puis redémarrez Excel.");
+                bool trace = command == "precedents" || command == "dependents";
+                if (trace) EnsureWorksheetShortcut();
                 window = ActivePaneWindow();
                 if (window == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
                 PruneClosedPaneWindows();
                 int hwnd = (int)((dynamic)window).Hwnd;
+                if (trace && shortcutHistory != null) launch = colorBridge.CaptureExplorerLaunch(hwnd);
                 DockedExplorer pane;
                 bool created = !panes.TryGetValue(hwnd, out pane);
                 if (created)
                 {
-                    pane = CreatePane(window);
+                    pane = CreatePane(window, hwnd);
                     panes.Add(hwnd, pane);
                 }
                 if (!pane.Visible) pane.Visible = true;
                 pane.Control.ShowCommand(colorBridge, command, hwnd);
+                if (launch != null)
+                {
+                    ExcelExplorerLaunchSelection retained = launch;
+                    launch = null;
+                    RememberWorksheetLaunch(pane, retained);
+                }
                 if (created && pane.Control.IsHandleCreated) pane.Control.BeginInvoke((Action)delegate
                 {
                     DockedExplorer current;
@@ -144,15 +169,21 @@ namespace FormulaExplorer
                 });
             }
             catch (Exception error) { MessageBox.Show(error.Message, "Clair"); }
-            finally { ExcelBridge.Release(window); }
+            finally
+            {
+                try { if (launch != null) launch.Dispose(); }
+                finally { ExcelBridge.Release(window); }
+            }
         }
 
-        DockedExplorer CreatePane(object window)
+        DockedExplorer CreatePane(object window, int hwnd)
         {
             object native = paneFactory.CreateCTP(ExcelTaskPaneControl.ControlId, "Clair", window);
             try
             {
                 var pane = new DockedExplorer(native);
+                pane.WindowHandle = hwnd;
+                AttachWorksheetShortcut(pane);
                 ((dynamic)native).DockPosition = DockRight;
                 ((dynamic)native).DockPositionRestrict = RestrictDockChange;
                 ((dynamic)native).Width = InitialPaneWidth;
@@ -185,6 +216,7 @@ namespace FormulaExplorer
         void RemovePane(int hwnd, DockedExplorer pane, bool hostClosing)
         {
             if (!pane.Control.CloseExplorer(hostClosing)) return;
+            if (pane.ExplorerClosed != null) pane.ExplorerClosed();
             panes.Remove(hwnd);
             try
             {

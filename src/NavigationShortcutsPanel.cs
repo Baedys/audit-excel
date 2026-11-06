@@ -11,6 +11,10 @@ namespace FormulaExplorer
         ExcelNavigationCursor relationNavigationCursor = new ExcelNavigationCursor();
         ExcelNavigationCursor expressionNavigationCursor = new ExcelNavigationCursor();
         ExcelNavigationCursor lastExplorerNavigation;
+        Control shortcutFocus;
+        Func<Control, bool> shortcutControlFocus = control => control.Focus();
+        internal Func<bool> LeaveExplorerForWorksheet;
+        internal bool HasWorksheetShortcutTrace { get { return IsDocked && book != null && root != null && !IsDisposed; } }
 
         void ResetExplorerNavigation()
         {
@@ -34,6 +38,16 @@ namespace FormulaExplorer
 
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
+            if (keyData == (Keys.Control | Keys.Back) && tabs.SelectedIndex == 0 &&
+                HasWorksheetShortcutTrace && LeaveExplorerForWorksheet != null)
+            {
+                Control previous = Control.FromChildHandle(message.HWnd);
+                if (LeaveExplorerForWorksheet())
+                {
+                    if (previous != null && Contains(previous)) shortcutFocus = previous;
+                    return true;
+                }
+            }
             if (keyData == Keys.Escape && HandleExplorerExitKey(keyData)) return true;
             if (keyData == Keys.Enter)
             {
@@ -47,6 +61,32 @@ namespace FormulaExplorer
                 if (HandleExplorerNavigationKey(view, new KeyEventArgs(keyData))) return true;
             }
             return base.ProcessCmdKey(ref message, keyData);
+        }
+
+        internal bool ResumeExplorerFromWorksheet()
+        {
+            if (!HasWorksheetShortcutTrace || !Visible) return false;
+            SelectExplorerTab(reverse);
+            Control destination = shortcutFocus;
+            if (destination == null || destination.IsDisposed || !shortcutControlFocus(destination))
+            {
+                destination = expressions.Nodes.Count != 0 && traceSource == null ? (Control)expressions : tree;
+                if (!shortcutControlFocus(destination)) return false;
+            }
+            try
+            {
+                bool formulaControl = destination == expressions || destination == formula || destination == expressionValue;
+                RefreshExplorerModelCore(formulaControl ? expressions : tree, true);
+            }
+            catch (COMException error) { status.Text = error.Message; }
+            catch (InvalidOperationException error) { status.Text = error.Message; }
+            catch (AggregateException error) { status.Text = error.Message; }
+            finally
+            {
+                if (bridge.ActiveNavigationWindowHandle() != explorerWindow) bridge.ActivateExplorerWindow(explorerWindow);
+                if (!destination.Focused && destination.CanFocus) shortcutControlFocus(destination);
+            }
+            return true;
         }
 
         bool HandleExplorerNavigationKey(TreeView view, KeyEventArgs e)

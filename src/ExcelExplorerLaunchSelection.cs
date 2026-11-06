@@ -6,9 +6,8 @@ namespace FormulaExplorer
 {
     internal sealed class ExcelExplorerLaunchSelection : IDisposable
     {
-        internal Book Book;
         internal int WindowHandle;
-        internal object Window, Sheet, Range;
+        internal object Window, Workbook, Sheet, Range;
         internal readonly List<object> Group = new List<object>();
 
         public void Dispose()
@@ -17,22 +16,24 @@ namespace FormulaExplorer
             Group.Clear();
             ExcelBridge.Release(Range);
             ExcelBridge.Release(Sheet);
+            ExcelBridge.Release(Workbook);
             ExcelBridge.Release(Window);
-            Range = Sheet = Window = null;
+            Range = Sheet = Workbook = Window = null;
         }
     }
 
     public sealed partial class ExcelBridge
     {
-        internal ExcelExplorerLaunchSelection CaptureExplorerLaunch(Book book, int windowHandle)
+        internal ExcelExplorerLaunchSelection CaptureExplorerLaunch(int windowHandle)
         {
-            var launch = new ExcelExplorerLaunchSelection { Book = book, WindowHandle = windowHandle };
+            var launch = new ExcelExplorerLaunchSelection { WindowHandle = windowHandle };
             try
             {
                 dynamic app = application;
                 launch.Window = app.ActiveWindow;
                 if (launch.Window == null || (int)((dynamic)launch.Window).Hwnd != windowHandle)
                     throw new InvalidOperationException("Activez la fenêtre Excel de ce volet avant de lancer le tracé.");
+                launch.Workbook = app.ActiveWorkbook;
                 launch.Range = app.Selection;
                 if (!MapSelectionSupports(launch.Range, MapSelectionRangeInterface))
                     throw new InvalidOperationException("Sélectionnez une plage de cellules dans Excel.");
@@ -43,19 +44,44 @@ namespace FormulaExplorer
             catch { launch.Dispose(); throw; }
         }
 
-        internal bool RestoreExplorerLaunch(ExcelExplorerLaunchSelection launch)
+        internal bool ExplorerLaunchAvailable(ExcelExplorerLaunchSelection launch)
         {
-            if (launch == null || ActiveNavigationWindowHandle() != launch.WindowHandle) return false;
-            object book = ((dynamic)application).ActiveWorkbook;
+            if (launch == null || launch.Window == null || !WorksheetWindowFocus.Exists(launch.WindowHandle)) return false;
             try
             {
-                if (book == null || DirectSession.Identity(book) != DependencyWorkbookIdentity(launch.Book) ||
-                    !ExplorerLaunchSheetAvailable(launch.Sheet, book)) return false;
-                var group = launch.Group.FindAll(sheet => ExplorerLaunchSheetAvailable(sheet, book));
-                RestoreDependencyWindow(launch.Window, launch.Sheet, launch.Range, null, group);
-                return true;
+                return (int)((dynamic)launch.Window).Hwnd == launch.WindowHandle && (bool)((dynamic)launch.Window).Visible &&
+                    ExplorerLaunchSheetAvailable(launch.Sheet, launch.Workbook) &&
+                    !String.Equals((string)((dynamic)launch.Range).Address, "#REF!", StringComparison.Ordinal);
             }
-            finally { Release(book); }
+            catch (COMException) { return false; }
+            catch (InvalidComObjectException) { return false; }
+        }
+
+        internal bool ExplorerLaunchIsCurrent(ExcelExplorerLaunchSelection launch)
+        {
+            if (launch == null || ActiveNavigationWindowHandle() != launch.WindowHandle) return false;
+            object sheet = null, selection = null;
+            try
+            {
+                dynamic app = application;
+                sheet = app.ActiveSheet;
+                if (sheet == null || DirectSession.Identity(sheet) != DirectSession.Identity(launch.Sheet)) return false;
+                selection = app.Selection;
+                if (!SameDependencySelection(selection, launch.Range)) return false;
+                var group = launch.Group.FindAll(member => ExplorerLaunchSheetAvailable(member, launch.Workbook));
+                return DependencySheetGroupMatches(launch.Window, group);
+            }
+            catch (COMException) { return false; }
+            catch (InvalidComObjectException) { return false; }
+            finally { Release(selection); Release(sheet); }
+        }
+
+        internal bool RestoreExplorerLaunch(ExcelExplorerLaunchSelection launch, bool activateWindow = false)
+        {
+            if (!ExplorerLaunchAvailable(launch) || (!activateWindow && ActiveNavigationWindowHandle() != launch.WindowHandle)) return false;
+            var group = launch.Group.FindAll(sheet => ExplorerLaunchSheetAvailable(sheet, launch.Workbook));
+            RestoreDependencyWindow(launch.Window, launch.Sheet, launch.Range, null, group);
+            return true;
         }
 
         static bool ExplorerLaunchSheetAvailable(object sheet, object workbook)
@@ -64,7 +90,7 @@ namespace FormulaExplorer
             try
             {
                 owner = ((dynamic)sheet).Parent;
-                return owner != null && DirectSession.Identity(owner) == DirectSession.Identity(workbook) &&
+                return owner != null && workbook != null && DirectSession.Identity(owner) == DirectSession.Identity(workbook) &&
                     (int)((dynamic)sheet).Visible == NavigationSheetVisible;
             }
             catch (COMException) { return false; }

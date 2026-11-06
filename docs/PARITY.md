@@ -102,6 +102,8 @@ Alt+Z déplie ou replie la branche courante en gardant le premier nœud ouvert a
 
 `FormulaForm.OnFormClosed` (RVA `134492`) applique le retour sur Échap si l'option est active. Arixcel resélectionne alors le parent ou la plage de lancement avant nettoyage. Entrée suit le chemin OK et garde la sélection. Clair représente le parent dans le même volet ancré. Il garde sa sélection Excel et son coin mémorisés, et rétablit la plage de lancement ainsi que les onglets groupés disponibles au niveau racine. [Validation](VALIDATION.md)
 
+Le raccourci Ctrl+Retour arrière passe par `ModelessForm.KeyDownHandler` (RVA `58168`) depuis un formulaire, et par `History.GoBack` (RVA `64192`) depuis Excel. Clair enregistre une commande XLL avec `OnKey`, conserve les sélections physiques et les vues vivantes de l'instance et actualise le tracé au retour. Le focus suit la fenêtre Excel propriétaire. Quand Arixcel est connecté, Clair lui laisse l'association. [Validation](VALIDATION.md) · [Microsoft OnKey](https://learn.microsoft.com/en-us/office/vba/api/excel.application.onkey)
+
 ## Dévoilement pendant la navigation
 
 `SelectorForm.Unhide` (RVA `64624`) révèle d'abord la feuille, puis les axes selon `UnhideCells`, activé par défaut. `CellUnhider` réduit les axes entiers à une bande en A ou en ligne 1 et borne les autres cibles par la zone utilisée. Les axes masqués voisins suivent le niveau de plan. À la fermeture, le natif épargne la feuille active et les axes de la sélection (RVA `69764`). Clair suit ces règles dans les arbres de dépendances et de formules. L'option du volet concerne les prochaines navigations.
@@ -161,7 +163,7 @@ Le produit documente un arbre de composants avec valeurs et emplacements, des ch
 | F09 | Sélection synchronisée entre arbre, portion de formule et cellules ; multisélection. | Sous-expressions sélectionnables par l'arbre ou le curseur, Ctrl/Maj, union Excel sur la feuille courante et couleurs sur les autres feuilles. | Plages physiques, portions disjointes, restauration des fonds et lien externe. |
 | F10 | Surlignage source/antécédents/dépendants configurable. | Absent. | Couleurs distinctes ; nettoyage à fermeture et changement de sélection ; formats antérieurs intacts. |
 | F11 | Édition de composant ou formule, validation, annulation, undo. | Édition de la formule avec F2, Entrée et Échap dans la boîte d'édition. Annulation Clair par action dédiée. | Édition d'un composant, conservation de l'historique et Ctrl+Z à comparer. |
-| F12 | Navigation clavier et refresh, expansion/réduction, réexploration. | Ctrl+flèches, Alt+S, Alt+Z, Ctrl+Q/Ctrl+Maj+Q, Alt+R, Échap et Entrée dans le volet. | Coins et bouclage, sélection multizone, autre fenêtre, dépliage, nouvelle trace, déplacement et invalidation de source. Ctrl+Retour arrière reste à couvrir. |
+| F12 | Navigation clavier et refresh, expansion/réduction, réexploration. | Ctrl+flèches, Alt+S, Alt+Z, Ctrl+Q/Ctrl+Maj+Q, Alt+R, Échap et Entrée dans le volet. Ctrl+Retour arrière entre la grille et l'historique via le XLL. | Coins et bouclage, sélection multizone, autre fenêtre, dépliage, nouvelle trace, déplacement et invalidation de source. Réception de la frappe par Excel en mode édition et essai natif 32 bits restent à couvrir. |
 | F13 | Mode d'évaluation précis et signal d'imprécision. | Absent. | E3 `PreciseEvaluation`, `MayBeImprecise` : déterminer différences runtime avant de promettre ce réglage ; couvrir fonctions volatiles/UDF sans effets involontaires. |
 
 ## 3. Antécédents et dépendants de plusieurs cellules
