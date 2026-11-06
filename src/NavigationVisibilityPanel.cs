@@ -32,6 +32,7 @@ namespace FormulaExplorer
             }
             else bridge.NavigateDependency(targetBook, target, navigationVisibilityOwner, revealNavigationAxes.Checked);
             bridge.RememberNavigationCursor(cursor, targetBook);
+            if (cursor.HasSelection) lastExplorerNavigation = cursor;
         }
 
         void NavigatePaneExpressionTarget(ExpressionTarget target)

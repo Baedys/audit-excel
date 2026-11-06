@@ -30,6 +30,9 @@ namespace FormulaExplorer
             internal TraceLocation Source;
             internal ExplorerSelection Selection;
             internal ExplorerLiveSource LiveSource;
+            internal ExplorerExpressionState Expressions;
+            internal ExcelNavigationCursor Navigation;
+            internal bool ExpressionNavigation;
             internal string HighlightOwner;
             internal bool Reverse;
         }
@@ -56,6 +59,7 @@ namespace FormulaExplorer
             direction.Controls.Add(highlightTraceCells);
             direction.Controls.Add(groupTraceSheets);
             ConfigureNavigationVisibility(direction);
+            ConfigureExplorerExitOptions(direction);
             highlightTraceCells.CheckedChanged += delegate
             {
                 if (highlightTraceCells.Checked) RefreshTraceHighlights();
@@ -72,6 +76,7 @@ namespace FormulaExplorer
             Disposed += delegate
             {
                 ClearExplorerHistory();
+                ClearExplorerLaunch();
                 if (liveSource != null) { liveSource.Dispose(); liveSource = null; }
                 ClearTraceHighlightOwners();
                 RestorePaneVisibility(false, new List<Exception>());
@@ -102,7 +107,7 @@ namespace FormulaExplorer
             };
             tree.NodeMouseDoubleClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
             {
-                if (IsRelationLabelClick(e) && RelationLocation(e.Node) != null) Safe(Navigate);
+                if (!IsDocked && IsRelationLabelClick(e) && RelationLocation(e.Node) != null) Safe(Navigate);
             };
             tree.KeyDown += delegate(object sender, KeyEventArgs e)
             {
@@ -117,7 +122,7 @@ namespace FormulaExplorer
                         FollowRelationInExcel();
                     }
                 }
-                else if (e.KeyCode == Keys.Enter && selectedRelations.Count > 0) Safe(Navigate);
+                else if (!IsDocked && e.KeyData == Keys.Enter && selectedRelations.Count > 0) Safe(Navigate);
                 else return;
                 e.Handled = e.SuppressKeyPress = true;
             };

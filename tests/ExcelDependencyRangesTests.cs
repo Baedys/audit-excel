@@ -152,8 +152,7 @@ public static class ExcelDependencyRangesTests
                 Equal(Children(tree.Nodes[0]), "Audit · 8 plages", "worksheet group counts blocks");
                 Equal(Children(tree.Nodes[0].Nodes[0]), dependentBlocks, "grouping preserves every block");
                 Equal(tree.SelectedNode.Text, "'Audit'!D2:D3", "grouping keeps the selected block");
-                var enter = new KeyEventArgs(Keys.Enter); keyDown.Invoke(tree, new object[] { enter });
-                Equal(enter.Handled, true, "Enter consumed by the relation tree");
+                Invoke(form, "Navigate");
                 Equal((string)keep(app.ActiveSheet).Name, "Audit", "navigation activates the selected block worksheet");
                 Equal((string)keep(app.Selection).Address, "$D$2:$D$3", "navigation selects the entire result block");
                 var traceUpstream = new KeyEventArgs(Keys.Control | Keys.Q); keyDown.Invoke(tree, new object[] { traceUpstream });

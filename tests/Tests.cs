@@ -186,6 +186,7 @@ static class Tests
             Check("Excel formula text, tree and cell selection", ExcelFormulaSelectionTests.Run);
             Check("Excel temporary navigation visibility", ExcelNavigationVisibilityTests.Run);
             Check("Excel navigation corner shortcuts", ExcelNavigationShortcutTests.Run);
+            Check("Excel explorer exit shortcuts", ExcelExplorerExitTests.Run);
             Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });

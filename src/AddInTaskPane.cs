@@ -26,12 +26,14 @@ namespace FormulaExplorer
     {
         internal const string ControlId = "Clair.ExcelTaskPane";
         MainForm explorer;
+        internal Action HideClosedExplorerPane;
 
         internal void ShowCommand(ExcelBridge connection, string command, int window)
         {
             if (explorer == null || explorer.IsDisposed)
             {
                 explorer = new MainForm(connection, true, window);
+                explorer.HideClosedExplorerPane = HideClosedExplorerPane;
                 Controls.Add(explorer);
                 explorer.Show();
             }
@@ -73,6 +75,7 @@ namespace FormulaExplorer
             {
                 NativePane = pane;
                 Control = (ExcelTaskPaneControl)((dynamic)pane).ContentControl;
+                Control.HideClosedExplorerPane = delegate { if (Visible) Visible = false; };
                 VisibilityChanged = delegate { if (!Visible) Control.CloseExplorer(false); };
             }
             public bool Visible { get { return (bool)((dynamic)NativePane).Visible; } set { ((dynamic)NativePane).Visible = value; } }

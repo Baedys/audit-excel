@@ -47,7 +47,7 @@ namespace FormulaExplorer
                     TreeNode next = current == null ? null : e.KeyCode == Keys.Up ? current.PrevVisibleNode : current.NextVisibleNode;
                     if (next != null) ApplyExpressionSelection(next, e.Modifiers, true);
                 }
-                else if (e.KeyCode == Keys.Enter && CanNavigateSelectedExpression()) NavigateSelectedExpression();
+                else if (!IsDocked && e.KeyData == Keys.Enter && CanNavigateSelectedExpression()) NavigateSelectedExpression();
                 else return;
                 e.Handled = e.SuppressKeyPress = true;
             };
@@ -253,6 +253,9 @@ namespace FormulaExplorer
         }
 
         void FollowExpressionSelection()
+        { UpdateExpressionGridSelection(true); }
+
+        void UpdateExpressionGridSelection(bool navigate)
         {
             if (bridge == null || syntaxRoot == null || tabs.SelectedIndex != 0) return;
             expressionGridActive = true;
@@ -260,7 +263,7 @@ namespace FormulaExplorer
             {
                 ReadExpressionLocations(evaluateOnSelect.Checked);
                 RefreshTraceHighlights();
-                if (!IsDocked) return;
+                if (!IsDocked || !navigate) return;
                 TraceLocation location = CurrentExpressionLocation();
                 if (location == null) NavigatePaneTarget(book, null, true, expressionNavigationCursor);
                 else if (location.Workbook == book)

@@ -54,7 +54,7 @@ Clair utilise les plages renvoyées par Excel pour `INDEX`, `OFFSET`, `INDIRECT`
 
 ## Cellules retenues par critères dans le volet Formule
 
-F05 affiche l'union retenue pour `SUMIF(S)`, `COUNTIF(S)` et `AVERAGEIF(S)`. La somme et la moyenne utilisent la plage de résultats. Le comptage utilise la première plage de critères. Les groupes **Filtre** affichent les cellules et le compteur de leur propre paire, même si l'intersection est vide. Un groupe unique qui couvre tous les arguments laisse ces arguments au premier niveau. `FILTER` peut montrer séparément les données renvoyées et les cellules sources d'une comparaison directe. Entrée actualise et sélectionne les zones disjointes dans Excel.
+F05 affiche l'union retenue pour `SUMIF(S)`, `COUNTIF(S)` et `AVERAGEIF(S)`. La somme et la moyenne utilisent la plage de résultats. Le comptage utilise la première plage de critères. Les groupes **Filtre** affichent les cellules et le compteur de leur propre paire, même si l'intersection est vide. Un groupe unique qui couvre tous les arguments laisse ces arguments au premier niveau. `FILTER` peut montrer séparément les données renvoyées et les cellules sources d'une comparaison directe. **Aller à la cible dans Excel** actualise et sélectionne les zones disjointes.
 
 Les preuves statiques proviennent de `Element.ResolveRangeOfFunction` (RVA `174880`), `ResolveRangeAfterValue` (`171356`), `ResolveRangeFinal` (`170092`), `ChildGroups.CreateForCriteriaArguments` (`357436`), `Element.ProcessChildGroups` (`180820`) et `MatchCriterion` (`185664`, `186600`, `187640`). Les masques multiples sont croisés par position. Pour `SUMIF` et `AVERAGEIF`, les dimensions d'origine de la plage testée déterminent l'étendue de la plage de résultat à partir de son coin supérieur gauche. Les jokers de l'original sont ancrés au début du texte. Cette règle peut produire une adresse alors que le résultat natif d'Excel diffère. Les valeurs des formules affichées dans Clair proviennent d'Excel. [Validation](VALIDATION.md)
 
@@ -72,7 +72,7 @@ Dans le classeur capturé, les arbres et le Flux suivent chaque plage physique d
 
 ## Dépendances entre classeurs ouverts
 
-F08 couvre les références directes A1 et les noms absolus dans l'Explorateur. Clair capture les classeurs ouverts de la même instance Excel et distingue les cibles par classeur, feuille et adresse. L'arbre et les plages affichent le nom du classeur externe. Le surlignage s'applique à chaque classeur et le volet évalue les formules sélectionnées dans leur contexte. Un clic garde la fenêtre du volet active. **Entrée** ou **Voir cellule** active la cible. Le classeur lié possède son propre volet pour l'édition.
+F08 couvre les références directes A1 et les noms absolus dans l'Explorateur. Clair capture les classeurs ouverts de la même instance Excel et distingue les cibles par classeur, feuille et adresse. L'arbre et les plages affichent le nom du classeur externe. Le surlignage s'applique à chaque classeur et le volet évalue les formules sélectionnées dans leur contexte. Un clic garde la fenêtre du volet active. **Voir cellule** active la cible d'une relation. Le classeur lié possède son propre volet pour l'édition.
 
 Dans Arixcel, `Element.ResolveRange` demande à Excel de résoudre la référence. `OpenAnyExternalLink` (RVA `194492`) propose une fois par chemin d'ouvrir le fichier lors de la sélection d'une référence ou au passage du curseur dans le texte de la formule. Clair affiche le chemin et les actions **Ouvrir le classeur** et **Ignorer** dans le volet. Après ouverture, il conserve le contexte Excel et reconstruit la trace avec la même racine, l'historique et le nœud sélectionné. L'ouverture programmatique désactive les macros VBA et la mise à jour des liens du fichier ouvert. Les références fermées et les noms relatifs restent signalés tant qu'ils sont non résolus. Le Flux garde le périmètre du classeur analysé. [Validation](VALIDATION.md)
 
@@ -84,7 +84,7 @@ Le volet groupe les blocs par feuille sur demande. Quatre tracés concordent ave
 
 D03 couvre maintenant la sélection de plusieurs résultats, y compris depuis une cellule. Arixcel active le mode multiple dans `ExplorerForm.InitializeComponent` (RVA `198288`) et `DependentsForm.InitializeComponent` (RVA `206136`). `FormulaForm.OpenChildForm` (RVA `133832`) transmet seulement les nœuds associés à une plage et conserve la feuille racine. `MultiRoot` (RVA `366960`) replie les sources et développe les résultats, avec deux compteurs. `Model.AddRanges` (RVA `211560`) place en tête les plages de la feuille racine. Clair reprend cette structure dans le volet. Le retour rétablit les résultats choisis et le regroupement par feuille conserve la sélection.
 
-Un clic ou une sélection au clavier dans le volet sélectionne automatiquement l'union sur la feuille du résultat courant. `FormulaForm.SelectOnSheet` (RVA `134056`) distingue les couleurs et la sélection Excel. Clair suit le résultat dans la fenêtre Excel active. Il conserve le masquage des feuilles. **Entrée** ou **Voir cellule** permet aussi la navigation explicite.
+Un clic ou une sélection au clavier dans le volet sélectionne automatiquement l'union sur la feuille du résultat courant. `FormulaForm.SelectOnSheet` (RVA `134056`) distingue les couleurs et la sélection Excel. Clair suit le résultat dans la fenêtre Excel active. Il conserve le masquage des feuilles. **Voir cellule** permet aussi la navigation explicite.
 
 La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles ou classeurs ouverts. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. [Validation](VALIDATION.md)
 
@@ -92,13 +92,15 @@ La surbrillance des dépendances reprend les fonds temporaires rose, bleu et ver
 
 `SelectFromFormulaBox` (RVA `192800`) descend vers le composant explicite sous le curseur. Ctrl conserve les sélections existantes ou rend courant un ancêtre déjà sélectionné. Dans l'arbre, Ctrl bascule un nœud et Maj étend la sélection visible. `HighlightFormula` (RVA `193772`) souligne les portions choisies en bleu et conserve un curseur sans sélection de caractères.
 
-`FormulaForm.SelectOnSheet` (RVA `134056`) colore la source rose et les plages résolues bleues. `SelectorForm.SelectOnSheet` (RVA `65920`) sélectionne l'union sur la feuille du nœud courant. Clair réutilise la pile de couleurs de trace et garde la fenêtre du volet active lorsque le résultat appartient à un autre classeur. Entrée permet d'y aller. [Validation](VALIDATION.md)
+`FormulaForm.SelectOnSheet` (RVA `134056`) colore la source rose et les plages résolues bleues. `SelectorForm.SelectOnSheet` (RVA `65920`) sélectionne l'union sur la feuille du nœud courant. Clair réutilise la pile de couleurs de trace et garde la fenêtre du volet active lorsque le résultat appartient à un autre classeur. Le menu **Aller à la cible dans Excel** permet d'y aller. [Validation](VALIDATION.md)
 
 ## Raccourcis dans le volet
 
 `SelectorForm.MoveActiveCell` (RVA `64992`) part du coin haut gauche de la première zone Excel. Ctrl+flèche rejoint le bord demandé ou passe à la zone suivante avec bouclage. Le coin sur l'autre axe reste choisi si sa dimension le permet. Une seule zone est sélectionnée dans Excel pendant le parcours. Alt+S rétablit la sélection complète avec la zone mémorisée en tête. Clair garde la fenêtre du volet et reprend le parcours depuis son dernier état.
 
 Alt+Z déplie ou replie la branche courante en gardant le premier nœud ouvert au repli. Clair limite le dépliage de l'arbre des dépendances à 5 000 nœuds par commande. Ctrl+Q et Ctrl+Maj+Q explorent les plages sélectionnées dans les deux arbres. Sur la racine seule, dans le même mode, le raccourci bascule l'expansion. [Validation](VALIDATION.md)
+
+`FormulaForm.OnFormClosed` (RVA `134492`) applique le retour sur Échap si l'option est active. Arixcel resélectionne alors le parent ou la plage de lancement avant nettoyage. Entrée suit le chemin OK et garde la sélection. Clair représente le parent dans le même volet ancré. Il garde sa sélection Excel et son coin mémorisés, et rétablit la plage de lancement ainsi que les onglets groupés disponibles au niveau racine. [Validation](VALIDATION.md)
 
 ## Dévoilement pendant la navigation
 
@@ -158,8 +160,8 @@ Le produit documente un arbre de composants avec valeurs et emplacements, des ch
 | F08 | Références vers tout classeur ouvert. | Références A1 directes et noms absolus dans l'Explorateur, avec navigation, valeurs contextualisées et couleurs. Proposition d'ouverture par chemin dans le volet. | Trois classeurs aux feuilles homonymes, refus d'un chemin, ouverture d'un nom externe, conservation du contexte et de l'historique. |
 | F09 | Sélection synchronisée entre arbre, portion de formule et cellules ; multisélection. | Sous-expressions sélectionnables par l'arbre ou le curseur, Ctrl/Maj, union Excel sur la feuille courante et couleurs sur les autres feuilles. | Plages physiques, portions disjointes, restauration des fonds et lien externe. |
 | F10 | Surlignage source/antécédents/dépendants configurable. | Absent. | Couleurs distinctes ; nettoyage à fermeture et changement de sélection ; formats antérieurs intacts. |
-| F11 | Édition de composant ou formule, validation, annulation, undo. | Absent. | F2, Entrée, Échap, Ctrl+Z ; protection et erreurs gérées ; formule exacte restaurée ; une édition invalide n'écrase pas la cellule. |
-| F12 | Navigation clavier et refresh, expansion/réduction, réexploration. | Ctrl+flèches, Alt+S, Alt+Z, Ctrl+Q/Ctrl+Maj+Q et Alt+R dans le volet. | Coins et bouclage, sélection multizone, autre fenêtre, dépliage, nouvelle trace, déplacement et invalidation de source. Ctrl+Retour arrière et Échap/Entrée restent à couvrir. |
+| F11 | Édition de composant ou formule, validation, annulation, undo. | Édition de la formule avec F2, Entrée et Échap dans la boîte d'édition. Annulation Clair par action dédiée. | Édition d'un composant, conservation de l'historique et Ctrl+Z à comparer. |
+| F12 | Navigation clavier et refresh, expansion/réduction, réexploration. | Ctrl+flèches, Alt+S, Alt+Z, Ctrl+Q/Ctrl+Maj+Q, Alt+R, Échap et Entrée dans le volet. | Coins et bouclage, sélection multizone, autre fenêtre, dépliage, nouvelle trace, déplacement et invalidation de source. Ctrl+Retour arrière reste à couvrir. |
 | F13 | Mode d'évaluation précis et signal d'imprécision. | Absent. | E3 `PreciseEvaluation`, `MayBeImprecise` : déterminer différences runtime avant de promettre ce réglage ; couvrir fonctions volatiles/UDF sans effets involontaires. |
 
 ## 3. Antécédents et dépendants de plusieurs cellules

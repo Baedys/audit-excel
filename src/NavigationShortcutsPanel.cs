@@ -8,11 +8,39 @@ namespace FormulaExplorer
 {
     public sealed partial class MainForm
     {
-        readonly ExcelNavigationCursor relationNavigationCursor = new ExcelNavigationCursor();
-        readonly ExcelNavigationCursor expressionNavigationCursor = new ExcelNavigationCursor();
+        ExcelNavigationCursor relationNavigationCursor = new ExcelNavigationCursor();
+        ExcelNavigationCursor expressionNavigationCursor = new ExcelNavigationCursor();
+        ExcelNavigationCursor lastExplorerNavigation;
+
+        void ResetExplorerNavigation()
+        {
+            relationNavigationCursor.Clear();
+            expressionNavigationCursor.Clear();
+            lastExplorerNavigation = null;
+        }
+
+        ExcelNavigationCursor TakeExplorerNavigation()
+        {
+            ExcelNavigationCursor saved = lastExplorerNavigation;
+            if (saved != null && saved.HasSelection)
+            {
+                if (saved == relationNavigationCursor) relationNavigationCursor = new ExcelNavigationCursor();
+                else expressionNavigationCursor = new ExcelNavigationCursor();
+            }
+            else saved = null;
+            ResetExplorerNavigation();
+            return saved;
+        }
 
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
+            if (keyData == Keys.Escape && HandleExplorerExitKey(keyData)) return true;
+            if (keyData == Keys.Enter)
+            {
+                Control source = Control.FromChildHandle(message.HWnd);
+                if (!(source is ButtonBase) && !(source is LinkLabel) && !(source is ComboBox) &&
+                    HandleExplorerExitKey(keyData)) return true;
+            }
             if (keyData == (Keys.Alt | Keys.R))
             {
                 TreeView view = expressions.ContainsFocus || formula.Focused || expressionValue.Focused ? expressions : tree;
@@ -24,6 +52,11 @@ namespace FormulaExplorer
         bool HandleExplorerNavigationKey(TreeView view, KeyEventArgs e)
         {
             if (e.Handled || tabs.SelectedIndex != 0) return false;
+            if (HandleExplorerExitKey(e.KeyData))
+            {
+                e.Handled = e.SuppressKeyPress = true;
+                return true;
+            }
             ExcelNavigationCursor cursor = view == expressions ? expressionNavigationCursor : relationNavigationCursor;
             Action action;
             if (e.KeyCode == Keys.Q && (e.Modifiers == Keys.Control || e.Modifiers == (Keys.Control | Keys.Shift)))
@@ -39,14 +72,20 @@ namespace FormulaExplorer
                     case Keys.Down: direction = NavigationArrow.Down; break;
                     default: return false;
                 }
-                action = delegate { if (bridge != null) bridge.MoveNavigationCorner(cursor, direction); };
+                action = delegate
+                {
+                    if (bridge != null && bridge.MoveNavigationCorner(cursor, direction)) lastExplorerNavigation = cursor;
+                };
             }
             else if (e.KeyData == (Keys.Alt | Keys.S))
                 action = delegate
                 {
                     if (bridge == null) return;
                     RefreshTraceHighlights();
-                    if (cursor.HasSelection) bridge.RestoreNavigationSelection(cursor);
+                    if (cursor.HasSelection)
+                    {
+                        if (bridge.RestoreNavigationSelection(cursor)) lastExplorerNavigation = cursor;
+                    }
                     else if (view == expressions) FollowExpressionSelection();
                     else FollowRelationInExcel();
                 };

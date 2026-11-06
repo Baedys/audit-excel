@@ -221,6 +221,7 @@ namespace FormulaExplorer
             Cell current;
             TraceLocation selection = null;
             IReadOnlyList<Book> peers = null;
+            ExcelExplorerLaunchSelection launch = null;
             try
             {
                 captured = bridge.CaptureActive(); current = bridge.ActiveCell(captured);
@@ -228,16 +229,26 @@ namespace FormulaExplorer
                 {
                     List<Reference> areas = bridge.ReadSelectionRanges(captured, true);
                     if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
+                    if (IsDocked)
+                    {
+                        launch = bridge.CaptureExplorerLaunch(captured, window);
+                        if (launch.Group.Count > 1 && (reverse || !current.IsFormula))
+                            throw new InvalidOperationException("Dégroupez les feuilles Excel avant de tracer cette sélection.");
+                    }
                     peers = bridge.CaptureDependencyPeers(captured);
                 }
+                SetCapturedBook(captured, current.Sheet, current.Address, selection, peers);
+                explorerWindow = window;
+                explorerLaunchSelection = launch;
+                launch = null;
             }
             catch { RefreshTraceHighlights(); throw; }
-            SetCapturedBook(captured, current.Sheet, current.Address, selection, peers);
-            explorerWindow = window;
+            finally { if (launch != null) launch.Dispose(); }
             if (tabs.SelectedIndex == 0)
             {
                 bridge.RememberNavigationCursor(relationNavigationCursor, captured);
                 bridge.RememberNavigationCursor(expressionNavigationCursor, captured);
+                lastExplorerNavigation = relationNavigationCursor;
             }
         }
         void SetBook(Book captured, string sheet, string address)
@@ -245,7 +256,8 @@ namespace FormulaExplorer
 
         void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection, IReadOnlyList<Book> peers = null)
         {
-            relationNavigationCursor.Clear(); expressionNavigationCursor.Clear();
+            ClearExplorerLaunch();
+            ResetExplorerNavigation();
             ClearTraceHighlightOwners();
             UpdateCapturedBook(captured, sheet, address, peers);
             ClearExplorerHistory();
@@ -298,8 +310,17 @@ namespace FormulaExplorer
         {
             ExplorerLiveSource nextSource = bridge == null ? null : new ExplorerLiveSource(bridge, book, cell, selection);
             if (remember && root != null)
-                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, LiveSource = liveSource, Reverse = reverse, Selection = CaptureExplorerSelection(), HighlightOwner = traceHighlightOwner });
-            else if (liveSource != null) liveSource.Dispose();
+                history.Push(new ExplorerHistory {
+                    Cell = root, Source = traceSource, LiveSource = liveSource, Reverse = reverse,
+                    Selection = CaptureExplorerSelection(), Expressions = CaptureExplorerExpressions(),
+                    HighlightOwner = traceHighlightOwner, ExpressionNavigation = lastExplorerNavigation == expressionNavigationCursor,
+                    Navigation = TakeExplorerNavigation()
+                });
+            else
+            {
+                if (liveSource != null) liveSource.Dispose();
+                ResetExplorerNavigation();
+            }
             liveSource = nextSource;
             traceHighlightOwner = "trace-" + Guid.NewGuid().ToString("N");
             root = cell; traceSource = selection;
@@ -315,7 +336,15 @@ namespace FormulaExplorer
             liveSource = previous.LiveSource;
             root = previous.Cell; traceSource = previous.Source; reverse = previous.Reverse;
             traceHighlightOwner = previous.HighlightOwner;
+            ResetExplorerNavigation();
             ResetFlowDisplay(); ShowTreeSelection(previous.Selection);
+            RestoreExplorerExpressions(previous.Expressions, false);
+            if (previous.Navigation != null)
+            {
+                if (previous.ExpressionNavigation) expressionNavigationCursor = previous.Navigation;
+                else relationNavigationCursor = previous.Navigation;
+                lastExplorerNavigation = previous.Navigation;
+            }
         }
         void SelectExplorerTab(bool dependentsDirection)
         {

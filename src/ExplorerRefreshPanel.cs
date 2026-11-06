@@ -7,6 +7,13 @@ namespace FormulaExplorer
 {
     public sealed partial class MainForm
     {
+        sealed class ExplorerExpressionState
+        {
+            internal string Current, Anchor;
+            internal string[] Selected, Expanded;
+            internal bool OnGrid;
+        }
+
         sealed class ExplorerLiveSource : IDisposable
         {
             readonly object[] ranges;
@@ -60,7 +67,10 @@ namespace FormulaExplorer
         void ClearExplorerHistory()
         {
             foreach (ExplorerHistory item in history)
+            {
                 if (item.LiveSource != null) item.LiveSource.Dispose();
+                if (item.Navigation != null) item.Navigation.Dispose();
+            }
             history.Clear();
         }
 
@@ -111,11 +121,7 @@ namespace FormulaExplorer
                 sheetName(oldExpression.Workbook, oldExpression.Sheet);
             Cell nextExpression = expressionSheet == null ? null : ReferenceEquals(oldExpression, root) ? nextRoot :
                 replace(oldExpression.Workbook).Get(expressionSheet, oldExpression.Address);
-            var expressionPaths = navigationView == null || nextExpression == null ? null : ExpressionPaths();
-            string expressionCurrent = expressionPaths == null ? null : ExpressionPath(expressionPaths, expressions.SelectedNode);
-            string expressionStart = expressionPaths == null ? null : ExpressionPath(expressionPaths, expressionAnchor);
-            string[] expressionSelected = expressionPaths == null ? null : selectedExpressions.Select(node => ExpressionPath(expressionPaths, node)).ToArray();
-            string[] expressionExpanded = expressionPaths == null ? null : expressionPaths.Where(pair => pair.Key.IsExpanded).Select(pair => pair.Value).ToArray();
+            ExplorerExpressionState expressionState = navigationView == null || nextExpression == null ? null : CaptureExplorerExpressions();
 
             Cell nextCaptured = ReferenceEquals(capturedRoot, root) ? nextRoot : null;
             var previousHistory = history.Reverse().ToArray();
@@ -128,6 +134,7 @@ namespace FormulaExplorer
                 if (ReferenceEquals(item.Cell, capturedRoot)) nextCaptured = refreshed;
                 refreshedHistory.Add(new ExplorerHistory {
                     Cell = refreshed, LiveSource = item.LiveSource, Reverse = item.Reverse, HighlightOwner = item.HighlightOwner,
+                    Expressions = item.Expressions, Navigation = item.Navigation, ExpressionNavigation = item.ExpressionNavigation,
                     Source = RefreshTraceSource(item.Source, saved, replace, sheetName),
                     Selection = RefreshRelationPaths(item.Selection, item.Cell, refreshed, sheetKeys)
                 });
@@ -143,6 +150,7 @@ namespace FormulaExplorer
                 if (item.LiveSource == null || !retained.Contains(item.LiveSource))
                 {
                     if (item.LiveSource != null) item.LiveSource.Dispose();
+                    if (item.Navigation != null) item.Navigation.Dispose();
                     RemoveTraceHighlightOwner(item.HighlightOwner);
                 }
             foreach (ExplorerHistory item in refreshedHistory)
@@ -151,15 +159,15 @@ namespace FormulaExplorer
                 history.Push(item);
             }
 
-            relationNavigationCursor.Clear();
+            ResetExplorerNavigation();
             ResetFlowDisplay();
             status.Text = "Tracé actualisé · " + TraceCellLabel(root);
             ShowTreeSelection(selection);
             bool reselect = navigationView != null && IsDocked && explorerWindow != 0 &&
                 explorerWindow == bridge.ActiveNavigationWindowHandle();
-            if (expressionPaths != null && expressionOwner != null && expressionOwner.Workbook == nextExpression.Workbook &&
+            if (expressionState != null && expressionOwner != null && expressionOwner.Workbook == nextExpression.Workbook &&
                 String.Equals(expressionOwner.Key, nextExpression.Key, StringComparison.OrdinalIgnoreCase))
-                RestoreRefreshExpression(expressionCurrent, expressionStart, expressionSelected, expressionExpanded, reselect && navigationView == expressions);
+                RestoreExplorerExpressions(expressionState, reselect && navigationView == expressions);
             if (reselect && navigationView == tree) FollowRelationSelection(true);
         }
 
@@ -233,9 +241,20 @@ namespace FormulaExplorer
             }
         }
 
-        void RestoreRefreshExpression(string current, string anchor, string[] selected, string[] expanded, bool follow)
+        ExplorerExpressionState CaptureExplorerExpressions()
         {
-            if (expressions.Nodes.Count == 0) return;
+            if (expressions.Nodes.Count == 0) return null;
+            var paths = ExpressionPaths();
+            return new ExplorerExpressionState {
+                Current = ExpressionPath(paths, expressions.SelectedNode), Anchor = ExpressionPath(paths, expressionAnchor),
+                Selected = selectedExpressions.Select(node => ExpressionPath(paths, node)).ToArray(),
+                Expanded = paths.Where(pair => pair.Key.IsExpanded).Select(pair => pair.Value).ToArray(), OnGrid = expressionGridActive
+            };
+        }
+
+        void RestoreExplorerExpressions(ExplorerExpressionState state, bool follow)
+        {
+            if (state == null || expressions.Nodes.Count == 0) return;
             var paths = ExpressionPaths().ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.Ordinal);
             Func<string, TreeNode> find = path =>
             {
@@ -248,16 +267,17 @@ namespace FormulaExplorer
             try
             {
                 expressions.Nodes[0].Collapse();
-                foreach (TreeNode node in expanded.Select(find).Where(node => node != null)) node.Expand();
+                foreach (TreeNode node in state.Expanded.Select(find).Where(node => node != null)) node.Expand();
                 selectedExpressions.Clear();
-                selectedExpressions.AddRange(selected.Select(find).Where(node => node != null));
-                expressions.SelectedNode = find(current) ?? selectedExpressions.LastOrDefault() ?? expressions.Nodes[0];
-                if (selectedExpressions.Count == 0 && selected.Length != 0) selectedExpressions.Add(expressions.SelectedNode);
-                expressionAnchor = find(anchor) ?? expressions.SelectedNode;
+                selectedExpressions.AddRange(state.Selected.Select(find).Where(node => node != null));
+                expressions.SelectedNode = find(state.Current) ?? selectedExpressions.LastOrDefault() ?? expressions.Nodes[0];
+                if (selectedExpressions.Count == 0 && state.Selected.Length != 0) selectedExpressions.Add(expressions.SelectedNode);
+                expressionAnchor = find(state.Anchor) ?? expressions.SelectedNode;
                 expressions.SelectedNode.EnsureVisible();
             }
             finally { expressions.EndUpdate(); buildingExpressions = wasBuilding; }
             RefreshExpressionSelection(follow);
+            if (!follow && state.OnGrid) UpdateExpressionGridSelection(false);
         }
     }
 }

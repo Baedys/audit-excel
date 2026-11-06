@@ -1,5 +1,9 @@
 # Revue et validation
 
+## Sortir d'un tracé Excel — 6 novembre 2026
+
+Les témoins Excel couvrent Échap et Entrée au niveau racine et enfant. Ils vérifient la sélection courante, la restitution optionnelle des plages disjointes après insertion, le coin actif du parent et le groupe d'onglets. La fermeture racine retire les couleurs du tracé et, quand Échap rétablit la source, remasque l'ancienne feuille active. Si la feuille source est supprimée, la fermeture conserve la sélection courante, même si une feuille homonyme a été recréée. Le volet en arrière-plan laisse la sélection de l'autre fenêtre intacte. L'appel de masquage du volet est observé après la fermeture dans le témoin WinForms. Le contrat Arixcel provient du CIL.
+
 ## Actualiser un tracé Excel — 6 novembre 2026
 
 Alt+R reconstruit depuis la cellule ou les plages de lancement. Le témoin Excel modifie la formule pendant que la sélection Excel pointe ailleurs, restaure deux nœuds et une branche ouverte, puis exerce le même raccourci depuis le texte de formule. Le nœud courant donne la première zone resélectionnée. Un raccourci reçu pendant qu'une deuxième fenêtre du même classeur est active laisse sa sélection intacte. Une insertion de ligne et un renommage déplacent le tracé et son historique. Une feuille supprimée puis recréée sous le même nom laisse l'ancien tracé visible et signale sa source indisponible. La comparaison Arixcel repose sur le CIL. Clair retrouve les nœuds par leur chemin, et les branches d'expression par type et contenu correspondant.

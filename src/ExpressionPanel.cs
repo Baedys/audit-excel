@@ -216,7 +216,7 @@ namespace FormulaExplorer
             var group = node.Parent == null ? null : node.Parent.Tag as CriterionGroup;
             string role = group == null ? "" : expression == group.Range ? "Plage du filtre · " : "Critère · ";
             node.ToolTipText = role + ExpressionToolTip(expression) + (node.NodeFont == null ? "" : " · Branche retenue") +
-                (target == null ? "" : "\nCible Excel · " + target.ExternalAddress + " · Entrée pour y aller");
+                (target == null ? "" : "\nCible Excel · " + target.ExternalAddress + " · Aller à la cible dans le menu contextuel");
         }
         CriterionGroup SelectedCriterion()
         { return expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as CriterionGroup; }
@@ -235,7 +235,7 @@ namespace FormulaExplorer
         {
             if (result == null) return "Sélectionnez Évaluer pour actualiser ce filtre.";
             return result.Description + " · " + result.Matched + " sur " + result.Total + " cellule(s)" +
-                (result.Target == null ? "" : "\r\n" + result.Target.ExternalAddress + " · Entrée pour y aller");
+                (result.Target == null ? "" : "\r\n" + result.Target.ExternalAddress + " · Aller à la cible dans le menu contextuel");
         }
 
         void ShowCriterionValue(CriterionGroup group, string warning)
@@ -365,7 +365,14 @@ namespace FormulaExplorer
                 var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
                 var cancel = new Button { Text = "Fermer", DialogResult = DialogResult.Cancel, AutoSize = true };
                 var apply = new Button { Text = "Appliquer", AutoSize = true };
-                actions.Controls.Add(cancel); actions.Controls.Add(apply); layout.Controls.Add(actions, 0, 3); dialog.Controls.Add(layout); dialog.CancelButton = cancel;
+                actions.Controls.Add(cancel); actions.Controls.Add(apply); layout.Controls.Add(actions, 0, 3); dialog.Controls.Add(layout);
+                dialog.CancelButton = cancel; dialog.AcceptButton = apply;
+                editor.KeyDown += delegate(object sender, KeyEventArgs e)
+                {
+                    if (e.KeyData != (Keys.Alt | Keys.Enter)) return;
+                    editor.SelectedText = Environment.NewLine;
+                    e.Handled = e.SuppressKeyPress = true;
+                };
                 apply.Click += delegate
                 {
                     try
