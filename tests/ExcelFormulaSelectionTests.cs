@@ -88,8 +88,10 @@ public static class ExcelFormulaSelectionTests
                 Equal(selected.Count, 2, "Ctrl keeps disjoint tree nodes");
                 Mark(formula, "A2", true); Mark(formula, "C4", true); Mark(formula, "+4+", false);
                 Equal((string)keep(app.Selection).Address, "$C$4,$A$2", "current range goes first in Excel union");
+                other.Visible = 2;
                 choose(e7, Keys.Control);
                 Equal((string)keep(app.ActiveSheet).Name, "Other", "current expression chooses its sheet");
+                Equal((int)other.Visible, -1, "formula expression reveals a very hidden worksheet");
                 Equal((string)keep(app.Selection).Address, "$E$7", "Excel union stays on the current sheet");
                 Equal(color(main, "A2"), 0xFFCC66, "selection color remains on another sheet");
                 Equal(color(other, "E7"), 0xFFCC66, "qualified expression is highlighted");
@@ -120,6 +122,10 @@ public static class ExcelFormulaSelectionTests
                 Equal((int)keep(keep(main.Range["A2"]).Interior).ColorIndex, 6, "disabling colors restores original fill");
                 Equal((int)keep(keep(main.Range["B8"]).Interior).ColorIndex, -4142, "disabling colors restores source fill");
                 Mark(formula, "A2", true); Mark(formula, "C4", true);
+                var failures = new List<Exception>();
+                Invoke(form, "RestorePaneVisibility", false, failures);
+                Equal(failures.Count, 0, "formula visibility journal can be restored");
+                Equal((int)other.Visible, 2, "formula journal restores very hidden state");
             }
         }
         finally

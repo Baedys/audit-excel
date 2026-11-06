@@ -54,6 +54,7 @@ namespace FormulaExplorer
         {
             direction.Controls.Add(highlightTraceCells);
             direction.Controls.Add(groupTraceSheets);
+            ConfigureNavigationVisibility(direction);
             highlightTraceCells.CheckedChanged += delegate
             {
                 if (highlightTraceCells.Checked) RefreshTraceHighlights();
@@ -70,6 +71,7 @@ namespace FormulaExplorer
             Disposed += delegate
             {
                 ClearTraceHighlightOwners();
+                RestorePaneVisibility(false, new List<Exception>());
                 UntrackDirectConnections();
             };
             groupTraceSheets.CheckedChanged += delegate
@@ -338,10 +340,12 @@ namespace FormulaExplorer
             bool keepFocus = tree.Focused;
             try
             {
-                bridge.FollowRelationSelection(book, selection == null ? null : new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress });
+                if (selection == null) bridge.FollowRelationSelection(book, null);
+                else NavigatePaneTarget(book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress }, true);
             }
             catch (COMException) { status.Text = "Excel ne peut pas sélectionner cette plage pour le moment."; }
             catch (InvalidOperationException error) { status.Text = error.Message; }
+            catch (AggregateException error) { status.Text = error.Message; }
             finally { if (keepFocus && !tree.Focused && tree.CanFocus) tree.Focus(); }
         }
 

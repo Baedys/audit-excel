@@ -294,7 +294,7 @@ namespace FormulaExplorer
             });
         }
 
-        internal void NavigateDependency(Book book, Cell cell)
+        internal void NavigateDependency(Book book, Cell cell, string revealOwner = null, bool revealAxes = false)
         {
             RequireDependencySnapshot(book);
             if (cell == null) throw new ArgumentNullException("cell");
@@ -306,9 +306,7 @@ namespace FormulaExplorer
             string address = String.Join(",", areas.Select(area => area.Address));
             AtDirectCell(book, cell.Sheet, address, delegate(object sheet, object range)
             {
-                if ((int)((dynamic)sheet).Visible != -1)
-                    throw new InvalidOperationException("Feuille masquée. Affichez-la dans Excel avant de naviguer.");
-                ((dynamic)application).Goto(range, true);
+                SelectNavigationTarget(book, sheet, range, revealOwner, revealAxes, delegate { ((dynamic)application).Goto(range, true); });
                 return true;
             });
         }

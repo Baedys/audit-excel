@@ -59,6 +59,14 @@ namespace FormulaExplorer
         public void WorkbookBeforeSave(object workbook, bool saveAsUI, ref bool cancel)
         {
             if (cancel || colorBridge == null) return;
+            try { colorBridge.RestoreNavigationVisibilityBeforeSave(workbook); }
+            catch (Exception error)
+            {
+                cancel = true;
+                Notify("Enregistrement annulé : masquage temporaire Clair non rétabli. " + error.Message +
+                    " Utilisez « Remasquer » dans le volet, puis réessayez.", true);
+                return;
+            }
             try { colorBridge.SaveHighlightData(workbook); }
             catch (Exception error)
             {

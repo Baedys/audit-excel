@@ -204,21 +204,15 @@ namespace FormulaExplorer
             return null;
         }
 
-        internal CriterionGroup NavigateCriterionGroup(Book book, Cell owner, ExpressionNode root, CriterionGroup selected)
+        internal CriterionGroup ReadCriterionNavigationTarget(Book book, Cell owner, ExpressionNode root, CriterionGroup selected)
         {
-            CriterionGroup refreshed = WithExpressionContext(book, owner, true, (sheet, range) =>
+            return WithExpressionContext(book, owner, true, (sheet, range) =>
             {
                 var groups = new Dictionary<ExpressionNode, CriterionGroup>();
                 ResolveCriteriaTarget(sheet, range, root, selected.Function, FormulaSyntax.FunctionName(selected.Function), groups);
                 CriterionGroup result;
                 return groups.TryGetValue(selected.Range, out result) ? result : null;
             });
-            if (refreshed != null && refreshed.Target != null)
-            {
-                ExpressionTarget target = refreshed.Target;
-                Navigate(new Book { FullName = target.Workbook }, new Cell { Sheet = target.Sheet, Address = target.Address });
-            }
-            return refreshed;
         }
 
         internal static ExpressionNode FindFilterWithMask(ExpressionNode root, ExpressionNode mask)

@@ -111,7 +111,7 @@ namespace FormulaExplorer
             });
         }
 
-        internal void FollowRelationSelection(Book book, Cell target)
+        internal void FollowRelationSelection(Book book, Cell target, string revealOwner = null, bool revealAxes = false)
         {
             dynamic app = application;
             object activeBook = null, activeSheet = null, activeCell = null;
@@ -131,12 +131,13 @@ namespace FormulaExplorer
                 }
                 AtDirectCell(book, target.Sheet, target.Address, delegate(object sheet, object range)
                 {
-                    if ((int)((dynamic)sheet).Visible != -1)
-                        throw new InvalidOperationException("Feuille masquée : affichez-la dans Excel avant de naviguer.");
-                    activeSheet = app.ActiveSheet;
-                    if (activeSheet == null || DirectSession.Identity(activeSheet) != DirectSession.Identity(sheet))
-                        ((dynamic)sheet).Activate();
-                    ((dynamic)range).Select();
+                    SelectNavigationTarget(book, sheet, range, revealOwner, revealAxes, delegate
+                    {
+                        activeSheet = app.ActiveSheet;
+                        if (activeSheet == null || DirectSession.Identity(activeSheet) != DirectSession.Identity(sheet))
+                            ((dynamic)sheet).Activate();
+                        ((dynamic)range).Select();
+                    });
                     return true;
                 });
             }

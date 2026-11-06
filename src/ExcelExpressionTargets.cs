@@ -132,6 +132,13 @@ namespace FormulaExplorer
 
         internal ExpressionTarget NavigateExpressionTarget(Book book, Cell owner, ExpressionNode root, ExpressionNode node)
         {
+            ExpressionTarget target = ReadExpressionNavigationTarget(book, owner, root, node);
+            Navigate(new Book { FullName = target.Workbook }, new Cell { Sheet = target.Sheet, Address = target.Address });
+            return target;
+        }
+
+        internal ExpressionTarget ReadExpressionNavigationTarget(Book book, Cell owner, ExpressionNode root, ExpressionNode node)
+        {
             ExpressionTarget target = WithExpressionContext(book, owner, true,
                 (sheet, range) =>
                 {
@@ -143,7 +150,6 @@ namespace FormulaExplorer
                     return mask;
                 });
             if (target == null) throw new InvalidOperationException("Cette expression ne désigne pas de plage Excel établie.");
-            Navigate(new Book { FullName = target.Workbook }, new Cell { Sheet = target.Sheet, Address = target.Address });
             return target;
         }
 

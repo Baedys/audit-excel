@@ -86,13 +86,19 @@ D03 couvre maintenant la sélection de plusieurs résultats, y compris depuis un
 
 Un clic ou une sélection au clavier dans le volet sélectionne automatiquement l'union sur la feuille du résultat courant. `FormulaForm.SelectOnSheet` (RVA `134056`) distingue les couleurs et la sélection Excel. Clair suit le résultat dans la fenêtre Excel active. Il conserve le masquage des feuilles. **Entrée** ou **Voir cellule** permet aussi la navigation explicite.
 
-La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles ou classeurs ouverts. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. Les coins de zones au clavier et le dévoilement temporaire restent ouverts. [Validation](VALIDATION.md)
+La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles ou classeurs ouverts. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. Les coins de zones au clavier restent ouverts. [Validation](VALIDATION.md)
 
 ## Sélection de sous-expressions dans le volet
 
 `SelectFromFormulaBox` (RVA `192800`) descend vers le composant explicite sous le curseur. Ctrl conserve les sélections existantes ou rend courant un ancêtre déjà sélectionné. Dans l'arbre, Ctrl bascule un nœud et Maj étend la sélection visible. `HighlightFormula` (RVA `193772`) souligne les portions choisies en bleu et conserve un curseur sans sélection de caractères.
 
 `FormulaForm.SelectOnSheet` (RVA `134056`) colore la source rose et les plages résolues bleues. `SelectorForm.SelectOnSheet` (RVA `65920`) sélectionne l'union sur la feuille du nœud courant. Clair réutilise la pile de couleurs de trace et garde la fenêtre du volet active lorsque le résultat appartient à un autre classeur. Entrée permet d'y aller. [Validation](VALIDATION.md)
+
+## Dévoilement pendant la navigation
+
+`SelectorForm.Unhide` (RVA `64624`) révèle d'abord la feuille, puis les axes selon `UnhideCells`, activé par défaut. `CellUnhider` réduit les axes entiers à une bande en A ou en ligne 1 et borne les autres cibles par la zone utilisée. Les axes masqués voisins suivent le niveau de plan. À la fermeture, le natif épargne la feuille active et les axes de la sélection (RVA `69764`). Clair suit ces règles dans les arbres de dépendances et de formules. L'option du volet concerne les prochaines navigations.
+
+Clair restaure le masquage avec **Remasquer** et à la fermeture par l'hôte. Avant l'enregistrement du classeur, il tente cette restauration et annule la sauvegarde si Excel la refuse. Il garde les masques des lignes sous filtre actif, isole les écritures des feuilles groupées et restaure les changements d'une navigation refusée. Le chemin d'enregistrement natif inspecté traite le journal de couleurs. [Validation](VALIDATION.md)
 
 ## Sources et limites
 
@@ -127,7 +133,7 @@ L'inventaire REA des membres a échoué à sa limite de représentation de 64 Mi
 | I05 | Réglages persistants des fenêtres, polices, langue/formules locales, couleurs (E3 `ModelessForm`, `ExplorerOptions`). | Absent. | Affichage lisible en DPI usuels ; positions/colonnes conservées ; Français/anglais et A1/R1C1 vérifiés. |
 | I06 | Progression, arrêt, annulation ; état incomplet explicite (E3 `ProgressForm`, `CancelToken`, `StopToken`). | Partiel : plafonds annoncés, capture synchrone. | Grand classeur, interruption pendant lecture/analyse, absence de faux résultat complet et Excel toujours réactif. |
 | I07 | Actualisation et invalidation après modification (E3 `OnUserFocusIn`, `RefreshModel`, `FormulaChangeAction`). | Partiel : rechargement manuel du classeur. | Modifier une formule, renommer/fermer un classeur, supprimer une feuille : rafraîchir sans réutiliser silencieusement une capture périmée. |
-| I08 | Comportement sûr avec protection, masquage et erreurs (E3 `Unhide`, E4 `Collector.Search`). | Partiel : refus de navigation vers feuille masquée. | Respecter réglage d'affichage des cellules masquées ; protection et zone inaccessible signalées ; restaurer état après abandon. |
+| I08 | Comportement sûr avec protection, masquage et erreurs (E3 `Unhide`, E4 `Collector.Search`). | Dévoilement de feuille et d'axes, restauration et protection des filtres actifs dans les arbres. | Feuille très masquée, axes sélectionnés et voisins, groupes, refus de protection et sauvegarde. |
 | I09 | À propos, vérification de mises à jour et informations produit (E2). | Absent. | Équivalents propres à Clair ; aucun serveur, identité ou mécanisme de licence Arixcel réutilisé. Le mécanisme commercial du produit original n'est pas une preuve de parité des fonctions d'audit. |
 
 ## 2. Exploration de formules et références

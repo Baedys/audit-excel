@@ -412,7 +412,7 @@ namespace FormulaExplorer
         {
             if (bridge == null) { status.Text = "Démonstration : aucune connexion Excel."; return; }
             TraceLocation selection = NavigableRelationSelection();
-            if (selection != null) bridge.NavigateDependency(selection.Workbook ?? book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress });
+            if (selection != null) NavigatePaneTarget(selection.Workbook ?? book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress }, false);
         }
         static void CellColumns(DataGridView grid)
         {

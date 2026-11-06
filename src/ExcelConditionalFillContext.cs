@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 
 namespace FormulaExplorer
 {
-    // CF setters can propagate to the other selected worksheets. Isolate the
+    // Excel setters can propagate to the other selected worksheets. Isolate the
     // actual target only when its Excel window has a group; retain real COM
     // objects so restoring context never resolves a workbook/sheet by name.
     internal static class ExcelConditionalFillContext
@@ -204,12 +204,23 @@ namespace FormulaExplorer
         {
             if (rule == null) throw new ArgumentNullException("rule");
             if (action == null) throw new ArgumentNullException("action");
-            object applies = null, sheet = null, book = null, app = null, currentWindow = null, targetWindow = null;
+            object applies = null, sheet = null;
+            try
+            {
+                applies = Get(rule, "AppliesTo"); sheet = Get(applies, "Worksheet");
+                RunWorksheet(sheet, action);
+            }
+            finally { ExcelBridge.Release(sheet); ExcelBridge.Release(applies); }
+        }
+
+        internal static void RunWorksheet(object sheet, Action action)
+        {
+            object book = null, app = null, currentWindow = null, targetWindow = null;
             Frame original = null, target = null; bool flags = false, events = false, screen = false;
             var errors = new List<Exception>();
             try
             {
-                applies = Get(rule, "AppliesTo"); sheet = Get(applies, "Worksheet"); book = Get(sheet, "Parent"); app = Get(sheet, "Application");
+                book = Get(sheet, "Parent"); app = Get(sheet, "Application");
                 currentWindow = Get(app, "ActiveWindow"); targetWindow = TargetWindow(book, currentWindow);
                 if (!HasGroup(targetWindow)) action();
                 else
@@ -239,10 +250,10 @@ namespace FormulaExplorer
                 }
                 if (target != null && !Object.ReferenceEquals(target, original)) target.ReleaseAll(errors);
                 if (original != null) original.ReleaseAll(errors);
-                Release(targetWindow, errors); Release(currentWindow, errors); Release(app, errors); Release(book, errors); Release(sheet, errors); Release(applies, errors);
+                Release(targetWindow, errors); Release(currentWindow, errors); Release(app, errors); Release(book, errors);
             }
             if (errors.Count == 1) ExceptionDispatchInfo.Capture(errors[0]).Throw();
-            if (errors.Count > 1) throw new AggregateException("Écriture des fonds conditionnels et restauration du contexte Excel incomplètes.", errors);
+            if (errors.Count > 1) throw new AggregateException("Écriture et restauration du contexte Excel incomplètes.", errors);
         }
     }
 }

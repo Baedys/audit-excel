@@ -201,9 +201,13 @@ public static class ExcelDependencyRangesTests
                 Equal(((Cell)tree.SelectedNode.Tag).Location, "'AB'!C2", "path lookup preserves the sheet and address boundary");
                 ab.Visible = 0;
                 Invoke(form, "FollowRelationInExcel");
-                Equal((int)ab.Visible, 0, "automatic following preserves hidden worksheets");
-                Equal((string)keep(app.ActiveSheet).Name, "Audit", "following a hidden result keeps the visible worksheet active");
-                ab.Visible = -1;
+                Equal((int)ab.Visible, -1, "automatic following reveals a hidden worksheet");
+                Equal((string)keep(app.ActiveSheet).Name, "AB", "following a hidden result activates its worksheet");
+                audit.Activate();
+                var visibilityFailures = new List<Exception>();
+                Invoke(form, "RestorePaneVisibility", false, visibilityFailures);
+                Equal(visibilityFailures.Count, 0, "hidden worksheet restoration succeeds");
+                Equal((int)ab.Visible, 0, "restoration returns the original worksheet visibility");
                 object foreign = keep(app.Workbooks).Add(-4167);
                 try
                 {

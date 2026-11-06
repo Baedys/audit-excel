@@ -1,5 +1,9 @@
 # Revue et validation
 
+## Dévoilement temporaire — 6 novembre 2026
+
+Le témoin Excel couvre les feuilles masquées et très masquées, l'option des axes, la fermeture avec sélection active, deux propriétaires, les feuilles groupées et une sauvegarde suivie d'une réouverture. La protection empêche le dévoilement et déclenche le retour au masquage initial. Le comportement Arixcel provient du CIL. [Range.Hidden](https://learn.microsoft.com/en-us/office/vba/api/excel.range.hidden) · [Worksheet.Visible](https://learn.microsoft.com/en-us/office/vba/api/excel.worksheet.visible)
+
 ## Sélection de sous-expressions — 6 novembre 2026
 
 Le témoin Excel passe de l'arbre au texte et du curseur au composant. Il couvre deux portions disjointes, Ctrl additif dans le texte, Maj+Bas dans l'arbre et une sélection de caractères conservée. La source est rose et les références résolues sont bleues. L'union Excel reste sur la feuille du composant courant, tandis que les autres feuilles gardent leur surbrillance. Désactiver les couleurs rétablit les fonds et garde le soulignement de la formule.

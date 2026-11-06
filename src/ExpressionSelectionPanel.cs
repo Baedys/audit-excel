@@ -262,10 +262,11 @@ namespace FormulaExplorer
                 TraceLocation location = CurrentExpressionLocation();
                 if (location == null) bridge.FollowRelationSelection(book, null);
                 else if (location.Workbook == book)
-                    bridge.FollowRelationSelection(book, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress });
+                    NavigatePaneTarget(book, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress }, true);
             }
             catch (COMException error) { status.Text = error.Message; RefreshTraceHighlights(); }
             catch (InvalidOperationException error) { status.Text = error.Message; RefreshTraceHighlights(); }
+            catch (AggregateException error) { status.Text = error.Message; RefreshTraceHighlights(); }
         }
 
         bool NavigateExpressionSelection()
@@ -273,7 +274,7 @@ namespace FormulaExplorer
             ReadExpressionLocations(true);
             TraceLocation location = CurrentExpressionLocation();
             if (location == null) return false;
-            bridge.NavigateDependency(location.Workbook, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress });
+            NavigatePaneTarget(location.Workbook, new Cell { Sheet = location.Sheet, Address = location.ExcelAddress }, false);
             status.Text = "Cible sélectionnée dans Excel";
             return true;
         }

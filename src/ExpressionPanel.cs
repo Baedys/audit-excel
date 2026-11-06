@@ -323,7 +323,8 @@ namespace FormulaExplorer
                 CriterionGroup criterion = SelectedCriterion();
                 if (criterion != null)
                 {
-                    CriterionGroup result = bridge.NavigateCriterionGroup(ExpressionBook, expressionOwner, syntaxRoot, criterion);
+                    CriterionGroup result = bridge.ReadCriterionNavigationTarget(ExpressionBook, expressionOwner, syntaxRoot, criterion);
+                    if (result != null && result.Target != null) NavigatePaneExpressionTarget(result.Target);
                     if (result == null) criterionResults.Remove(criterion.Range);
                     else criterionResults[criterion.Range] = result;
                     ShowCriterionTarget(selected, criterion);
@@ -332,13 +333,15 @@ namespace FormulaExplorer
                     return;
                 }
                 var expression = (ExpressionNode)selected.Tag;
-                ExpressionTarget target = bridge.NavigateExpressionTarget(ExpressionBook, expressionOwner, syntaxRoot, expression);
+                ExpressionTarget target = bridge.ReadExpressionNavigationTarget(ExpressionBook, expressionOwner, syntaxRoot, expression);
+                NavigatePaneExpressionTarget(target);
                 expressionTargets[expression] = target;
                 ShowExpressionTarget(selected, expression, target);
                 status.Text = "Cible sélectionnée dans Excel";
             }
             catch (InvalidOperationException error) { expressionValue.Text = error.Message; }
             catch (COMException error) { expressionValue.Text = error.Message; }
+            catch (AggregateException error) { expressionValue.Text = error.Message; }
         }
         void EditSelectedFormula()
         {
