@@ -98,18 +98,23 @@ namespace FormulaExplorer
         {
             if (root == null) throw new ArgumentNullException("root");
             if (!FormulaSyntax.Flatten(root).Any(FormulaBranches.Supports)) return new HashSet<ExpressionNode>();
-            return WithExpressionContext(book, owner, true, (sheet, range) => FormulaBranches.Chosen(root, operand =>
+            return WithExpressionContext(book, owner, true, (sheet, range) => FormulaBranches.Chosen(root,
+                operand => ReadBranchWitness(sheet, range, root, operand, ReadBranchValue, Type.Missing),
+                function => UsesFallback(sheet, range, root, function)));
+        }
+
+        static T ReadBranchWitness<T>(object sheet, object range, ExpressionNode root, ExpressionNode operand,
+            Func<object, T> read, T unavailable, string replacement = null)
+        {
+            try
             {
-                try
-                {
-                    string text = PrepareExpression(FormulaSyntax.EvaluationText(root, operand));
-                    return ReadExpression(sheet, range, text, ReadBranchValue);
-                }
-                catch (InvalidOperationException) { return Type.Missing; }
-                catch (FormatException) { return Type.Missing; }
-                catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { return Type.Missing; }
-                catch (COMException error) { if ((uint)error.ErrorCode == 0x800A03EC) return Type.Missing; throw; }
-            }));
+                string text = PrepareExpression(FormulaSyntax.EvaluationText(root, operand, replacement));
+                return ReadExpression(sheet, range, text, read);
+            }
+            catch (InvalidOperationException) { return unavailable; }
+            catch (FormatException) { return unavailable; }
+            catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { return unavailable; }
+            catch (COMException error) { if ((uint)error.ErrorCode == 0x800A03EC) return unavailable; throw; }
         }
 
         static string PrepareExpression(string expression)

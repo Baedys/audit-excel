@@ -1,5 +1,19 @@
 # Revue et validation
 
+## Valeurs de secours de `FILTER` et `XLOOKUP` — 6 novembre 2026
+
+- **65 groupes sans Excel réussis**. Le module des branches compte désormais **63 contrôles Excel**, dont 26 nouveaux cas. Il couvre les masques de comparaison, les tableaux bruts, les masques arithmétiques, les liaisons `LET`, l'égalité d'adresse et les modes exact, approché, inversé et joker.
+- Arixcel 9.0.9623.19616 et Clair ont été testés dans deux instances Excel dédiées sur le même classeur jetable, vérifié par SHA-256. Le gras a été observé dans l'interface Arixcel. La décision de Clair a été vérifiée dans son moteur lié à Excel.
+
+| Cellule | Cas observé | Repère Arixcel et Clair |
+| --- | --- | --- |
+| `B2` | `FILTER` lit directement une plage de `FALSE` et renvoie `901`. | `901` reste en texte normal. |
+| `B16` | `XLOOKUP` trouve `20` dans la même cellule que le secours. | `$G$3` est marqué. |
+| `B22` | Le masque de comparaison est vide. | `909` est marqué. |
+| `B24` | Le masque de comparaison est vide, mais sa taille diffère des données et Excel affiche `#VALEUR!`. | `910` est marqué dans l'arbre. |
+
+Les cas matriciels avec erreurs, les noms définis et les plages synthétiques d'une recherche matricielle restent ouverts. [Registre de parité](PARITY.md)
+
 ## Branches conditionnelles — 6 novembre 2026
 
 - **65 groupes sans Excel réussis**, dont **133 assertions** de choix conditionnel. Les contrôles couvrent les six fonctions, les conversions, les erreurs Excel, les blancs, les tableaux, les arguments omis, les branches imbriquées et les offsets source.

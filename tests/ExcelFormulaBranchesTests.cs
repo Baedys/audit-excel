@@ -42,6 +42,45 @@ public static class ExcelFormulaBranchesTests
                 "=IF(LEN(\"" + new string('x', 260) + "\")>0,131,132)", "=IF({TRUE},141,142)"
             };
             for (int i = 0; i < cases.Length; i++) keep(sheet.Range["B" + (i + 1)]).Formula2 = cases[i];
+            keep(sheet.Range["J2"]).Formula2 = "=10";
+            keep(sheet.Range["J3"]).Formula2 = "=20";
+            keep(sheet.Range["J4"]).Formula2 = "=30";
+            keep(sheet.Range["K2"]).Formula2 = "=20";
+            keep(sheet.Range["K3"]).Formula2 = "=0";
+            keep(sheet.Range["K4"]).Formula2 = "=0";
+            keep(sheet.Range["K5"]).Formula2 = "=0";
+            keep(sheet.Range["K6"]).Formula2 = "=\"alpha\"";
+            keep(sheet.Range["K7"]).Formula2 = "=\"beta\"";
+            keep(sheet.Range["K8"]).Formula2 = "=\"gamma\"";
+            var fallbacks = new[] {
+                Tuple.Create("=FILTER($J$2:$J$4,$J$2:$J$4>100,151)", "151"),
+                Tuple.Create("=FILTER($J$2:$J$4,$J$2:$J$4>15,152)", (string)null),
+                Tuple.Create("=FILTER($J$2:$J$4,{FALSE;FALSE;FALSE},153)", (string)null),
+                Tuple.Create("=FILTER($J$2:$J$4,$K$3:$K$5,154)", (string)null),
+                Tuple.Create("=FILTER($J$2:$J$4,$J$2:$J$3>100,155)", "155"),
+                Tuple.Create("=FILTER($J$2:$J$4,$J$2:$J$4>TRANSPOSE($J$2:$J$4),156)", (string)null),
+                Tuple.Create("=FILTER($J$2:$J$4,NOT(ISNUMBER($J$2:$J$4)),157)", "157"),
+                Tuple.Create("=FILTER($J$2:$J$4,($J$2:$J$4>100)*($J$2:$J$4<100),158)", "158"),
+                Tuple.Create("=FILTER($J$2:$J$4,($J$2:$J$4>100)*0,159)", (string)null),
+                Tuple.Create("=FILTER($J$2:$J$4,1-($J$2:$J$4>0),160)", "160"),
+                Tuple.Create("=FILTER($J$2:$J$4,N($J$2:$J$4>100),172)", "172"),
+                Tuple.Create("=FILTER($J$2:$J$4,-($J$2:$J$4>100),173)", "173"),
+                Tuple.Create("=LET(mask,$J$2:$J$4>100,FILTER($J$2:$J$4,mask,170))", "170"),
+                Tuple.Create("=LET(mask,$J$2:$J$4>100,LET(mask,$K$3:$K$5,FILTER($J$2:$J$4,mask,171)))", (string)null),
+                Tuple.Create("=XLOOKUP(20,$J$2:$J$4,$J$2:$J$4,161)", (string)null),
+                Tuple.Create("=XLOOKUP(77,$J$2:$J$4,$J$2:$J$4,162)", "162"),
+                Tuple.Create("=XLOOKUP(77,$J$2:$J$4,$J$2:$J$4,$J$4)", "$J$4"),
+                Tuple.Create("=XLOOKUP(20,$J$2:$J$4,$J$2:$J$4,$J$3)", "$J$3"),
+                Tuple.Create("=XLOOKUP(20,$J$2:$J$4,$J$2:$J$4,$K$2)", (string)null),
+                Tuple.Create("=XLOOKUP(24,$J$2:$J$4,$J$2:$J$4,166,-1)", (string)null),
+                Tuple.Create("=XLOOKUP(24,$J$2:$J$4,$J$2:$J$4,167,,-1)", "167"),
+                Tuple.Create("=XLOOKUP(\"a*\",$K$6:$K$8,$J$2:$J$4,174,2)", (string)null),
+                Tuple.Create("=XLOOKUP(\"q*\",$K$6:$K$8,$J$2:$J$4,175,2)", "175"),
+                Tuple.Create("=LET(k,77,XLOOKUP(k,$J$2:$J$4,$J$2:$J$4,168))", "168"),
+                Tuple.Create("=XLOOKUP({20;77},$J$2:$J$4,$J$2:$J$4,169)", (string)null),
+                Tuple.Create("=XLOOKUP(77,$J$2:$J$4,$J$2:$J$4)", (string)null)
+            };
+            for (int i = 0; i < fallbacks.Length; i++) keep(sheet.Range["B" + (30 + 4 * i)]).Formula2 = fallbacks[i].Item1;
             sheet.Activate();
             keep(sheet.Range["G1:G2"]).Select(); keep(sheet.Range["G2"]).Activate();
             var bridge = new ExcelBridge(application); Book book = bridge.Capture(workbook);
@@ -51,6 +90,8 @@ public static class ExcelFormulaBranchesTests
             Choice(bridge, book, "B7", "1/0"); Choice(bridge, book, "B8", "91"); Choice(bridge, book, "B9");
             Choice(bridge, book, "B10", "104"); Choice(bridge, book, "B11", "113"); Choice(bridge, book, "B12", "\"#DIV/0!\"");
             Choice(bridge, book, "B13"); Choice(bridge, book, "B14", "141");
+            for (int i = 0; i < fallbacks.Length; i++)
+                Choice(bridge, book, "B" + (30 + 4 * i), fallbacks[i].Item2 == null ? new string[0] : new[] { fallbacks[i].Item2 });
             Equal((string)keep(app.Selection).Address, "$G$1:$G$2", "selection restored");
             Equal((string)keep(app.ActiveCell).Address, "$G$2", "active cell restored");
             Equal((bool)app.EnableEvents, events, "events restored");

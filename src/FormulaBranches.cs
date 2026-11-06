@@ -7,7 +7,11 @@ namespace FormulaExplorer
 {
     public static class FormulaBranches
     {
-        internal static bool Supports(ExpressionNode node) { return Supports(FormulaSyntax.FunctionName(node)); }
+        internal static bool Supports(ExpressionNode node)
+        {
+            string function = FormulaSyntax.FunctionName(node);
+            return Supports(function) || function == "FILTER" || function == "XLOOKUP";
+        }
 
         static bool Supports(string function)
         {
@@ -21,6 +25,9 @@ namespace FormulaExplorer
         // The reader returns a managed scalar, array, or Excel error. Null is an
         // available blank. Type.Missing means the expression could not be read.
         public static ISet<ExpressionNode> Chosen(ExpressionNode root, Func<ExpressionNode, object> read)
+        { return Chosen(root, read, null); }
+
+        internal static ISet<ExpressionNode> Chosen(ExpressionNode root, Func<ExpressionNode, object> read, Func<ExpressionNode, bool> usesFallback)
         {
             if (root == null) throw new ArgumentNullException("root");
             if (read == null) throw new ArgumentNullException("read");
@@ -42,9 +49,14 @@ namespace FormulaExplorer
                         return child.Kind == "Missing argument" || IsLambda(child) ? Type.Missing : UnwrapSingleValue(read(child));
                     });
                 }
+                else if (usesFallback != null)
+                {
+                    int fallback = function == "FILTER" ? 2 : function == "XLOOKUP" ? 3 : -1;
+                    if (fallback >= 0 && node.Children.Count > fallback && usesFallback(node)) choice = fallback;
+                }
                 if (choice >= 0) chosen.Add(node.Children[choice]);
                 for (int i = node.Children.Count - 1; i >= 0; i--)
-                    if (choice < 0 || i == choice || tested.Contains(i)) pending.Push(node.Children[i]);
+                    if (choice < 0 || i == choice || (tested != null && tested.Contains(i))) pending.Push(node.Children[i]);
             }
             return chosen;
         }
@@ -88,7 +100,13 @@ namespace FormulaExplorer
             return value;
         }
 
-        static int? ErrorCode(object value)
+        internal static bool HasScalarValue(object value)
+        {
+            value = UnwrapSingleValue(value);
+            return value == null || value is bool || value is string || ErrorCode(value).HasValue || Number(value, true).HasValue;
+        }
+
+        internal static int? ErrorCode(object value)
         {
             var wrapped = value as ErrorWrapper;
             if (wrapped != null) return wrapped.ErrorCode & 0xffff;

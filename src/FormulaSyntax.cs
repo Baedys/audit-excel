@@ -42,11 +42,14 @@ namespace FormulaExplorer
 
         /// <summary>Returns an invariant expression with enclosing LET bindings needed to evaluate a selected subexpression.</summary>
         public static string EvaluationText(ExpressionNode root, ExpressionNode target)
+        { return EvaluationText(root, target, null); }
+
+        internal static string EvaluationText(ExpressionNode root, ExpressionNode target, string replacement)
         {
             if (root == null || target == null) throw new ArgumentNullException(root == null ? "root" : "target");
             var path = new List<ExpressionNode>();
             if (!FindPath(root, target, path)) throw new ArgumentException("The selected expression does not belong to this formula.", "target");
-            string expression = target.Text;
+            string expression = replacement ?? target.Text;
             if (target.Kind == "Missing argument" || target.Kind == "Array row") throw new InvalidOperationException("This syntax element is not independently evaluable.");
             for (int p = path.Count - 2; p >= 0; p--)
             {
@@ -73,7 +76,23 @@ namespace FormulaExplorer
             if (node.Kind != "Function") return "";
             int parenthesis = node.Text.IndexOf('(');
             string name = parenthesis < 0 ? "" : node.Text.Substring(0, parenthesis).Trim().ToUpperInvariant();
-            return name.StartsWith("_XLFN.", StringComparison.Ordinal) ? name.Substring(6) : name;
+            if (name.StartsWith("_XLFN.", StringComparison.Ordinal)) name = name.Substring(6);
+            return name.StartsWith("_XLWS.", StringComparison.Ordinal) ? name.Substring(6) : name;
+        }
+
+        internal static ExpressionNode LetBinding(ExpressionNode root, ExpressionNode variable)
+        {
+            var path = new List<ExpressionNode>();
+            if (!FindPath(root, variable, path)) return null;
+            for (int p = path.Count - 2; p >= 0; p--)
+            {
+                ExpressionNode scope = path[p];
+                if (FunctionName(scope) != "LET" || scope.Children.Count < 3 || scope.Children.Count % 2 == 0) continue;
+                int visiblePairs = scope.Children.IndexOf(path[p + 1]) / 2;
+                for (int i = visiblePairs * 2 - 2; i >= 0; i -= 2)
+                    if (String.Equals(scope.Children[i].Text, variable.Text, StringComparison.OrdinalIgnoreCase)) return scope.Children[i + 1];
+            }
+            return null;
         }
 
         static bool FindPath(ExpressionNode node, ExpressionNode target, List<ExpressionNode> path)
