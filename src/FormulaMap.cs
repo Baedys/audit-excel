@@ -11,6 +11,20 @@ namespace FormulaExplorer
         UniqueFormulaSheetRefs, UniqueFormulaExternalRefs, FormulaCopiedDown,
         FormulaCopiedAcross, FormulaCopiedDownAndAcross, Unknown
     }
+    public sealed class FormulaMapOptions : IEquatable<FormulaMapOptions>
+    {
+        static readonly FormulaMapOptions defaults = new FormulaMapOptions();
+        readonly bool analyzeUniqueFormulas, analyzeDataValidation;
+        public bool AnalyzeUniqueFormulas { get { return analyzeUniqueFormulas; } }
+        public bool AnalyzeDataValidation { get { return analyzeDataValidation; } }
+        public static FormulaMapOptions Default { get { return defaults; } }
+        public FormulaMapOptions(bool analyzeUniqueFormulas = true, bool analyzeDataValidation = true)
+        { this.analyzeUniqueFormulas = analyzeUniqueFormulas; this.analyzeDataValidation = analyzeDataValidation; }
+        public bool Equals(FormulaMapOptions other)
+        { return other != null && analyzeUniqueFormulas == other.analyzeUniqueFormulas && analyzeDataValidation == other.analyzeDataValidation; }
+        public override bool Equals(object other) { return Equals(other as FormulaMapOptions); }
+        public override int GetHashCode() { return (analyzeUniqueFormulas ? 2 : 0) | (analyzeDataValidation ? 1 : 0); }
+    }
     public sealed class MapCell
     {
         public Cell Cell { get; private set; }
@@ -34,13 +48,16 @@ namespace FormulaExplorer
         // docs/MAP-EVIDENCE.md. Only captured cells are classified; missing cells are not
         // synthesized. FormulaR1C1 must be supplied by Excel, never guessed from Formula.
         public static FormulaMapResult Analyze(Book book)
+        { return Analyze(book, FormulaMapOptions.Default); }
+        public static FormulaMapResult Analyze(Book book, FormulaMapOptions options)
         {
             if (book == null) throw new ArgumentNullException("book");
+            if (options == null) throw new ArgumentNullException("options");
             var result = new List<MapCell>();
             var warnings = new List<string>(book.Warnings);
             foreach (Cell cell in book.Cells.Values.OrderBy(c => c.Sheet, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Row).ThenBy(c => c.Column))
             {
-                MapCell mapped = Classify(book, cell); result.Add(mapped);
+                MapCell mapped = Classify(book, cell, options); result.Add(mapped);
                 warnings.AddRange(mapped.Warnings.Select(w => cell.Location + " : " + w));
             }
             return new FormulaMapResult(result, warnings.Where(w => !String.IsNullOrWhiteSpace(w)).Distinct(StringComparer.Ordinal).ToList());
@@ -48,8 +65,11 @@ namespace FormulaExplorer
         // A selected band has its own top/left boundaries. A matching formula
         // outside that band is not a directional neighbour in the original map.
         public static FormulaMapResult Analyze(Book book, string sheet, FormulaMapArea area, bool includeEmpty)
+        { return Analyze(book, sheet, area, includeEmpty, FormulaMapOptions.Default); }
+        public static FormulaMapResult Analyze(Book book, string sheet, FormulaMapArea area, bool includeEmpty, FormulaMapOptions options)
         {
             if (book == null) throw new ArgumentNullException("book");
+            if (options == null) throw new ArgumentNullException("options");
             if (String.IsNullOrWhiteSpace(sheet) || !book.Sheets.Contains(sheet)) throw new ArgumentException("Feuille absente de la capture.", "sheet");
             if (area == null) throw new ArgumentNullException("area");
             var result = new List<MapCell>(); var warnings = new List<string>(book.Warnings);
@@ -69,7 +89,7 @@ namespace FormulaExplorer
                 .OrderBy(cell => cell.Row).ThenBy(cell => cell.Column);
             foreach (Cell cell in cells)
             {
-                MapCell mapped = Classify(book, cell, area.Row, area.Column); result.Add(mapped);
+                MapCell mapped = Classify(book, cell, options, area.Row, area.Column); result.Add(mapped);
                 warnings.AddRange(mapped.Warnings.Select(w => cell.Location + " : " + w));
             }
             return new FormulaMapResult(result, warnings.Where(w => !String.IsNullOrWhiteSpace(w)).Distinct(StringComparer.Ordinal).ToList());
@@ -80,12 +100,12 @@ namespace FormulaExplorer
         {
             warnings.Add(reason); return Item(cell, FormulaMapKind.Unknown, reason, warnings);
         }
-        static MapCell Classify(Book book, Cell cell, int firstRow = 1, int firstColumn = 1)
+        static MapCell Classify(Book book, Cell cell, FormulaMapOptions options, int firstRow = 1, int firstColumn = 1)
         {
             var warnings = new List<string>();
             if (!cell.IsFormula)
             {
-                if (cell.HasValidation) return Item(cell, FormulaMapKind.DataValidation, "Cellule sans formule avec validation de données.", warnings);
+                if (options.AnalyzeDataValidation && cell.HasValidation) return Item(cell, FormulaMapKind.DataValidation, "Cellule sans formule avec validation de données.", warnings);
                 if (cell.Kind == "Vide") return Item(cell, FormulaMapKind.Empty, "Cellule vide capturée.", warnings);
                 if (cell.Kind == "Texte") return Item(cell, FormulaMapKind.Text, "Constante texte.", warnings);
                 if (cell.Kind == "Nombre" || cell.Kind == "Booléen" || cell.Kind == "Erreur")
@@ -95,11 +115,15 @@ namespace FormulaExplorer
             if (String.IsNullOrEmpty(cell.FormulaR1C1)) return Unknown(cell, "Formule R1C1 absente : cohérence des copies indéterminée.", warnings);
             if (!cell.FormulaR1C1.StartsWith("=", StringComparison.Ordinal)) return Unknown(cell, "Formule R1C1 invalide : marqueur '=' absent.", warnings);
 
-            ParsedFormula parsed = FormulaParser.Parse(cell.Formula, cell.Sheet, book);
-            warnings.AddRange(parsed.Warnings);
+            ParsedFormula parsed = null;
             ExpressionNode syntax = null;
-            try { syntax = FormulaSyntax.Parse(cell.Formula); }
-            catch (FormatException ex) { warnings.Add("Syntaxe non établie : " + ex.Message); }
+            if (options.AnalyzeUniqueFormulas)
+            {
+                parsed = FormulaParser.Parse(cell.Formula, cell.Sheet, book);
+                warnings.AddRange(parsed.Warnings);
+                try { syntax = FormulaSyntax.Parse(cell.Formula); }
+                catch (FormatException ex) { warnings.Add("Syntaxe non établie : " + ex.Message); }
+            }
 
             bool leftUnknown = false, upUnknown = false;
             bool left = cell.Column > firstColumn && Matches(book, cell, cell.Row, cell.Column - 1, out leftUnknown);
@@ -108,6 +132,8 @@ namespace FormulaExplorer
             if (left && up) return Item(cell, FormulaMapKind.FormulaCopiedDownAndAcross, "Même formule R1C1 que les voisins immédiats gauche et haut.", warnings);
             if (left) return Item(cell, FormulaMapKind.FormulaCopiedAcross, "Même formule R1C1 que le voisin immédiat gauche.", warnings);
             if (up) return Item(cell, FormulaMapKind.FormulaCopiedDown, "Même formule R1C1 que le voisin immédiat haut.", warnings);
+            if (!options.AnalyzeUniqueFormulas)
+                return Item(cell, FormulaMapKind.UniqueFormula, "Formule sans copie haut/gauche ; analyse des références uniques désactivée.", warnings);
             if (syntax == null) return Unknown(cell, "Structure de formule non reconnue : catégorie unique indéterminée.", warnings);
 
             // Highest reference priority can be proven syntactically even if the workbook

@@ -63,8 +63,9 @@ Fermer une fenêtre retire ses propres couleurs de flux dans les classeurs encor
 
 Dans **Carte des cellules**, choisissez une feuille ou **Toutes les feuilles**, puis **Colorer dans Excel**. Clair recapture le même classeur avant de classer les cellules. **Retirer couleurs** supprime uniquement ses règles de carte ; les couleurs restent présentes tant que cette commande n'est pas utilisée, y compris après fermeture de Clair et sauvegarde du classeur. Après réouverture, rechargez le classeur dans Clair pour les retirer. Les feuilles protégées sont refusées avant toute modification.
 
-**Palette…** règle les catégories et couleurs ; **Aucun** laisse la propriété existante visible. **Utiliser** change la palette de cette fenêtre ; **Enregistrer par défaut** la conserve dans `%LOCALAPPDATA%\Clair\map-palette.xml`. Les nouvelles couleurs prennent effet au prochain clic **Colorer dans Excel**. Le XML importé/exporté appartient au format Clair, sans compatibilité annoncée avec celui d'Arixcel. **Rapport carte** exporte toutes les catégories et les avertissements de la capture.
+Dans l'archive 0.6, **Palette…** règle les catégories et couleurs. **Aucun** laisse la propriété existante visible. **Utiliser** change la palette de cette fenêtre pour le prochain clic **Colorer dans Excel**. **Enregistrer par défaut** la conserve dans `%LOCALAPPDATA%\Clair\map-palette.xml`. Le XML importé/exporté utilise le format Clair. **Rapport carte** exporte toutes les catégories et les avertissements de la capture.
 
+Sur la branche de développement en brouillon, **Utiliser** met à jour les cartes directes de la session Excel. Désactiver **Analyser les références des formules uniques** regroupe leurs sous-types tout en gardant les directions de copie. Le style **Validation de données** active son analyse. Le profil XML Clair v2 conserve le réglage des formules uniques et l'import v1 garde l'analyse active par défaut. Voir le [registre de parité](docs/PARITY.md).
 
 Pour ajouter le ruban à Excel :
 

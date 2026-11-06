@@ -17,6 +17,7 @@ namespace FormulaExplorer
             public List<MapCell> Cells;
             public HighlightPalette AppliedPalette;
             public bool Active, Ready;
+            public bool AnalyzedUniqueFormulas;
             public bool AreaScoped;
             public ExcelMapRange AreaRange;
         }
@@ -130,7 +131,9 @@ namespace FormulaExplorer
         }
         static int? MapDirectColor(HighlightPalette palette, FormulaMapKind kind, DirectColorProperty property)
         {
-            if (palette == null || !palette.Entries[kind].Enabled) return null;
+            if (palette == null) return null;
+            kind = palette.EffectiveKind(kind);
+            if (!palette.Entries[kind].Enabled) return null;
             HighlightStyle style = palette.Entries[kind];
             return Ole(property == DirectColorProperty.Fill ? style.FillRgb : style.FontRgb);
         }
@@ -173,7 +176,7 @@ namespace FormulaExplorer
                     if (model != null) ReleaseMapDirectModel(state, model);
                     continue;
                 }
-                var unchanged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                HashSet<string> unchanged = null;
                 if (model == null)
                 {
                     model = new MapDirectModel { Connection = connection, Snapshot = snapshot, SheetIdentity = identity, Cells = members };
@@ -181,26 +184,7 @@ namespace FormulaExplorer
                     // pending rollback remains reachable by cleanup/global commands.
                     models.Add(model);
                 }
-                else if (model.Active)
-                {
-                    // Compare current retained Range positions, not their former
-                    // A1 labels. Insertions must not turn a new A1 into old A1.
-                    var current = members.ToDictionary(c => c.Cell.Address, StringComparer.OrdinalIgnoreCase);
-                    var bindings = model.Connection.DirectHighlightBindings(model.Owner).ToDictionary(b => b.SourceKey, StringComparer.OrdinalIgnoreCase);
-                    var removed = new List<Cell>();
-                    foreach (MapCell old in model.Cells)
-                    {
-                        DirectHighlightBinding binding; MapCell next;
-                        if (bindings.TryGetValue(old.Cell.Key, out binding) && binding.Valid && binding.SheetIdentity == identity &&
-                            current.TryGetValue(binding.Address, out next) && old.Kind == next.Kind)
-                            unchanged.Add(next.Cell.Key);
-                        else removed.Add(old.Cell);
-                    }
-                    // Must precede Bind(snapshot): removals use the old model's
-                    // source keys and the Range references retained for them.
-                    model.Ready = false;
-                    model.Connection.RemoveDirectHighlightTargets(model.Snapshot, model.Owner, MapDirectLayer, removed);
-                }
+                else if (model.Active) unchanged = RemoveReclassifiedMapTargets(model, members);
                 model.Ready = false; model.Connection = connection; model.Snapshot = snapshot; model.Cells = members;
                 var bounds = new FormulaMapArea(identity, members.Min(c => c.Cell.Row), members.Min(c => c.Cell.Column),
                     members.Max(c => c.Cell.Row) - members.Min(c => c.Cell.Row) + 1,
@@ -213,10 +197,11 @@ namespace FormulaExplorer
                 connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, palette, false, unchanged));
                 connection.MaskMapConditionalFills(snapshot, model.Owner, identity);
                 model.AppliedPalette = palette.Clone(); model.Active = model.Ready = true;
+                model.AnalyzedUniqueFormulas = palette.AnalyzeUniqueFormulas;
                 // Each bridge operation is transactional. The whole multi-sheet
                 // reanalysis is not presented as one atomic operation.
                 colored += model.Cells.Count(c => {
-                    HighlightStyle style = palette.Entries[c.Kind];
+                    HighlightStyle style = palette.Entries[palette.EffectiveKind(c.Kind)];
                     return style.Enabled && (style.FillRgb.HasValue || style.FontRgb.HasValue);
                 });
             }
@@ -239,8 +224,16 @@ namespace FormulaExplorer
             PruneInvalidMapDirectModels(state);
             if (state.Models.Any(m => m.Active && !m.Ready))
                 throw new InvalidOperationException("Une carte a été interrompue. Cliquez sur « Colorer dans Excel » avant de modifier à nouveau sa palette.");
+            // Read every affected physical area before changing any layer. A
+            // settings update must never replace separate bands with one map.
+            var analyses = new Dictionary<MapDirectModel, MapDirectReanalysis>();
+            foreach (MapDirectModel model in state.Models.Where(m => m.Active && m.Ready))
+                if (MapRequiresReanalysis(model, palette)) analyses.Add(model, PrepareMapDirectReanalysis(model, palette));
             foreach (MapDirectModel model in state.Models.Where(m => m.Active && m.Ready).ToList())
             {
+                MapDirectReanalysis reanalysis;
+                if (analyses.TryGetValue(model, out reanalysis))
+                { ApplyMapDirectReanalysis(model, palette, reanalysis); continue; }
                 var validSources = new HashSet<string>(model.Connection.DirectHighlightBindings(model.Owner)
                     .Where(binding => binding.Valid).Select(binding => binding.SourceKey), StringComparer.OrdinalIgnoreCase);
                 model.Ready = false;

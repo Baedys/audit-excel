@@ -24,11 +24,13 @@ La matrice initiale ci-dessous sert de référence historique. Les évolutions v
 
 Voir [validation détaillée](VALIDATION.md). Toutes les autres exigences restent dans l'état initial ou sans preuve suffisante. L'objectif global reste ouvert.
 
-## Travaux locaux non livrés : couleurs directes
+## Branche de développement — couleurs directes et options de carte
 
 Les observations natives d'Arixcel couvrent retrait, permanence, cartes sur bandes B/H et sauvegarde/réouverture d'une copie jetable. La carte originale masque les fonds CF de toute la feuille ; retirer la première bande les restaure même si la seconde reste active. Après sauvegarde avec carte active, l'original observé perd ces fonds. L'utilisateur a explicitement choisi une restauration complète dans Clair, excluant ce défaut.
 
 Le développement raccorde formats directs partagés, références physiques, commandes globales et deux journaux XML propres à Clair. Le journal CF conserve neuf propriétés de fond, distinctes de la police et des conditions ; événements, restauration différée et réparation de métadonnées sont couverts par leur corpus. La version 0.6 empaquetée reste distincte de cette branche en brouillon. Résultats et limites dans [VALIDATION.md](VALIDATION.md) et [DIRECT-COLOR-EVIDENCE.md](DIRECT-COLOR-EVIDENCE.md). Références structurelles complexes, familles CF non couvertes, performances et chargement natif STA/MTA restent à vérifier ; C04, M03 et M04 ne sont pas déclarés entièrement identiques à Arixcel.
+
+M05 progresse avec le réglage des références des formules uniques et l'analyse de validation dérivée de sa couleur. Recoloration en mémoire et réanalyse des zones conservées suivent les cas relevés dans le binaire. Le XML Clair conserve le réglage et charge les profils v1. Le dialogue reste modal avec **Utiliser** et **Enregistrer par défaut**. L'original applique et enregistre depuis sa fenêtre de réglages. L'interaction et le format d'échange Arixcel restent ouverts. [Preuves de la carte](MAP-EVIDENCE.md)
 
 ## Sources et limites
 

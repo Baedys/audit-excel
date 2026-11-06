@@ -54,7 +54,7 @@ namespace FormulaExplorer
                 // Transparent categories still belong to the original map area.
                 // Retain blank members too: a later palette activation must not
                 // resolve their former addresses after a structural edit.
-                FormulaMapResult analysis = FormulaMap.Analyze(snapshot, sheets[area.SheetIdentity], area, true);
+                FormulaMapResult analysis = FormulaMap.Analyze(snapshot, sheets[area.SheetIdentity], area, true, palette.AnalysisOptions);
                 var members = analysis.Cells.ToList();
                 if (members.Count == 0) continue;
                 var model = new MapDirectModel { Connection = connection, Snapshot = snapshot,
@@ -67,6 +67,7 @@ namespace FormulaExplorer
                 connection.ApplyDirectHighlights(snapshot, model.Owner, "map", MapDirectRequests(model, palette, false));
                 connection.MaskMapConditionalFills(snapshot, model.Owner, area.SheetIdentity);
                 model.AppliedPalette = palette.Clone(); model.Active = model.Ready = true;
+                model.AnalyzedUniqueFormulas = palette.AnalyzeUniqueFormulas;
                 result.CreatedMaps++;
                 result.ColoredCells += members.Count(member => MapDirectColor(palette, member.Kind, DirectColorProperty.Fill).HasValue ||
                     MapDirectColor(palette, member.Kind, DirectColorProperty.Font).HasValue);

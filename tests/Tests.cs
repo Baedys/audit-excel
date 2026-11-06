@@ -153,8 +153,10 @@ static class Tests
         Check("Excel formula syntax and source spans", delegate { Console.WriteLine("SYNTAX_ASSERTIONS " + FormulaSyntaxTests.Run()); });
         Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
         Check("Formula map categories and reference priorities", delegate { Console.WriteLine("MAP_ASSERTIONS " + FormulaMapTests.Run()); });
+        Check("Formula map analysis options", delegate { FormulaMapOptionsTests.Run(); });
         Check("Formula map global toggle targets", delegate { Console.WriteLine("MAP_TARGET_ASSERTIONS " + FormulaMapTargetsTests.Run()); });
         Check("Highlight palette serialization and validation", delegate { Console.WriteLine("PALETTE_ASSERTIONS " + HighlightPaletteTests.Run()); });
+        Check("Map palette analysis option editor", delegate { MapPaletteEditorTests.Run(); });
         Check("Flow palette serialization and validation", delegate { Console.WriteLine("FLOW_PALETTE_ASSERTIONS " + FlowPaletteTests.Run()); });
         Check("Flow highlight composition and role activation", delegate { Console.WriteLine("FLOW_HIGHLIGHT_ASSERTIONS " + FlowHighlightPlanTests.Run()); });
         Check("Flow rectangles and block activation", delegate { Console.WriteLine("FLOW_BLOCK_ASSERTIONS " + FlowBlocksTests.Run()); });
@@ -177,6 +179,7 @@ static class Tests
             Check("Excel retained map areas", delegate { ExcelMapRangesTests.Run(); });
             Check("Excel map selection geometry", delegate { ExcelMapSelectionTests.Run(); });
             Check("Excel native map toggle", delegate { MapSelectionPanelTests.Run(); });
+            Check("Excel map analysis option lifecycle", delegate { MapAnalysisOptionsExcelTests.Run(); });
             Check("Excel conditional fill port", delegate { ExcelConditionalFillTests.Run(); });
             Check("Excel conditional fill lifecycle and persistence", delegate { ExcelConditionalFillSessionTests.Run(); });
             Check("Excel direct flow window regressions", delegate { FlowDirectPanelTests.Run(); });

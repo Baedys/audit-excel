@@ -16,6 +16,23 @@ namespace FormulaExplorer
         const string RootElement = "ClairHighlightPalette";
         readonly Dictionary<FormulaMapKind, HighlightStyle> entries = new Dictionary<FormulaMapKind, HighlightStyle>();
         public Dictionary<FormulaMapKind, HighlightStyle> Entries { get { return entries; } }
+        public bool AnalyzeUniqueFormulas { get; set; }
+        public bool AnalyzeDataValidation
+        {
+            get
+            {
+                HighlightStyle style = entries[FormulaMapKind.DataValidation];
+                // Font-only styles are a Clair extension of the original fill.
+                return style.Enabled && (style.FillRgb.HasValue || style.FontRgb.HasValue);
+            }
+        }
+        public FormulaMapOptions AnalysisOptions { get { return new FormulaMapOptions(AnalyzeUniqueFormulas, AnalyzeDataValidation); } }
+        public FormulaMapKind EffectiveKind(FormulaMapKind kind)
+        {
+            return !AnalyzeUniqueFormulas && (kind == FormulaMapKind.UniqueFormulaNoRefs || kind == FormulaMapKind.UniqueFormulaSheetRefs ||
+                kind == FormulaMapKind.UniqueFormulaExternalRefs) ? FormulaMapKind.UniqueFormula : kind;
+        }
+        public HighlightPalette() { AnalyzeUniqueFormulas = true; }
 
         public static HighlightPalette Default()
         {
@@ -36,16 +53,17 @@ namespace FormulaExplorer
 
         public HighlightPalette Clone()
         {
-            return FromEntries(PaletteStorage.Clone(entries));
+            return FromEntries(PaletteStorage.Clone(entries), AnalyzeUniqueFormulas);
         }
-        public void Save(string path) { PaletteStorage.Save(path, RootElement, entries); }
+        public void Save(string path) { PaletteStorage.SaveMap(path, RootElement, entries, AnalyzeUniqueFormulas); }
         public static HighlightPalette Load(string path)
         {
-            return FromEntries(PaletteStorage.Load<FormulaMapKind>(path, RootElement));
+            bool analyzeUniqueFormulas;
+            return FromEntries(PaletteStorage.LoadMap(path, RootElement, out analyzeUniqueFormulas), analyzeUniqueFormulas);
         }
-        static HighlightPalette FromEntries(Dictionary<FormulaMapKind, HighlightStyle> styles)
+        static HighlightPalette FromEntries(Dictionary<FormulaMapKind, HighlightStyle> styles, bool analyzeUniqueFormulas)
         {
-            var palette = new HighlightPalette();
+            var palette = new HighlightPalette { AnalyzeUniqueFormulas = analyzeUniqueFormulas };
             foreach (KeyValuePair<FormulaMapKind, HighlightStyle> pair in styles) palette.entries.Add(pair.Key, pair.Value);
             return palette;
         }

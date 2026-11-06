@@ -10,6 +10,7 @@ namespace FormulaExplorer
     public sealed partial class MainForm
     {
         FormulaMapResult mapAnalysis;
+        FormulaMapOptions mapAnalysisOptions;
         HighlightPalette mapLocalPalette = HighlightPalette.Default();
         HighlightPalette mapPalette
         {
@@ -54,16 +55,18 @@ namespace FormulaExplorer
         }
         void ShowMap()
         {
-            if (book == null || mapAnalysis == null || sheets.SelectedItem == null) return;
+            if (book == null || sheets.SelectedItem == null) return;
+            RefreshMapAnalysisOptions();
             HighlightPalette palette = mapPalette;
             CellColumns(map); map.Columns[1].HeaderText = "Catégorie"; map.Columns[1].FillWeight = 170;
             string sheet = (string)sheets.SelectedItem;
             List<MapCell> cells = mapAnalysis.Cells.Where(c => String.Equals(c.Cell.Sheet, sheet, StringComparison.OrdinalIgnoreCase)).ToList();
             foreach (MapCell item in cells.Take(20000))
             {
-                Cell cell = item.Cell; int index = map.Rows.Add(cell.Location, MapLabels[(int)item.Kind], cell.Value, cell.Formula);
+                FormulaMapKind effective = palette.EffectiveKind(item.Kind);
+                Cell cell = item.Cell; int index = map.Rows.Add(cell.Location, MapLabel(effective, palette), cell.Value, cell.Formula);
                 DataGridViewRow row = map.Rows[index]; row.Tag = cell;
-                HighlightStyle style = palette.Entries[item.Kind];
+                HighlightStyle style = palette.Entries[effective];
                 if (style.Enabled && style.FillRgb.HasValue) row.DefaultCellStyle.BackColor = Rgb(style.FillRgb.Value);
                 if (style.Enabled && style.FontRgb.HasValue) row.DefaultCellStyle.ForeColor = Rgb(style.FontRgb.Value);
                 foreach (DataGridViewCell field in row.Cells) field.ToolTipText = item.Reason + (item.Warnings.Count == 0 ? "" : "\n" + String.Join("\n", item.Warnings));
@@ -72,6 +75,14 @@ namespace FormulaExplorer
                 (cells.Count > 20000 ? " · affichage limité à 20 000 lignes" : "") +
                 (mapAnalysis.Incomplete ? " · classification partielle : " + mapAnalysis.Warnings.Count + " avertissements (rapport carte)" : "") +
                 (paletteLoadWarning == null ? "" : " · " + paletteLoadWarning);
+        }
+        static string MapLabel(FormulaMapKind kind, HighlightPalette palette)
+        { return kind == FormulaMapKind.UniqueFormula && !palette.AnalyzeUniqueFormulas ? "Formule unique" : MapLabels[(int)kind]; }
+        void RefreshMapAnalysisOptions()
+        {
+            FormulaMapOptions options = mapPalette.AnalysisOptions;
+            if (mapAnalysis == null || !options.Equals(mapAnalysisOptions))
+            { mapAnalysis = FormulaMap.Analyze(book, options); mapAnalysisOptions = options; }
         }
         string[] MapSheets()
         {
@@ -100,7 +111,7 @@ namespace FormulaExplorer
                 throw new InvalidOperationException("Une feuille ciblée a été supprimée. Rechargez la sélection Excel.");
             selectedSheets = captured.SheetOrder.Where(s => selectedIdentities.Contains(bridge.GetDirectHighlightSheetIdentity(captured, s))).ToArray();
             string rootSheet = names[rootIdentity]; displayed = names[displayedIdentity];
-            FormulaMapResult analysis = FormulaMap.Analyze(captured);
+            FormulaMapResult analysis = FormulaMap.Analyze(captured, mapPalette.AnalysisOptions);
             int colored = ApplyMapDirectModels(bridge, captured, analysis, selectedSheets);
             SetBook(captured, rootSheet, rootAddress); sheets.SelectedItem = displayed;
             warnings.Text = "Carte : cellules renseignées et cellules validées capturées ; les autres cellules vides sont inchangées.\r\n" +
@@ -116,25 +127,25 @@ namespace FormulaExplorer
         void EditMapPalette()
         {
             HighlightPalette edited = mapPalette.Clone();
-            using (var dialog = new PaletteEditor<FormulaMapKind>(edited.Entries,
-                delegate { return HighlightPalette.Default().Entries; },
-                delegate(string path) { return HighlightPalette.Load(path).Entries; },
-                delegate(string path) { edited.Save(path); },
-                delegate(FormulaMapKind kind) { return MapLabels[(int)kind]; }, PalettePath,
+            using (var dialog = MapPaletteEditor.Create(edited,
+                delegate(FormulaMapKind kind) { return MapLabel(kind, edited); }, PalettePath,
                 "Palette de la carte",
-                "Désactiver une catégorie ou choisir « Aucun » révèle les couches inférieures. Changer une couleur conserve les modifications manuelles. Activer une couleur auparavant absente crée une nouvelle couche. Toutes les cartes de cette session Excel sont mises à jour."))
+                "Analyser les formules uniques distingue leurs références. Une couleur de validation active cette analyse ; la retirer reclasse les constantes. Couleurs et options mettent à jour toutes les cartes de cette session Excel."))
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 { mapPalette = edited; paletteLoadWarning = null; UpdateMapDirectPalette(); ShowMap(); }
         }
         void ExportMap()
         {
             if (mapAnalysis == null) return;
+            RefreshMapAnalysisOptions();
             using (SaveFileDialog dialog = new SaveFileDialog { Filter = "Rapport texte (*.txt)|*.txt", FileName = "clair-carte.txt" })
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 {
                     var report = new System.Text.StringBuilder();
                     report.AppendLine("CLAIR — Carte : " + book.Name); report.AppendLine("Capture : " + book.Captured.ToString("O"));
                     report.AppendLine("Périmètre : cellules renseignées et cellules validées capturées de toutes les feuilles. Voisins immédiats haut/gauche ; types R1C1 lus dans Excel.");
+                    report.AppendLine("Analyse des références uniques : " + (mapPalette.AnalyzeUniqueFormulas ? "active" : "désactivée") +
+                        " ; validation des données : " + (mapPalette.AnalyzeDataValidation ? "active" : "désactivée") + ".");
                     report.AppendLine("Classification " + (mapAnalysis.Incomplete ? "partielle" : "établie pour la capture") + ". La capture n'est pas actualisée automatiquement.");
                     foreach (string warning in mapAnalysis.Warnings) report.AppendLine("AVERTISSEMENT : " + warning);
                     foreach (MapCell cell in mapAnalysis.Cells) report.AppendLine(cell.Cell.Location + "\t" + cell.Kind + "\t" + cell.Reason + "\t" + cell.Cell.Formula);

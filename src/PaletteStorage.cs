@@ -37,6 +37,10 @@ namespace FormulaExplorer
         }
 
         internal static void Save<T>(string path, string rootElement, IDictionary<T, HighlightStyle> entries) where T : struct
+        { SaveCore(path, rootElement, entries, null); }
+        internal static void SaveMap(string path, string rootElement, IDictionary<FormulaMapKind, HighlightStyle> entries, bool analyzeUniqueFormulas)
+        { SaveCore(path, rootElement, entries, analyzeUniqueFormulas); }
+        static void SaveCore<T>(string path, string rootElement, IDictionary<T, HighlightStyle> entries, bool? analyzeUniqueFormulas) where T : struct
         {
             if (String.IsNullOrWhiteSpace(path)) throw new ArgumentException("An explicit palette file path is required.", "path");
             Dictionary<T, HighlightStyle> snapshot = Clone(entries); // Validate all mutable entries before creating any file.
@@ -53,7 +57,8 @@ namespace FormulaExplorer
                     var settings = new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = true, CloseOutput = false, NewLineChars = "\n" };
                     using (XmlWriter writer = XmlWriter.Create(stream, settings))
                     {
-                        writer.WriteStartDocument(); writer.WriteStartElement(rootElement); writer.WriteAttributeString("version", Version);
+                        writer.WriteStartDocument(); writer.WriteStartElement(rootElement); writer.WriteAttributeString("version", analyzeUniqueFormulas.HasValue ? "2" : Version);
+                        if (analyzeUniqueFormulas.HasValue) writer.WriteAttributeString("analyzeUniqueFormulas", analyzeUniqueFormulas.Value ? "true" : "false");
                         foreach (T kind in Enum.GetValues(typeof(T)))
                         {
                             HighlightStyle style = snapshot[kind];
@@ -79,7 +84,12 @@ namespace FormulaExplorer
         }
 
         internal static Dictionary<T, HighlightStyle> Load<T>(string path, string rootElement) where T : struct
+        { bool ignored; return LoadCore<T>(path, rootElement, false, out ignored); }
+        internal static Dictionary<FormulaMapKind, HighlightStyle> LoadMap(string path, string rootElement, out bool analyzeUniqueFormulas)
+        { return LoadCore<FormulaMapKind>(path, rootElement, true, out analyzeUniqueFormulas); }
+        static Dictionary<T, HighlightStyle> LoadCore<T>(string path, string rootElement, bool allowMapOptions, out bool analyzeUniqueFormulas) where T : struct
         {
+            analyzeUniqueFormulas = true;
             if (String.IsNullOrWhiteSpace(path)) throw new ArgumentException("An explicit palette file path is required.", "path");
             var settings = new XmlReaderSettings
             {
@@ -93,8 +103,19 @@ namespace FormulaExplorer
                 {
                     if (reader.MoveToContent() != XmlNodeType.Element || reader.Name != rootElement || reader.NamespaceURI.Length != 0)
                         throw new FormatException("Expected " + rootElement + " document.");
-                    CheckAttributes(reader, new[] { "version" });
-                    if (reader.GetAttribute("version") != Version) throw new FormatException("Unsupported or missing palette version.");
+                    string version = reader.GetAttribute("version");
+                    if (allowMapOptions && version == "2")
+                    {
+                        CheckAttributes(reader, new[] { "version", "analyzeUniqueFormulas" });
+                        string flag = reader.GetAttribute("analyzeUniqueFormulas");
+                        if (flag != "true" && flag != "false") throw new FormatException("AnalyzeUniqueFormulas must be true or false.");
+                        analyzeUniqueFormulas = flag == "true";
+                    }
+                    else
+                    {
+                        CheckAttributes(reader, new[] { "version" });
+                        if (version != Version) throw new FormatException("Unsupported or missing palette version.");
+                    }
                     if (reader.IsEmptyElement) throw new FormatException("The palette contains no styles.");
                     reader.ReadStartElement();
                     var palette = new Dictionary<T, HighlightStyle>();

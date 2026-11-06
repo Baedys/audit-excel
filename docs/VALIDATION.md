@@ -1,5 +1,12 @@
 # Revue et validation
 
+## Options d'analyse des cartes — 6 novembre 2026
+
+- Compilation .NET Framework et **64 groupes sans Excel réussis**. Le moteur ajoute **67 assertions** sur les options. Le stockage de palette atteint **375 assertions** avec migration v1/v2. L'éditeur couvre **166 contrôles** sur la case d'analyse, l'import, l'export et la remise par défaut.
+- Le module Excel des options vérifie **40 assertions** sur les bandes séparées, les propriétaires conservés, la réutilisation des sous-types détaillés, le reclassement de la validation, le déplacement après insertion et l'exclusion des blancs hors capture dans une carte de feuille. Il vérifie aussi que la réanalyse ne remasque pas un fond CF déjà restauré. L'instance et le classeur sont jetables.
+- Sur le même binaire, trois modules Excel isolés complètent le contrôle ciblé avec **420 assertions** de bascule native, **235** de cartes WinForms et **62** du port CF. Les quatre modules passent dans des processus STA séparés. Le contrôle natif appelle le callback géré dans Excel. Le clic sur le ruban, le chargement enregistré et la suite globale restent hors de ce passage.
+- Comparaison des options avec les chemins CIL du binaire fourni. Le dialogue Clair reste modal et applique sur **Utiliser**. L'original applique et enregistre au changement depuis une fenêtre accessible du ruban. Le format d'échange Arixcel, l'interaction native de cette palette et la comparaison visuelle restent ouverts. [Preuves de la carte](MAP-EVIDENCE.md)
+
 ## Fonds conditionnels — 4 novembre 2026
 
 L'utilisateur demande de restaurer complètement les fonds CF après sauvegarde/réouverture, y compris lorsque les couleurs directes sont conservées. Le défaut de perte de fonds observé dans Arixcel est explicitement exclu.

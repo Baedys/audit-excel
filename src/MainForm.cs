@@ -154,7 +154,8 @@ namespace FormulaExplorer
         void SetBook(Book captured, string sheet, string address)
         {
             DependencyEngine next = new DependencyEngine(captured);
-            book = captured; engine = next; mapAnalysis = FormulaMap.Analyze(captured); history.Clear();
+            book = captured; engine = next; mapAnalysisOptions = mapPalette.AnalysisOptions;
+            mapAnalysis = FormulaMap.Analyze(captured, mapAnalysisOptions); history.Clear();
             title.Text = "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
             sheets.Items.Clear(); foreach (string item in book.Sheets.OrderBy(s => s)) sheets.Items.Add(item);
             sheets.SelectedItem = sheet;
