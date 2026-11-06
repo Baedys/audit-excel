@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Sélection multiple dans l'arbre — 6 novembre 2026
+
+L'inspection statique d'Arixcel 9.0.9623.19616 établit les gestes Ctrl et Maj, l'exclusion des en-têtes du prochain tracé et la racine à deux catégories. Dans Clair, le test sur un classeur Excel jetable sélectionne deux plages sur `North` et `South` dans l'ordre inverse des onglets, vérifie les dix blocs dépendants sur la feuille racine `Audit`, puis revient à la sélection précédente. Il vérifie aussi Ctrl+Maj+Bas, l'union disjointe sur une seule feuille, la sélection d'un en-tête, la restauration après changement de regroupement et le retour dans un arbre de cellules.
+
+Les quatre comparaisons directes de la section suivante repassent sur le même classeur. Pour la nouvelle sélection multiple, la comparaison Arixcel repose sur le CIL. Le test Clair exécute les gestionnaires du volet et vérifie les effets dans Excel. La surbrillance automatique dans la grille demeure ouverte.
+
 ## Antécédents et dépendants de plusieurs cellules — 6 novembre 2026
 
 Comparaison avec Arixcel 9.0.9623.19616 sur deux copies au même SHA-256 de `ArixcelMultiTrace.xlsx`. Clair passe par les commandes du volet connectées à Excel. Les quatre listes et les compteurs concordent.

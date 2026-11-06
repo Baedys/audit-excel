@@ -65,6 +65,58 @@ public static class ExcelDependencyRangesTests
                 Equal(body.RowStyles[1].Height, 65f, "range tree gets most of the docked pane");
                 Equal((string)keep(app.Selection).Address, "$B$2:$B$4", "analysis leaves Excel selection in place");
 
+                var group = Field<CheckBox>(form, "groupTraceSheets");
+                Action<TreeNode, Keys> select = (node, keys) => Invoke(form, "ApplyRelationSelection", node, keys);
+                MethodInfo keyDown = typeof(Control).GetMethod("OnKeyDown", Members);
+                var selectedRelations = Field<List<TreeNode>>(form, "selectedRelations");
+                var northBlock = tree.Nodes[0].Nodes[0]; var southBlock = tree.Nodes[0].Nodes[1];
+                tree.SelectedNode = northBlock;
+                select(southBlock, Keys.Control);
+                Equal(selectedRelations.Count, 2, "Ctrl adds a second range");
+                select(southBlock, Keys.Control);
+                Equal(selectedRelations.Count, 1, "Ctrl removes the clicked range");
+                // Selecting North again resets the Shift anchor after the toggle.
+                select(northBlock, Keys.None);
+                var extend = new KeyEventArgs(Keys.Control | Keys.Shift | Keys.Down);
+                keyDown.Invoke(tree, new object[] { extend });
+                Equal(extend.Handled, true, "Ctrl+Shift+Down reaches the keyboard interval handler");
+                Equal(selectedRelations.Count, 2, "Shift takes precedence over Ctrl");
+                group.Checked = true;
+                Equal(selectedRelations.Count, 2, "grouping keeps both selected ranges");
+                Equal(tree.SelectedNode.Text, "'South'!B2:B4", "grouping keeps the current range");
+                Invoke(form, "Navigate");
+                Equal((string)keep(app.ActiveSheet).Name, "South", "navigation uses the current range's worksheet");
+                Equal((string)keep(app.Selection).Address, "$B$2:$B$4", "navigation excludes ranges from other worksheets");
+                select(tree.SelectedNode, Keys.None);
+                select(tree.Nodes[0].Nodes[0].Nodes[0], Keys.Control);
+                Invoke(form, "ExploreSelectedRelation", true);
+                Equal(tree.Nodes[0].Text, "Sélection multiple", "successive trace opens the multi-source root");
+                Equal(Children(tree.Nodes[0]), "Plages sources · 2 plages|Plages dépendantes · 10 plages", "source and result counts stay separate");
+                var sourceGroup = tree.Nodes[0].Nodes[0]; var resultGroup = tree.Nodes[0].Nodes[1];
+                Equal(sourceGroup.IsExpanded, false, "multi-source category initially collapsed");
+                Equal(resultGroup.IsExpanded, true, "result category initially expanded");
+                Equal(Children(sourceGroup), "North · 1 plage|South · 1 plage", "source sheet groups follow workbook order instead of click order");
+                Equal(Children(resultGroup), "'Audit'!B2|'Audit'!D2:D3|'Audit'!E2:E3|'Audit'!H2|'Audit'!B3|'Audit'!B4|'Audit'!D4|'Audit'!H4|'Audit'!D5|'Audit'!D6",
+                    "follow-up shows both ranges' dependents directly on the previous launch worksheet");
+                group.Checked = false;
+                Equal(Children(tree.Nodes[0].Nodes[0]), "'North'!B2:B4|'South'!B2:B4", "turning off grouping flattens source sheet headings");
+                group.Checked = true;
+                Invoke(form, "Back");
+                Equal(String.Join("|", selectedRelations.Select(node => node.Text)), "'South'!B2:B4|'North'!B2:B4", "back restores both selected ranges");
+                Equal(tree.SelectedNode.Text, "'North'!B2:B4", "back restores the caret");
+                TreeNode southGroup = tree.Nodes[0].Nodes[1];
+                select(southGroup, Keys.Shift);
+                Equal(selectedRelations.Count, 2, "Shift selects the visible interval including its sheet header");
+                Invoke(form, "Navigate");
+                Equal((string)keep(app.ActiveSheet).Name, "South", "selected sheet header leaves Excel selection alone");
+                Invoke(form, "ExploreSelectedRelation", true);
+                Equal(tree.Nodes[0].Tag != null, true, "selected sheet header contributes no implicit child range");
+                Equal(tree.Nodes[0].Text, "'North'!B2:B4 · 8 plages", "one remaining physical source opens the single-range trace");
+                tree.SelectedNode = tree.Nodes[0].Nodes[0];
+                group.Checked = false;
+                Equal(selectedRelations.Single(), tree.Nodes[0], "removing a selected sheet heading falls back to the visible root");
+                audit.Activate();
+
                 keep(app.Union(keep(audit.Range["H2"]), keep(audit.Range["H4"]))).Select(); command("precedents");
                 Equal(tree.Nodes[0].Text, "'Audit'!H2;H4 · 2 plages", "disjoint source appears intact");
                 Equal(Children(tree.Nodes[0]), "'North'!B2:B5|'South'!B2:B4", "whole columns clipped to their used bounds");
@@ -83,11 +135,10 @@ public static class ExcelDependencyRangesTests
                 Equal(tree.Nodes[0].Text, dependentRoot, "disjoint dependent source and eight block count");
                 Equal(Children(tree.Nodes[0]), dependentBlocks, "only contiguous identical relative formulas merge");
                 tree.SelectedNode = tree.Nodes[0].Nodes[1];
-                var group = Field<CheckBox>(form, "groupTraceSheets"); group.Checked = true;
+                group.Checked = true;
                 Equal(Children(tree.Nodes[0]), "Audit · 8 plages", "worksheet group counts blocks");
                 Equal(Children(tree.Nodes[0].Nodes[0]), dependentBlocks, "grouping preserves every block");
                 Equal(tree.SelectedNode.Text, "'Audit'!D2:D3", "grouping keeps the selected block");
-                MethodInfo keyDown = typeof(Control).GetMethod("OnKeyDown", Members);
                 var enter = new KeyEventArgs(Keys.Enter); keyDown.Invoke(tree, new object[] { enter });
                 Equal(enter.Handled, true, "Enter consumed by the relation tree");
                 Equal((string)keep(app.ActiveSheet).Name, "Audit", "navigation activates the selected block worksheet");
@@ -99,6 +150,12 @@ public static class ExcelDependencyRangesTests
                 Invoke(form, "Back");
                 Equal(tree.Nodes[0].Text, dependentRoot, "back restores source areas and direction");
                 Equal(tree.SelectedNode.Text, "'Audit'!D2:D3", "back restores the selected result");
+                var sheetResults = tree.Nodes[0].Nodes[0];
+                select(sheetResults.Nodes[3], Keys.Control);
+                Invoke(form, "Navigate");
+                Equal((string)keep(app.ActiveSheet).Name, "Audit", "same-sheet union activates its worksheet");
+                Equal((string)keep(app.Selection).Address, "$D$2:$D$3,$H$2", "navigation selects both disjoint blocks on the current sheet");
+                Equal(Invoke(form, "SelectedCell"), null, "multiple ranges cannot enter the single-cell editor");
                 tree.SelectedNode = tree.Nodes[0]; Invoke(form, "Navigate");
                 Equal((string)keep(app.ActiveSheet).Name, "North", "navigation can restore the original worksheet");
                 Equal((int)keep(keep(app.Selection).Areas).Count, 2, "navigation restores both source areas");
@@ -112,6 +169,23 @@ public static class ExcelDependencyRangesTests
                 audit.Select(true); keep(audit.Range["B2"]).Select(); command("precedents");
                 Equal(tree.Nodes[0].Tag is Cell, true, "single-cell formula exploration keeps its normal tree");
                 Equal(body.RowStyles[0].Height, 68f, "formula pane recovers its height for a single cell");
+                tree.SelectedNode = tree.Nodes[0].Nodes[0];
+                select(tree.Nodes[0].Nodes[1], Keys.Control);
+                Equal(selectedRelations.Count, 2, "ordinary cell tree also supports multiple results");
+                Invoke(form, "ExploreSelectedRelation", true);
+                Equal(tree.Nodes[0].Text, "Sélection multiple", "multiple cell results also open a multi-source trace");
+                Invoke(form, "Back");
+                Equal(selectedRelations.Count, 2, "back rebuilds selected paths in the lazy cell tree");
+                Equal(tree.SelectedNode, tree.Nodes[0].Nodes[1], "back restores the caret in the cell tree");
+
+                dynamic a = keep(sheets.Add(Type.Missing, south, 1, -4167)); a.Name = "A";
+                dynamic ab = keep(sheets.Add(Type.Missing, a, 1, -4167)); ab.Name = "AB";
+                keep(audit.Range["Z2"]).Formula2 = "=A!BC2+AB!C2";
+                audit.Activate(); keep(audit.Range["Z2"]).Select(); command("precedents");
+                tree.SelectedNode = tree.Nodes[0].Nodes[1];
+                Invoke(form, "ExploreSelectedRelation", true);
+                Invoke(form, "Back");
+                Equal(((Cell)tree.SelectedNode.Tag).Location, "'AB'!C2", "path lookup preserves the sheet and address boundary");
                 Equal((bool)app.EnableEvents, originalEvents, "analysis preserves events");
                 Equal((bool)app.ScreenUpdating, screen, "analysis preserves screen updating");
             }

@@ -74,7 +74,11 @@ Dans le classeur capturé, les arbres et le Flux suivent chaque plage physique d
 
 D01 et D02 couvrent les sélections contiguës et disjointes d'une feuille. `SelectionRoot` garde l'adresse de la sélection Excel, y compris ses zones séparées. Le parcours source utilise la zone utile étendue jusqu'à A1. `FollowArrow` (RVA `203648`) retire la source des résultats. `Collector.GetResults` (RVA `204104`) distingue les formules relatives pour les dépendants. `RangeItem` (RVA `367292`) compte chaque bloc pour un. Clair applique ces règles au graphe capturé. Les antécédents incluent les cellules vides de la plage et sont bornés par `Worksheet.UsedRange`. Le découpage exact des rectangles suit les segments de colonnes communs à des lignes adjacentes.
 
-Le volet groupe les blocs par feuille sur demande. Une plage résultat peut devenir la source du tracé suivant dans l'un ou l'autre sens. Le retour restaure la source et le bloc sélectionné. Quatre tracés concordent avec Arixcel sur le même classeur. Les feuilles groupées dans Excel demandent d'être dégroupées avant le tracé. La sélection de plusieurs résultats, la surbrillance au clic et le tracé interclasseurs restent à traiter. [Validation](VALIDATION.md)
+Le volet groupe les blocs par feuille sur demande. Quatre tracés concordent avec Arixcel sur le même classeur. Les feuilles groupées dans Excel demandent d'être dégroupées avant le tracé.
+
+D03 couvre maintenant la sélection de plusieurs résultats, y compris depuis une cellule. Arixcel active le mode multiple dans `ExplorerForm.InitializeComponent` (RVA `198288`) et `DependentsForm.InitializeComponent` (RVA `206136`). `FormulaForm.OpenChildForm` (RVA `133832`) transmet seulement les nœuds associés à une plage et conserve la feuille racine. `MultiRoot` (RVA `366960`) replie les sources et développe les résultats, avec deux compteurs. `Model.AddRanges` (RVA `211560`) place en tête les plages de la feuille racine. Clair reprend cette structure dans le volet. Le retour rétablit les résultats choisis et le regroupement par feuille conserve la sélection.
+
+Le volet utilise **Entrée** ou **Voir cellule** pour sélectionner l'union sur la feuille du résultat courant. Le déplacement et la surbrillance automatique dans la grille observés dans le chemin `FormulaForm.SelectOnSheet` (RVA `134056`) restent à reproduire, ainsi que le tracé interclasseurs. [Validation](VALIDATION.md)
 
 ## Sources et limites
 

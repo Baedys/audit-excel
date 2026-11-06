@@ -101,8 +101,6 @@ namespace FormulaExplorer
                 explorerLayout.Controls.Add(split, 0, 1);
             }
             tree.BeforeExpand += delegate(object sender, TreeViewCancelEventArgs e) { ExpandNode(e.Node); };
-            tree.AfterSelect += delegate { if (!updatingExplorer) ShowRelationDetails(); };
-            tree.NodeMouseDoubleClick += delegate { Safe(Navigate); };
 
             mapLayout = PageLayout(mapTab, 100);
             FlowLayoutPanel mapBar = CommandBar();
@@ -244,7 +242,7 @@ namespace FormulaExplorer
         void SetExplorerRoot(Cell cell, bool remember, TraceLocation selection, bool? downstream)
         {
             if (remember && root != null)
-                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, Reverse = reverse, Selected = SelectedTraceKey() });
+                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, Reverse = reverse, Selection = CaptureExplorerSelection() });
             root = cell; traceSource = selection;
             if (downstream.HasValue) reverse = downstream.Value;
             ResetFlowDisplay(); ShowTree();
@@ -254,7 +252,7 @@ namespace FormulaExplorer
             if (history.Count == 0) return;
             ExplorerHistory previous = history.Pop();
             root = previous.Cell; traceSource = previous.Source; reverse = previous.Reverse;
-            ResetFlowDisplay(); ShowTreeSelection(previous.Selected);
+            ResetFlowDisplay(); ShowTreeSelection(previous.Selection);
         }
         void SelectExplorerTab(bool dependentsDirection)
         {
@@ -294,7 +292,7 @@ namespace FormulaExplorer
         {
             bool cycle = false;
             for (TreeNode ancestor = parent; ancestor != null; ancestor = ancestor.Parent) if (ancestor.Tag is Cell && String.Equals(((Cell)ancestor.Tag).Key, cell.Key, StringComparison.OrdinalIgnoreCase)) { cycle = true; break; }
-            TreeNode node = new TreeNode(cell.Location + "   " + cell.Value + (cycle ? "  [cycle]" : "")) { Tag = cell };
+            TreeNode node = new TreeNode(cell.Location + "   " + cell.Value + (cycle ? "  [cycle]" : "")) { Name = cell.Key, Tag = cell };
             node.ForeColor = cycle ? Color.Firebrick : cell.IsFormula ? Color.FromArgb(29, 83, 153) : Color.FromArgb(24, 110, 76);
             if (!cycle && (reverse || cell.IsFormula)) node.Nodes.Add(new TreeNode("…"));
             return node;
@@ -302,7 +300,7 @@ namespace FormulaExplorer
         void ShowTree()
         { ShowTreeSelection(null); }
 
-        void ShowTreeSelection(string restore)
+        void ShowTreeSelection(ExplorerSelection restore)
         {
             if (root == null) return;
             precedents.BackColor = reverse ? Color.White : Color.FromArgb(215, 237, 237); dependents.BackColor = reverse ? Color.FromArgb(215, 237, 237) : Color.White;
@@ -317,12 +315,10 @@ namespace FormulaExplorer
             try
             {
                 tree.Nodes.Clear();
-                TreeNode node, selection;
-                if (traceSource == null) node = selection = Node(root, null);
-                else node = RangeTraceTree(restore, out selection);
+                TreeNode node = traceSource == null ? Node(root, null) : RangeTraceTree();
                 tree.Nodes.Add(node); node.Expand();
-                if (selection.Parent != null && selection.Parent != node) selection.Parent.Expand();
-                tree.SelectedNode = selection;
+                if (traceSource != null && traceSource.SeparateSources) node.Nodes["results"].Expand();
+                RestoreExplorerSelection(node, restore);
             }
             finally { tree.EndUpdate(); updatingExplorer = false; }
             ShowRelationDetails();
@@ -339,9 +335,8 @@ namespace FormulaExplorer
         }
         Cell SelectedCell()
         {
-            if (tree.SelectedNode == null) return traceSource == null ? root : null;
             TraceLocation selection = SelectedTraceLocation();
-            if (selection == null) return tree.SelectedNode.Tag as Cell;
+            if (selection == null) return null;
             return selection.Ranges.Count == 1 && selection.Ranges[0].Single ? book.Get(selection.Sheet, selection.ExcelAddress) : null;
         }
         void ShowDetails(Cell cell)
@@ -363,9 +358,8 @@ namespace FormulaExplorer
         void Navigate()
         {
             if (bridge == null) { status.Text = "Démonstration : aucune connexion Excel."; return; }
-            TraceLocation selection = SelectedTraceLocation();
-            if (selection != null) { bridge.Navigate(book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress }); return; }
-            Cell selected = SelectedCell(); if (selected != null) bridge.Navigate(book, selected);
+            TraceLocation selection = NavigableRelationSelection();
+            if (selection != null) bridge.Navigate(book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress });
         }
         static void CellColumns(DataGridView grid)
         {

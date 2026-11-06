@@ -89,7 +89,9 @@ Une référence 3D comme `Jan:Mar!B2` se développe par feuille dans **Formule**
 
 **Antécédents**, **Dépendants** et **Flux** suivent les plages 3D du classeur capturé. Ils incluent les feuilles intermédiaires et les cellules référencées par les arguments écartés au calcul. Le Flux limite ces liens à son périmètre.
 
-Sélectionnez plusieurs cellules dans Excel, même disjointes, puis cliquez sur **Antécédents** ou **Dépendants** dans le ruban Clair. L'arbre occupe la majorité du volet et compte les plages de résultat. **Grouper par feuille** affiche leurs sous-totaux. Dans l'arbre, **Entrée** sélectionne la plage dans Excel, **Ctrl+Q** explore ses antécédents et **Ctrl+Maj+Q** ses dépendants. **Retour** retrouve les zones et le résultat précédemment sélectionné. [Validation](docs/VALIDATION.md)
+Sélectionnez plusieurs cellules dans Excel, même disjointes, puis cliquez sur **Antécédents** ou **Dépendants** dans le ruban Clair. L'arbre occupe la majorité du volet et compte les plages de résultat. **Grouper par feuille** affiche leurs sous-totaux.
+
+Dans l'arbre, **Ctrl+clic** ajoute ou retire un résultat et **Maj+clic** sélectionne un intervalle de lignes visibles. **Ctrl+Q** trace les antécédents de toutes les plages retenues et **Ctrl+Maj+Q** leurs dépendants. La vue **Sélection multiple** sépare les sources et les résultats, avec leurs compteurs. **Entrée** sélectionne dans Excel l'union des plages de la feuille du résultat courant. **Retour** retrouve les sources, les résultats sélectionnés et la ligne active. [Validation](docs/VALIDATION.md)
 
 Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 
