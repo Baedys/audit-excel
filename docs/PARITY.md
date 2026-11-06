@@ -36,6 +36,12 @@ M05 progresse avec le réglage des références des formules uniques et l'analys
 
 L'utilisateur demande un ruban et un volet latéral qui laisse la grille dégagée. Dans le complément Excel, les vues Formule, Carte, Flux et Comparer s'ouvrent dans un volet Office redimensionnable à droite. Une fenêtre de classeur a son propre volet. La bascule des couleurs de carte reste accessible directement depuis le ruban. Cette présentation remplace les explorateurs flottants documentés dans l'historique de la version 0.6.
 
+## Branche retenue dans le volet Formule
+
+F03 progresse avec le gras sur le résultat choisi par `IF`, `IFS`, `CHOOSE`, `SWITCH`, `IFERROR` et `IFNA`. Le CIL de `Element.ResolveChosenChild` (RVA `155012`, `IL_01cc` à `IL_052f`) donne les règles de choix. `Element.PostProcess` (RVA `153512`) marque le résultat retenu en gras tout en conservant les arguments visibles. Les conversions scalaires proviennent de `ExcelValue.AsBoolean` et `AsDouble` dans `Arixcel.Common.dll` (SHA-256 `425eb00972ba6d5aaa45ee6e8a4369e1fa40ff1ea2f002da2522893c0711eb01`). Le comparateur `SWITCH` suit l'égalité culturelle et la distinction observée entre blanc et texte vide.
+
+Clair lit les opérandes dans le contexte de la cellule, avec la portée `LET`. Il conserve les offsets du texte et marque uniquement les choix établis. Le résultat décrit une nouvelle évaluation des conditions. Les fonctions volatiles peuvent donc produire une autre branche qu'au dernier calcul de la cellule. Les plages d'une cellule et tableaux d'un élément sont lus comme scalaires. Les tableaux plus larges et les chemins complexes d'intersection implicite, de `FILTER`, de `XLOOKUP` et de `LAMBDA` restent à comparer. Le graphe des références reste lexical. [Validation](VALIDATION.md)
+
 ## Sources et limites
 
 | Repère | Preuve réutilisée | Portée |

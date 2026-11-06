@@ -151,6 +151,7 @@ static class Tests
     {
         Core();
         Check("Excel formula syntax and source spans", delegate { Console.WriteLine("SYNTAX_ASSERTIONS " + FormulaSyntaxTests.Run()); });
+        Check("Conditional formula branches and operand coercion", delegate { FormulaBranchesTests.Run(); });
         Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
         Check("Formula map categories and reference priorities", delegate { Console.WriteLine("MAP_ASSERTIONS " + FormulaMapTests.Run()); });
         Check("Formula map analysis options", delegate { FormulaMapOptionsTests.Run(); });
@@ -172,6 +173,7 @@ static class Tests
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
+            Check("Excel conditional formula branch rendering", delegate { ExcelFormulaBranchesTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });
             Check("Excel direct highlight lifecycle session", delegate { ExcelDirectHighlightsTests.Run(); });

@@ -14,7 +14,7 @@ namespace FormulaExplorer
         DependencyEngine engine;
         Cell root;
         ExcelBridge bridge;
-        bool reverse;
+        bool reverse, updatingExplorer;
         readonly Stack<Cell> history = new Stack<Cell>();
         readonly Label title = new Label(), status = new Label(), detail = new Label();
         readonly TextBox formula = new TextBox(), warnings = new TextBox();
@@ -95,7 +95,7 @@ namespace FormulaExplorer
                 explorerLayout.Controls.Add(split, 0, 1);
             }
             tree.BeforeExpand += delegate(object sender, TreeViewCancelEventArgs e) { ExpandNode(e.Node); };
-            tree.AfterSelect += delegate { ShowDetails(SelectedCell()); };
+            tree.AfterSelect += delegate { if (!updatingExplorer) ShowDetails(SelectedCell()); };
             tree.NodeMouseDoubleClick += delegate { Safe(Navigate); };
 
             TableLayoutPanel mapLayout = PageLayout(mapTab, 100);
@@ -229,10 +229,21 @@ namespace FormulaExplorer
             root = cell; ResetFlowDisplay(); ShowTree();
         }
         void Back() { if (history.Count > 0) { root = history.Pop(); ResetFlowDisplay(); ShowTree(); } }
+        void SelectExplorerTab(bool dependentsDirection)
+        {
+            reverse = dependentsDirection; updatingExplorer = true;
+            try { tabs.SelectedIndex = 0; }
+            finally { updatingExplorer = false; }
+        }
         internal void ExecuteDockedRibbonCommand(string command)
         {
-            if (book == null || command == "precedents" || command == "dependents") LoadExcel();
+            if (command == "precedents" || command == "dependents")
+            {
+                SelectExplorerTab(command == "dependents");
+                LoadExcel(); return;
+            }
             ExecuteRibbonCommand(command);
+            if (book == null) LoadExcel();
         }
         public void ExecuteRibbonCommand(string command)
         {
@@ -240,8 +251,8 @@ namespace FormulaExplorer
             {
                 switch (command)
                 {
-                    case "precedents": reverse = false; tabs.SelectedIndex = 0; ShowTree(); break;
-                    case "dependents": reverse = true; tabs.SelectedIndex = 0; ShowTree(); break;
+                    case "precedents": SelectExplorerTab(false); ShowTree(); break;
+                    case "dependents": SelectExplorerTab(true); ShowTree(); break;
                     case "back": Back(); break;
                     case "map": tabs.SelectedIndex = 1; break;
                     case "flow": tabs.SelectedIndex = 2; break;
@@ -264,7 +275,13 @@ namespace FormulaExplorer
         {
             if (root == null) return;
             precedents.BackColor = reverse ? Color.White : Color.FromArgb(215, 237, 237); dependents.BackColor = reverse ? Color.FromArgb(215, 237, 237) : Color.White;
-            tree.BeginUpdate(); tree.Nodes.Clear(); TreeNode node = Node(root, null); tree.Nodes.Add(node); node.Expand(); tree.SelectedNode = node; tree.EndUpdate(); ShowDetails(root);
+            updatingExplorer = true; tree.BeginUpdate();
+            try
+            {
+                tree.Nodes.Clear(); TreeNode node = Node(root, null); tree.Nodes.Add(node); node.Expand(); tree.SelectedNode = node;
+            }
+            finally { tree.EndUpdate(); updatingExplorer = false; }
+            ShowDetails(root);
         }
         void ExpandNode(TreeNode node)
         {

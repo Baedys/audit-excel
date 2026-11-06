@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace FormulaExplorer
@@ -14,6 +15,7 @@ namespace FormulaExplorer
         ExpressionNode syntaxRoot;
         Cell expressionOwner;
         bool buildingExpressions;
+        Font chosenExpressionFont;
 
         void InitializeExpressions(TableLayoutPanel parent)
         {
@@ -27,6 +29,19 @@ namespace FormulaExplorer
             actions.Controls.Add(evaluateOnSelect); PlaceCommandBar(panel, actions, 0);
             expressions.Dock = DockStyle.Fill; expressions.HideSelection = false; expressions.BorderStyle = BorderStyle.FixedSingle;
             expressions.AccessibleName = "Sous-expressions de la formule";
+            expressions.ShowNodeToolTips = true;
+            Disposed += delegate { if (chosenExpressionFont != null) chosenExpressionFont.Dispose(); };
+            evaluateOnSelect.CheckedChanged += delegate
+            {
+                string warning = MarkExpressionBranches(evaluateOnSelect.Checked);
+                if (warning != null) expressionValue.Text = warning;
+            };
+            tabs.SelectedIndexChanged += delegate
+            {
+                if (tabs.SelectedIndex != 0 || !evaluateOnSelect.Checked || updatingExplorer) return;
+                string warning = MarkExpressionBranches(true);
+                if (warning != null) expressionValue.Text = warning;
+            };
             expressions.AfterSelect += delegate
             {
                 if (buildingExpressions) return;
@@ -49,9 +64,37 @@ namespace FormulaExplorer
         static TreeNode ExpressionTree(ExpressionNode expression)
         {
             string text = expression.Text.Replace("\r", " ").Replace("\n", " ");
-            var node = new TreeNode(text.Length > 180 ? text.Substring(0, 177) + "…" : text) { Tag = expression, ToolTipText = expression.Kind + " · " + expression.Text };
+            if (expression.Kind == "Missing argument") text = "(argument omis)";
+            var node = new TreeNode(text.Length > 180 ? text.Substring(0, 177) + "…" : text) { Tag = expression, ToolTipText = ExpressionToolTip(expression) };
             foreach (ExpressionNode child in expression.Children) node.Nodes.Add(ExpressionTree(child));
             return node;
+        }
+        static string ExpressionToolTip(ExpressionNode expression) { return expression.Kind + " · " + expression.Text; }
+
+        string MarkExpressionBranches(bool evaluate)
+        {
+            ISet<ExpressionNode> chosen = null;
+            string warning = null;
+            if (evaluate && bridge != null && syntaxRoot != null && expressionOwner != null)
+            {
+                try { chosen = bridge.EvaluateBranches(book, expressionOwner, syntaxRoot); }
+                catch (InvalidOperationException error) { warning = error.Message; }
+                catch (COMException error) { warning = error.Message; }
+            }
+            if (chosen != null && chosen.Count != 0 && chosenExpressionFont == null)
+                chosenExpressionFont = new Font(expressions.Font, FontStyle.Bold);
+            var pending = new Stack<TreeNode>();
+            foreach (TreeNode root in expressions.Nodes) pending.Push(root);
+            while (pending.Count != 0)
+            {
+                TreeNode node = pending.Pop();
+                var expression = (ExpressionNode)node.Tag;
+                bool selectedBranch = chosen != null && chosen.Contains(expression);
+                node.NodeFont = selectedBranch ? chosenExpressionFont : null;
+                node.ToolTipText = ExpressionToolTip(expression) + (selectedBranch ? " · Branche retenue" : "");
+                foreach (TreeNode child in node.Nodes) pending.Push(child);
+            }
+            return warning == null ? null : "Branches indisponibles. " + warning;
         }
         void ShowExpression(Cell cell)
         {
@@ -62,7 +105,9 @@ namespace FormulaExplorer
                 if (!cell.IsFormula) { expressionValue.Text = cell.Value; return; }
                 syntaxRoot = FormulaSyntax.Parse(cell.Formula);
                 TreeNode node = ExpressionTree(syntaxRoot); expressions.Nodes.Add(node); node.Expand(); expressions.SelectedNode = node;
-                expressionValue.Text = "Valeur capturée : " + cell.Value + "\r\nSélectionnez un élément pour examiner sa valeur.";
+                string warning = MarkExpressionBranches(tabs.SelectedIndex == 0 && evaluateOnSelect.Checked);
+                expressionValue.ForeColor = SystemColors.WindowText;
+                expressionValue.Text = "Valeur capturée : " + cell.Value + "\r\n" + (warning ?? "Sélectionnez un élément pour examiner sa valeur.");
             }
             catch (FormatException ex) { expressionValue.Text = "Décomposition incomplète : " + ex.Message; }
             finally { buildingExpressions = false; expressions.EndUpdate(); }
@@ -77,11 +122,13 @@ namespace FormulaExplorer
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour évaluer les expressions.");
             ExpressionNode node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             if (node == null || expressionOwner == null || syntaxRoot == null) return;
-            string text = FormulaSyntax.EvaluationText(syntaxRoot, node);
-            ExpressionValue value = bridge.Evaluate(book, expressionOwner, text);
+            ExpressionValue value;
+            try { value = bridge.Evaluate(book, expressionOwner, FormulaSyntax.EvaluationText(syntaxRoot, node)); }
+            catch { MarkExpressionBranches(false); throw; }
+            string warning = MarkExpressionBranches(true);
             expressionValue.ForeColor = value.IsError ? Color.Firebrick : Color.FromArgb(25, 80, 60);
             expressionValue.Text = (value.Reference == null ? "" : value.Reference + "\r\n") + value.Text +
-                (value.Truncated ? "\r\nAperçu limité à 10 lignes × 5 colonnes, 8 zones." : "");
+                (value.Truncated ? "\r\nAperçu limité à 10 lignes × 5 colonnes, 8 zones." : "") + (warning == null ? "" : "\r\n" + warning);
             status.Text = "Expression calculée dans " + expressionOwner.Location + " · sélection Excel restaurée";
         }
         void EditSelectedFormula()

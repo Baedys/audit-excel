@@ -77,6 +77,8 @@ Pour ajouter le ruban à Excel :
 
 Sur la branche de développement, **Clair → Antécédents** ouvre le volet **Formule**, ancré à droite de la feuille. **Dépendants** change le sens dans le même volet. Les onglets **Carte**, **Flux** et **Comparer** donnent accès aux autres analyses. Le bouton principal **Carte des cellules** bascule les couleurs sur la grille. Sa flèche ouvre le volet Carte. Redimensionnez le volet à la souris ou fermez-le avec sa croix pour retrouver toute la largeur de la feuille.
 
+Dans **Formule**, Clair met en gras l'argument retenu par `IF`, `IFS`, `CHOOSE`, `SWITCH`, `IFERROR` ou `IFNA` quand Excel fournit les valeurs nécessaires. Tous les arguments restent consultables. **Évaluer** actualise aussi ce repère quand l'évaluation au clic est désactivée. Le graphe des références continue de couvrir toute la formule.
+
 Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 
 Pour comparer : chargez le premier état, ouvrez **Comparaison**, puis **Mémoriser référence**. Modifiez le classeur ou activez un autre classeur dans Excel, puis cliquez sur **Comparer classeur Excel actif**. Les cellules sont appariées par nom de feuille et adresse. En mode formules, un changement de résultat calculé seul n'est pas une différence ; activez **Valeurs calculées** pour le comparer.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -89,16 +90,68 @@ namespace FormulaExplorer
         }
         public ExpressionValue Evaluate(Book book, Cell owner, string expression)
         {
+            string text = PrepareExpression(expression);
+            return WithExpressionContext(book, owner, false, (sheet, range) => ReadExpression(sheet, range, text, Describe));
+        }
+
+        public ISet<ExpressionNode> EvaluateBranches(Book book, Cell owner, ExpressionNode root)
+        {
+            if (root == null) throw new ArgumentNullException("root");
+            if (!FormulaSyntax.Flatten(root).Any(FormulaBranches.Supports)) return new HashSet<ExpressionNode>();
+            return WithExpressionContext(book, owner, true, (sheet, range) => FormulaBranches.Chosen(root, operand =>
+            {
+                try
+                {
+                    string text = PrepareExpression(FormulaSyntax.EvaluationText(root, operand));
+                    return ReadExpression(sheet, range, text, ReadBranchValue);
+                }
+                catch (InvalidOperationException) { return Type.Missing; }
+                catch (FormatException) { return Type.Missing; }
+                catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { return Type.Missing; }
+                catch (COMException error) { if ((uint)error.ErrorCode == 0x800A03EC) return Type.Missing; throw; }
+            }));
+        }
+
+        static string PrepareExpression(string expression)
+        {
             if (String.IsNullOrWhiteSpace(expression)) throw new ArgumentException("Expression vide.");
             string text = expression.StartsWith("=", StringComparison.Ordinal) ? expression : "=" + expression;
             if (text.Length > 255) throw new InvalidOperationException("Excel Evaluate accepte 255 caractères au maximum. Sélectionnez une sous-expression plus courte.");
+            return text;
+        }
+
+        static T ReadExpression<T>(object sheet, object range, string text, Func<object, T> read)
+        {
+            string contextual = QualifyTableReferences(range, text);
+            if (contextual.Length > 255) throw new InvalidOperationException("Expression contextualisée au-delà de la limite Excel Evaluate de 255 caractères.");
+            object result = OfficeCall(sheet, "Evaluate", BindingFlags.InvokeMethod, contextual);
+            try { return read(result); }
+            finally { Release(result); }
+        }
+
+        static readonly object[] multipleBranchCells = new object[0];
+        static object ReadBranchValue(object value)
+        {
+            if (value == null || !Marshal.IsComObject(value)) return value;
+            object areas = null;
+            try
+            {
+                areas = ((dynamic)value).Areas;
+                return (int)((dynamic)areas).Count == 1 && Convert.ToDouble(((dynamic)value).CountLarge) == 1
+                    ? ((dynamic)value).Value2 : multipleBranchCells;
+            }
+            finally { Release(areas); }
+        }
+
+        T WithExpressionContext<T>(Book book, Cell owner, bool preserveGroups, Func<object, object, T> evaluate)
+        {
             return AtCell(book.FullName, owner.Sheet, owner.Address, delegate(object worksheet, object range)
             {
                 RequireCurrentFormula(range, owner);
                 dynamic app = application;
                 if ((int)((dynamic)worksheet).Visible != -1) throw new InvalidOperationException("Affichez la feuille dans Excel pour évaluer dans son contexte.");
-                object priorWindow = null, priorSheet = null, priorSelection = null, priorActive = null, result = null;
-                bool priorRange = false;
+                object priorWindow = null, priorSheet = null, priorSelection = null, priorActive = null;
+                bool priorRange = false, moved = false, changedFlags = false;
                 bool events = app.EnableEvents, screen = app.ScreenUpdating;
                 try
                 {
@@ -106,19 +159,21 @@ namespace FormulaExplorer
                     try { OfficeCall(priorSelection, "Row", BindingFlags.GetProperty); priorRange = true; }
                     catch (COMException) { }
                     catch (MissingMethodException) { }
-                    app.EnableEvents = false; app.ScreenUpdating = false;
-                    app.Goto(range, false);
-                    string contextual = QualifyTableReferences(range, text);
-                    if (contextual.Length > 255) throw new InvalidOperationException("Expression contextualisée au-delà de la limite Excel Evaluate de 255 caractères.");
-                    result = OfficeCall(worksheet, "Evaluate", BindingFlags.InvokeMethod, contextual);
-                    return Describe(result);
+                    bool alreadyAtOwner = preserveGroups && priorActive != null &&
+                        String.Equals((string)((dynamic)priorActive).Address[true, true, 1, true],
+                            (string)((dynamic)range).Address[true, true, 1, true], StringComparison.OrdinalIgnoreCase);
+                    if (preserveGroups && !alreadyAtOwner && ExcelConditionalFillContext.HasGroupedWindow(priorWindow, worksheet))
+                        throw new InvalidOperationException("Activez la cellule de formule pour analyser ses branches lorsque des feuilles sont groupées.");
+                    changedFlags = true; app.EnableEvents = false; app.ScreenUpdating = false;
+                    if (!alreadyAtOwner) { moved = true; app.Goto(range, false); }
+                    return evaluate(worksheet, range);
                 }
                 finally
                 {
                     try
                     {
-                        if (priorWindow != null) ((dynamic)priorWindow).Activate();
-                        if (priorRange && priorSelection != null)
+                        if (moved && priorWindow != null) ((dynamic)priorWindow).Activate();
+                        if (moved && priorRange && priorSelection != null)
                         {
                             // Range.Select requires its sheet to remain active. Goto
                             // restores the actual range's workbook/sheet as one step,
@@ -126,7 +181,7 @@ namespace FormulaExplorer
                             app.Goto(priorSelection, false);
                             if (priorActive != null) ((dynamic)priorActive).Activate();
                         }
-                        else
+                        else if (moved)
                         {
                             if (priorSheet != null) ((dynamic)priorSheet).Activate();
                             if (priorSelection != null) ((dynamic)priorSelection).Select();
@@ -134,8 +189,12 @@ namespace FormulaExplorer
                     }
                     finally
                     {
-                        app.ScreenUpdating = screen; app.EnableEvents = events;
-                        Release(result); Release(priorActive); Release(priorSelection); Release(priorSheet); Release(priorWindow);
+                        try { if (changedFlags) app.ScreenUpdating = screen; }
+                        finally
+                        {
+                            try { if (changedFlags) app.EnableEvents = events; }
+                            finally { Release(priorActive); Release(priorSelection); Release(priorSheet); Release(priorWindow); }
+                        }
                     }
                 }
             });

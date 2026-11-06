@@ -68,7 +68,7 @@ namespace FormulaExplorer
             return expression;
         }
 
-        static string FunctionName(ExpressionNode node)
+        internal static string FunctionName(ExpressionNode node)
         {
             if (node.Kind != "Function") return "";
             int parenthesis = node.Text.IndexOf('(');

@@ -1,5 +1,12 @@
 # Revue et validation
 
+## Branches conditionnelles — 6 novembre 2026
+
+- **65 groupes sans Excel réussis**, dont **133 assertions** de choix conditionnel. Les contrôles couvrent les six fonctions, les conversions, les erreurs Excel, les blancs, les tableaux, les arguments omis, les branches imbriquées et les offsets source.
+- **37 contrôles** dans un processus Excel dédié. Le volet marque et actualise le gras, y compris après changement de la valeur d'entrée. Il efface le repère si la formule source a changé. Il conserve les arguments inspectables et laisse l'évaluation automatique en attente tant que l'onglet Formule est masqué. Les contrôles couvrent aussi `LET`, les limites de `Evaluate`, une sélection multiple, le groupe de feuilles et le retour des flags d'Excel.
+- Le module de régression des expressions passe dans un second processus STA avec le même binaire. Il vérifie la locale, l'édition, l'annulation, les conflits, les références structurées et **550 assertions** de restauration du contexte sur 50 cycles entre deux classeurs.
+- Les règles de choix sont issues de la lecture statique d'Arixcel 9.0.9623.19616. Les essais d'exécution couvrent Clair dans Excel. La comparaison native des cas limites avec Arixcel reste ouverte. [Registre de parité](PARITY.md)
+
 ## Volet latéral Excel — 6 novembre 2026
 
 - Compilation .NET Framework et **64 groupes sans Excel réussis**. Aperçus WinForms compacts examinés à **420 × 650** et **320 × 540**, avec la formule, les arbres, les commandes de carte et les filtres de flux empilés ou repliés selon la largeur.

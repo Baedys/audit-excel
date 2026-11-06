@@ -56,6 +56,17 @@ namespace FormulaExplorer
             catch (Exception error) { if (MissingGroup(error)) return false; throw; }
             finally { ExcelBridge.Release(selected); }
         }
+        internal static bool HasGroupedWindow(object currentWindow, object targetSheet)
+        {
+            if (HasGroup(currentWindow)) return true;
+            object book = null, targetWindow = null;
+            try
+            {
+                book = Get(targetSheet, "Parent"); targetWindow = TargetWindow(book, currentWindow);
+                return HasGroup(targetWindow);
+            }
+            finally { ExcelBridge.Release(targetWindow); ExcelBridge.Release(book); }
+        }
         static object TargetWindow(object book, object current)
         {
             object windows = null, result = null;
