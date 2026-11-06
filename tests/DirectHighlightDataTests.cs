@@ -17,7 +17,7 @@ public static class DirectHighlightDataTests
     static DirectHighlightDocument Document(params DirectHighlightRecord[] records) { return new DirectHighlightDocument(records); }
     public static int Run()
     {
-        assertions = 0; RoundTrip(); Rejections(); StorageReplacement(); Adoption();
+        assertions = 0; RoundTrip(); LargeRectangles(); FontLimit(); Rejections(); StorageReplacement(); Adoption();
         Console.WriteLine("PASS DirectHighlightData: " + assertions + " assertions"); return assertions;
     }
     static void RoundTrip()
@@ -25,18 +25,55 @@ public static class DirectHighlightDataTests
         var source = new List<DirectHighlightRecord> { Record(rows: 2, columns: 3), Record(property: DirectColorProperty.Font, original: DirectColorValue.Automatic, top: Blue),
             Record("A", Coordinates.MaxRow, Coordinates.MaxColumn, original: Blue, top: DirectColorValue.None) };
         DirectHighlightDocument document = new DirectHighlightDocument(source); source.Clear();
-        Equal(document.Count, 3, "independent collection"); Equal(document.CellCount, 8, "property cell count");
+        Equal(document.Count, 3, "independent collection"); Equal(document.CellCount, 8L, "property cell count");
         string xml = document.ToXml(); Equal(xml.Contains("O'Brien &amp; &lt;Z&gt;"), true, "escaped worksheet");
         Equal(xml.Contains("owner"), false, "no old owner"); Equal(xml.Contains("category"), false, "no analysis categories");
         var read = DirectHighlightDocument.FromXml(xml);
-        Equal(read.Count, 3, "roundtrip count"); Equal(read.CellCount, 8, "roundtrip cells"); Equal(read.ToXml(), xml, "stable canonical form");
+        Equal(read.Count, 3, "roundtrip count"); Equal(read.CellCount, 8L, "roundtrip cells"); Equal(read.ToXml(), xml, "stable canonical form");
         DirectHighlightRecord fill = read.Records.Single(r => r.Sheet.StartsWith("O'Brien") && r.Property == DirectColorProperty.Fill);
         Equal(fill.FirstRow, 2, "row"); Equal(fill.FirstColumn, 3, "column"); Equal(fill.RowCount, 2, "height"); Equal(fill.ColumnCount, 3, "width");
         Equal(fill.BaseColor, DirectColorValue.None, "none base"); Equal(fill.TopColor, Red, "RGB top");
         Equal(read.Records.Single(r => r.Sheet == "A").TopColor, DirectColorValue.None, "none top");
-        Equal(DirectHighlightDocument.FromXml(Document().ToXml()).CellCount, 0, "empty document");
+        Equal(DirectHighlightDocument.FromXml(Document().ToXml()).CellCount, 0L, "empty document");
         Equal(Document(Record("a"), Record("A", property: DirectColorProperty.Font)).Count, 2, "independent fill font");
         Throws<NotSupportedException>(() => ((IList<DirectHighlightRecord>)document.Records).Add(Record()), "read-only records");
+    }
+    static void LargeRectangles()
+    {
+        const long sheetArea = 17179869184L;
+        DirectHighlightRecord sheetFill = Record("Whole", 1, 1, rows: Coordinates.MaxRow, columns: Coordinates.MaxColumn);
+        Equal(sheetFill.CellCount, sheetArea, "whole sheet record uses 64-bit area");
+        var document = Document(sheetFill, Record("whole", 1, 1, property: DirectColorProperty.Font),
+            Record("Other", 1, 1, rows: Coordinates.MaxRow, columns: Coordinates.MaxColumn));
+        Equal(document.CellCount, 2 * sheetArea + 1, "whole sheet fills sum across sheets independently of font");
+        string xml = document.ToXml();
+        Equal(xml.Contains("version=\"1\""), true, "large rectangles keep the v1 format");
+        Equal(xml.Length < 600, true, "whole sheets serialize as single blocks");
+        Equal(DirectHighlightDocument.FromXml(xml).CellCount, document.CellCount, "whole sheets roundtrip");
+
+        int half = Coordinates.MaxRow / 2;
+        var stripes = Enumerable.Range(0, Coordinates.MaxColumn / 32).SelectMany(i => new[] {
+            Record("A", half + 1, 32 * i + 1, rows: half, columns: 32),
+            Record("A", 1, 32 * i + 1, rows: half, columns: 32)
+        });
+        var adjacent = new DirectHighlightDocument(stripes);
+        Equal(adjacent.Count, 1024, "adjacent rows and columns are independent blocks");
+        Equal(adjacent.CellCount, sheetArea, "adjacent blocks cover the whole sheet");
+        Equal(DirectHighlightDocument.FromXml(adjacent.ToXml()).CellCount, sheetArea, "many large blocks roundtrip");
+
+        Throws<ArgumentException>(() => Document(sheetFill, Record("wHoLe", Coordinates.MaxRow, Coordinates.MaxColumn)), "whole sheet overlaps its far corner");
+        Throws<ArgumentException>(() => Document(Record("A", 1, 7000, rows: Coordinates.MaxRow), Record("A", half, 1, columns: Coordinates.MaxColumn)), "crossing row and column overlap");
+        Throws<ArgumentException>(() => DirectHighlightDocument.Merge(new[] { Document(sheetFill), Document(Record("WHOLE", half, 2)) }), "large block overlaps across parts");
+    }
+    static void FontLimit()
+    {
+        DirectHighlightRecord fullFont = Record("A", 1, 1, property: DirectColorProperty.Font, rows: DirectHighlightDocument.MaximumFontCells);
+        Equal(DirectHighlightDocument.FromXml(Document(fullFont).ToXml()).CellCount, (long)DirectHighlightDocument.MaximumFontCells, "font at replay limit roundtrips");
+        string wholeFont = Document(Record("A", 1, 1, rows: Coordinates.MaxRow, columns: Coordinates.MaxColumn)).ToXml().Replace("property=\"fill\"", "property=\"font\"");
+        Throws<FormatException>(() => DirectHighlightDocument.FromXml(wholeFont), "oversized font XML rejected without enumeration");
+        Throws<ArgumentException>(() => DirectHighlightDocument.Merge(new[] { Document(fullFont), Document(Record("B", property: DirectColorProperty.Font)) }), "font replay limit across sheets and parts");
+        string overTotal = Document(Record("A", 1, 1, rows: DirectHighlightDocument.MaximumFontCells), Record("B")).ToXml().Replace("property=\"fill\"", "property=\"font\"");
+        Throws<FormatException>(() => DirectHighlightDocument.FromXml(overTotal), "combined font limit enforced on XML input");
     }
     static void Rejections()
     {
@@ -62,8 +99,7 @@ public static class DirectHighlightDataTests
         Throws<ArgumentException>(() => Record(original: Red), "equal base top omitted");
         Throws<ArgumentOutOfRangeException>(() => Record(row: Coordinates.MaxRow, rows: 2), "row overflow");
         Throws<ArgumentOutOfRangeException>(() => Record(column: Coordinates.MaxColumn, columns: 2), "column overflow");
-        Throws<ArgumentOutOfRangeException>(() => Record(rows: 1000, columns: 501), "maximum properties");
-        Throws<ArgumentException>(() => Document(Record("A", rows: 1000, columns: 250), Record("B", rows: 1000, columns: 251)), "combined maximum properties");
+        Throws<ArgumentException>(() => new DirectHighlightDocument(Enumerable.Repeat(Record(), DirectHighlightDocument.MaximumRecords + 1)), "record count bounded independently of area");
     }
     sealed class Part : IDirectHighlightXmlPart
     {

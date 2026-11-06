@@ -1,5 +1,13 @@
 # Revue et validation
 
+## Surbrillance de la trace dans Excel — 6 novembre 2026
+
+Le volet reprend la palette Arixcel relevée par REA. Source rose `#FF99FF`, antécédents bleus `#66CCFF`, dépendants verts `#99FFCC`. Le test du volet vérifie une source automatique, deux plages antécédentes sur des feuilles différentes, la couleur de la source du tracé enfant, le retour à la couleur précédente et le retrait par la case.
+
+Le test Excel des rectangles colore une colonne complète, superpose Carte et Flux, puis vérifie le retrait de chaque couche. Une cellule modifiée manuellement dans la colonne conserve son fond, tandis que sa voisine est restaurée. Une feuille protégée conserve la sélection de couleurs précédente après un remplacement refusé. Le fond conditionnel continue à déterminer le rendu, avec ses règles, sa priorité et `StopIfTrue`. Un rectangle uniforme de 1 048 576 cellules est enregistré en un bloc et restauré après réouverture. Les tests XML couvrent aussi une feuille complète et les chevauchements de blocs.
+
+Le journal enregistre encore des couleurs scalaires après réouverture. Un fond direct sur une colonne auparavant vide peut étendre la zone utilisée d'Excel au-delà du retrait du fond. Les cibles fusionnées et les dégradés refusent une nouvelle coloration dans ce moteur. Les couleurs du nouvel arbre sont comparées à l'original par inspection statique, et les effets ci-dessus sont exécutés dans Clair avec Excel.
+
 ## Suivi de la sélection Excel et retrait des couleurs — 6 novembre 2026
 
 Le chemin de sélection d'Arixcel appelle `Range.Select` indépendamment du réglage de surbrillance. Les tests Clair vérifient dans Excel l'activation de la feuille du résultat courant avec Ctrl+Maj+Bas, l'union disjointe sur cette feuille, le repli d'un en-tête sur la cellule active et l'isolement d'un autre classeur actif. Les feuilles masquées restent masquées. Les tests appellent les gestionnaires du volet et ne mesurent pas le focus dans la fenêtre Office.

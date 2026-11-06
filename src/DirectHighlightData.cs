@@ -13,10 +13,10 @@ namespace FormulaExplorer
 
     public sealed class DirectHighlightRestoreResult
     {
-        public int SavedCount { get; internal set; }
-        public int RestoredCount { get; internal set; }
-        public int RemainingCount { get; internal set; }
-        public int ExcludedCount { get; internal set; }
+        public long SavedCount { get; internal set; }
+        public long RestoredCount { get; internal set; }
+        public long RemainingCount { get; internal set; }
+        public long ExcludedCount { get; internal set; }
         public ReadOnlyCollection<string> Errors { get; internal set; }
         internal DirectHighlightRestoreResult() { Errors = new List<string>().AsReadOnly(); }
     }
@@ -33,7 +33,7 @@ namespace FormulaExplorer
         public DirectColorProperty Property { get; private set; }
         public DirectColorValue BaseColor { get; private set; }
         public DirectColorValue TopColor { get; private set; }
-        public int CellCount { get { return checked(RowCount * ColumnCount); } }
+        public long CellCount { get { return (long)RowCount * ColumnCount; } }
         public DirectHighlightRecord(string sheet, int firstRow, int firstColumn, int rowCount, int columnCount,
             DirectColorProperty property, DirectColorValue baseColor, DirectColorValue topColor)
         {
@@ -41,10 +41,11 @@ namespace FormulaExplorer
                 throw new ArgumentException("Nom de feuille enregistré invalide.", "sheet");
             XmlConvert.VerifyXmlChars(sheet);
             if (firstRow < 1 || firstColumn < 1 || rowCount < 1 || columnCount < 1 ||
-                (long)firstRow + rowCount - 1 > Coordinates.MaxRow || (long)firstColumn + columnCount - 1 > Coordinates.MaxColumn ||
-                (long)rowCount * columnCount > DirectHighlightDocument.MaximumCells)
+                (long)firstRow + rowCount - 1 > Coordinates.MaxRow || (long)firstColumn + columnCount - 1 > Coordinates.MaxColumn)
                 throw new ArgumentOutOfRangeException("firstRow", "Rectangle de couleurs enregistré invalide.");
             DirectColorLayers.CheckProperty(property);
+            if (property == DirectColorProperty.Font && (long)rowCount * columnCount > DirectHighlightDocument.MaximumFontCells)
+                throw new ArgumentOutOfRangeException("rowCount", "Le bloc dépasse la limite de cellules de police enregistrées.");
             if (baseColor == null || topColor == null) throw new ArgumentNullException(baseColor == null ? "baseColor" : "topColor");
             if (baseColor.Kind == DirectColorKind.Transparent || topColor.Kind == DirectColorKind.Transparent || baseColor.Equals(topColor))
                 throw new ArgumentException("Une différence de couleurs opaque est nécessaire.");
@@ -58,30 +59,76 @@ namespace FormulaExplorer
         // This identifier never requests a network resource and never targets
         // Arixcel's or another add-in's CustomXMLParts.
         public const string Namespace = "https://clair-excel.org/schemas/direct-colors/v1";
-        public const int MaximumCells = 500000;
+        public const int MaximumRecords = 500000;
+        // Saved fonts are still restored one cell at a time.
+        public const int MaximumFontCells = 500000;
         public const int MaximumXmlCharacters = 128 * 1024 * 1024;
         public ReadOnlyCollection<DirectHighlightRecord> Records { get; private set; }
         public int Count { get { return Records.Count; } }
-        public int CellCount { get; private set; }
+        public long CellCount { get; private set; }
         public DirectHighlightDocument(IEnumerable<DirectHighlightRecord> records)
         {
             if (records == null) throw new ArgumentNullException("records");
-            var copy = new List<DirectHighlightRecord>(); var occupied = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
-            long total = 0;
+            var copy = new List<DirectHighlightRecord>();
+            long total = 0, fontCells = 0;
             foreach (DirectHighlightRecord record in records)
             {
                 if (record == null) throw new ArgumentException("Bloc de couleurs vide.", "records");
-                total += record.CellCount;
-                if (total > MaximumCells) throw new ArgumentException("Limite de 500 000 propriétés de couleurs enregistrées dépassée.", "records");
-                string key = ((int)record.Property).ToString(CultureInfo.InvariantCulture) + ":" + record.Sheet;
-                HashSet<long> cells;
-                if (!occupied.TryGetValue(key, out cells)) { cells = new HashSet<long>(); occupied.Add(key, cells); }
-                for (int row = record.FirstRow; row < record.FirstRow + record.RowCount; row++)
-                    for (int column = record.FirstColumn; column < record.FirstColumn + record.ColumnCount; column++)
-                        if (!cells.Add(((long)row << 15) | (uint)column)) throw new ArgumentException("Blocs de couleurs enregistrés superposés.", "records");
+                if (copy.Count == MaximumRecords) throw new ArgumentException("Trop de blocs de couleurs enregistrés.", "records");
+                long cells = record.CellCount;
+                if (record.Property == DirectColorProperty.Font) fontCells += cells;
+                if (fontCells > MaximumFontCells)
+                    throw new ArgumentException("Trop de cellules de police enregistrées.", "records");
+                total += cells;
                 copy.Add(record);
             }
-            Records = copy.AsReadOnly(); CellCount = (int)total;
+            CheckOverlaps(copy);
+            Records = copy.AsReadOnly(); CellCount = total;
+        }
+        struct RowBoundary
+        {
+            internal readonly int Row, FirstColumn, LastColumn;
+            internal RowBoundary(int row, int firstColumn, int lastColumn)
+            { Row = row; FirstColumn = firstColumn; LastColumn = lastColumn; }
+        }
+        static void CheckOverlaps(List<DirectHighlightRecord> records)
+        {
+            if (records.Count < 2) return;
+            // Sweep row boundaries. An active interval overlaps the new one iff
+            // it starts at/before the new end and ends at/after the new start.
+            // A binary tree of maximum ends gives that prefix query in O(log columns).
+            // Excel's fixed column count is a power of two, so each leaf is a column.
+            const int leaves = Coordinates.MaxColumn;
+            var maxEnds = new int[2 * leaves];
+            foreach (var sheet in records.GroupBy(record => record.Sheet, StringComparer.OrdinalIgnoreCase))
+                foreach (var property in sheet.GroupBy(record => record.Property))
+                {
+                    int count = property.Count();
+                    if (count < 2) continue;
+                    var boundaries = new List<RowBoundary>(2 * count);
+                    foreach (DirectHighlightRecord record in property)
+                    {
+                        boundaries.Add(new RowBoundary(record.FirstRow, record.FirstColumn, record.FirstColumn + record.ColumnCount - 1));
+                        boundaries.Add(new RowBoundary(record.FirstRow + record.RowCount, record.FirstColumn, 0));
+                    }
+                    boundaries.Sort((left, right) => left.Row != right.Row ? left.Row.CompareTo(right.Row) : left.LastColumn.CompareTo(right.LastColumn));
+                    foreach (RowBoundary boundary in boundaries)
+                    {
+                        // A zero end removes the interval before new starts at this row.
+                        if (boundary.LastColumn != 0)
+                        {
+                            int prefix = leaves + boundary.LastColumn - 1;
+                            int farthest = maxEnds[prefix];
+                            for (; prefix > 1; prefix /= 2)
+                                if ((prefix & 1) != 0) farthest = Math.Max(farthest, maxEnds[prefix - 1]);
+                            if (farthest >= boundary.FirstColumn) throw new ArgumentException("Blocs de couleurs enregistrés superposés.", "records");
+                        }
+                        int start = leaves + boundary.FirstColumn - 1;
+                        maxEnds[start] = boundary.LastColumn;
+                        for (int parent = start / 2; parent > 0; parent /= 2)
+                            maxEnds[parent] = Math.Max(maxEnds[2 * parent], maxEnds[2 * parent + 1]);
+                    }
+                }
         }
         public static DirectHighlightDocument Merge(IEnumerable<DirectHighlightDocument> documents)
         {
@@ -160,21 +207,20 @@ namespace FormulaExplorer
                     if (node.NodeType != XmlNodeType.Element && node.NodeType != XmlNodeType.XmlDeclaration) throw new FormatException("Contenu XML supplémentaire interdit.");
                 XmlElement root = Element(document.DocumentElement, "directHighlights", "version");
                 if (root.GetAttribute("version") != "1") throw new FormatException("Version des couleurs enregistrées inconnue.");
-                var records = new List<DirectHighlightRecord>(); var sheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase); long cells = 0;
+                var records = new List<DirectHighlightRecord>(); var sheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (XmlNode sheetNode in root.ChildNodes)
                 {
                     XmlElement sheet = Element(sheetNode, "sheet", "name");
                     if (!sheets.Add(sheet.GetAttribute("name")) || !sheet.HasChildNodes) throw new FormatException("Feuille de couleurs répétée ou vide.");
                     foreach (XmlNode blockNode in sheet.ChildNodes)
                     {
+                        if (records.Count == MaximumRecords) throw new FormatException("Trop de blocs de couleurs enregistrés.");
                         XmlElement block = Element(blockNode, "block", "property", "row", "column", "rows", "columns", "base", "top");
                         if (block.HasChildNodes) throw new FormatException("Contenu de bloc de couleurs interdit.");
                         string property = block.GetAttribute("property");
                         if (property != "fill" && property != "font") throw new FormatException("Propriété de couleurs inconnue.");
                         var record = new DirectHighlightRecord(sheet.GetAttribute("name"), Integer(block, "row"), Integer(block, "column"), Integer(block, "rows"), Integer(block, "columns"),
                             property == "fill" ? DirectColorProperty.Fill : DirectColorProperty.Font, ParseColor(block.GetAttribute("base")), ParseColor(block.GetAttribute("top")));
-                        cells += record.CellCount;
-                        if (cells > MaximumCells) throw new FormatException("Limite de couleurs enregistrées dépassée.");
                         records.Add(record);
                     }
                 }

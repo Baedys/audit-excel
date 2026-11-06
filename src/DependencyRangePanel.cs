@@ -26,6 +26,7 @@ namespace FormulaExplorer
             internal Cell Cell;
             internal TraceLocation Source;
             internal ExplorerSelection Selection;
+            internal string HighlightOwner;
             internal bool Reverse;
         }
 
@@ -39,10 +40,31 @@ namespace FormulaExplorer
         readonly List<TreeNode> selectedRelations = new List<TreeNode>();
         TreeNode relationAnchor;
         readonly CheckBox groupTraceSheets = new CheckBox { Text = "Grouper par feuille", AutoSize = true, Visible = false };
+        readonly CheckBox highlightTraceCells = new CheckBox { Text = "Surligner dans Excel", AutoSize = true, Checked = true, Enabled = false };
+        readonly Dictionary<string, ExcelBridge> traceHighlightConnections = new Dictionary<string, ExcelBridge>();
+        static readonly int traceSourceColor = ColorTranslator.ToOle(Color.FromArgb(255, 153, 255));
+        static readonly int tracePrecedentsColor = ColorTranslator.ToOle(Color.FromArgb(102, 204, 255));
+        static readonly int traceDependentsColor = ColorTranslator.ToOle(Color.FromArgb(153, 255, 204));
+        string traceHighlightOwner;
 
         void ConfigureRangeTrace(FlowLayoutPanel direction)
         {
+            direction.Controls.Add(highlightTraceCells);
             direction.Controls.Add(groupTraceSheets);
+            highlightTraceCells.CheckedChanged += delegate
+            {
+                if (highlightTraceCells.Checked) RefreshTraceHighlights();
+                else ClearTraceHighlightOwners();
+            };
+            tabs.SelectedIndexChanged += delegate
+            {
+                if (!updatingExplorer) RefreshTraceHighlights();
+            };
+            Disposed += delegate
+            {
+                ClearTraceHighlightOwners();
+                UntrackDirectConnections();
+            };
             groupTraceSheets.CheckedChanged += delegate
             {
                 if (traceSource != null) Safe(delegate { ShowTreeSelection(CaptureExplorerSelection()); });
@@ -125,12 +147,63 @@ namespace FormulaExplorer
                 relationAnchor = node;
             }
             RefreshRelationSelection();
+            RefreshTraceHighlights();
         }
 
         void RefreshRelationSelection()
         {
             tree.Invalidate();
             ShowRelationDetails();
+        }
+
+        void RefreshTraceHighlights()
+        {
+            if (!highlightTraceCells.Enabled || !highlightTraceCells.Checked || tabs.SelectedIndex != 0 ||
+                bridge == null || book == null || root == null || traceHighlightOwner == null) return;
+            try
+            {
+                TrackDirectConnection(bridge);
+                traceHighlightConnections[traceHighlightOwner] = bridge;
+                bridge.ReplaceTraceHighlights(book, traceHighlightOwner, TraceHighlights());
+            }
+            catch (Exception error) { status.Text = "Surbrillance Excel indisponible · " + error.Message; }
+        }
+
+        IEnumerable<TraceHighlightRange> TraceHighlights()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            IList<Reference> sources = traceSource == null ? new[] { Reference.Parse(root.Sheet, root.Address) } : traceSource.Ranges;
+            var uniqueSources = sources.Where(range => seen.Add(Book.Key(range.Sheet, range.Address))).ToList();
+            int resultColor = reverse ? traceDependentsColor : tracePrecedentsColor;
+            foreach (TraceLocation location in selectedRelations.Select(RelationLocation).Where(location => location != null))
+                foreach (Reference range in location.Ranges)
+                    if (seen.Add(Book.Key(range.Sheet, range.Address)))
+                        yield return new TraceHighlightRange { Range = range, Color = resultColor };
+            foreach (Reference range in uniqueSources)
+                yield return new TraceHighlightRange { Range = range, Color = traceSourceColor };
+        }
+
+        void RemoveTraceHighlightOwner(string owner, ICollection<Exception> failures = null)
+        {
+            ExcelBridge connection;
+            if (owner == null || !traceHighlightConnections.TryGetValue(owner, out connection)) return;
+            try { connection.DetachDirectHighlightOwner(owner, false); }
+            catch (Exception error)
+            {
+                var disconnected = error as COMException;
+                if (disconnected == null || ((uint)disconnected.ErrorCode != 0x800706BA && (uint)disconnected.ErrorCode != 0x80010108))
+                {
+                    if (failures != null) failures.Add(error);
+                    else if (!IsDisposed && !Disposing) status.Text = "Surbrillance Excel non retirée · " + error.Message;
+                    return;
+                }
+            }
+            traceHighlightConnections.Remove(owner);
+        }
+
+        void ClearTraceHighlightOwners(ICollection<Exception> failures = null)
+        {
+            foreach (string owner in traceHighlightConnections.Keys.ToArray()) RemoveTraceHighlightOwner(owner, failures);
         }
 
         void DrawRelationNode(object sender, DrawTreeNodeEventArgs e)

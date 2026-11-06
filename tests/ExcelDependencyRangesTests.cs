@@ -64,6 +64,7 @@ public static class ExcelDependencyRangesTests
                 Equal(Children(tree.Nodes[0]), "'North'!B2:B4|'South'!B2:B4", "blank North!B3 remains in its precedent range");
                 Equal(body.RowStyles[1].Height, 65f, "range tree gets most of the docked pane");
                 Equal((string)keep(app.Selection).Address, "$B$2:$B$4", "analysis leaves Excel selection in place");
+                Equal((int)keep(keep(audit.Range["B3"]).Interior).Color, 0xFF99FF, "trace source is automatically rose");
 
                 var group = Field<CheckBox>(form, "groupTraceSheets");
                 Action<TreeNode, Keys> select = (node, keys) => Invoke(form, "ApplyRelationSelection", node, keys);
@@ -83,6 +84,8 @@ public static class ExcelDependencyRangesTests
                 Equal(selectedRelations.Count, 2, "Shift takes precedence over Ctrl");
                 Equal((string)keep(app.ActiveSheet).Name, "South", "keyboard follows the current result in Excel");
                 Equal((string)keep(app.Selection).Address, "$B$2:$B$4", "keyboard selects only ranges on its current worksheet");
+                Equal((int)keep(keep(north.Range["B3"]).Interior).Color, 0xFFCC66, "selected precedents include empty cells");
+                Equal((int)keep(keep(south.Range["B3"]).Interior).Color, 0xFFCC66, "selected precedents color both worksheets");
                 group.Checked = true;
                 Equal(selectedRelations.Count, 2, "grouping keeps both selected ranges");
                 Equal(tree.SelectedNode.Text, "'South'!B2:B4", "grouping keeps the current range");
@@ -97,6 +100,7 @@ public static class ExcelDependencyRangesTests
                 var sourceGroup = tree.Nodes[0].Nodes[0]; var resultGroup = tree.Nodes[0].Nodes[1];
                 Equal(sourceGroup.IsExpanded, false, "multi-source category initially collapsed");
                 Equal(resultGroup.IsExpanded, true, "result category initially expanded");
+                Equal((int)keep(keep(north.Range["B3"]).Interior).Color, 0xFF99FF, "child source covers parent precedent color");
                 Equal(Children(sourceGroup), "North · 1 plage|South · 1 plage", "source sheet groups follow workbook order instead of click order");
                 Equal(Children(resultGroup), "'Audit'!B2|'Audit'!D2:D3|'Audit'!E2:E3|'Audit'!H2|'Audit'!B3|'Audit'!B4|'Audit'!D4|'Audit'!H4|'Audit'!D5|'Audit'!D6",
                     "follow-up shows both ranges' dependents directly on the previous launch worksheet");
@@ -104,6 +108,11 @@ public static class ExcelDependencyRangesTests
                 Equal(Children(tree.Nodes[0].Nodes[0]), "'North'!B2:B4|'South'!B2:B4", "turning off grouping flattens source sheet headings");
                 group.Checked = true;
                 Invoke(form, "Back");
+                Equal((int)keep(keep(north.Range["B3"]).Interior).Color, 0xFFCC66, "back removes only the child layer");
+                var highlights = Field<CheckBox>(form, "highlightTraceCells");
+                highlights.Checked = false;
+                Equal((int)keep(keep(north.Range["B3"]).Interior).ColorIndex, -4142, "turning off trace colors restores the original fill");
+                highlights.Checked = true;
                 Equal(String.Join("|", selectedRelations.Select(node => node.Text)), "'South'!B2:B4|'North'!B2:B4", "back restores both selected ranges");
                 Equal(tree.SelectedNode.Text, "'North'!B2:B4", "back restores the caret");
                 TreeNode southGroup = tree.Nodes[0].Nodes[1];

@@ -10,6 +10,7 @@ namespace FormulaExplorer
     {
         object range, worksheet;
         readonly long sheetIdentity;
+        readonly bool fillBlock;
         bool disposed;
         sealed class ColorState
         {
@@ -26,12 +27,14 @@ namespace FormulaExplorer
             internal ColorState Color, PatternColor;
             internal int Pattern;
         }
-        public ExcelDirectColorCell(object range, object worksheet)
+        public ExcelDirectColorCell(object range, object worksheet) : this(range, worksheet, false) { }
+        internal ExcelDirectColorCell(object range, object worksheet, bool fillBlock)
         {
             if (range == null) throw new ArgumentNullException("range");
             if (worksheet == null) throw new ArgumentNullException("worksheet");
             sheetIdentity = Identity(worksheet);
             this.range = range; this.worksheet = worksheet;
+            this.fillBlock = fillBlock;
         }
         void Alive() { if (disposed) throw new ObjectDisposedException("ExcelDirectColorCell"); }
         static long Identity(object value)
@@ -47,12 +50,27 @@ namespace FormulaExplorer
             get { Alive(); return (string)((dynamic)range).Address[false, false, 1, false]; }
         }
         public bool IsSingleCell { get { Alive(); return Convert.ToDouble(((dynamic)range).CountLarge) == 1.0; } }
+        internal bool IsFillBlock { get { return fillBlock; } }
+        internal bool IndependentFill { get { Alive(); return Object.Equals(((dynamic)range).MergeCells, false); } }
+        internal Reference CurrentBounds { get { return Reference.Parse(CurrentSheetName, CurrentAddress); } }
+        internal ExcelDirectColorCell OpenFill(Reference bounds)
+        {
+            Alive();
+            object area = null, sheet = null;
+            try
+            {
+                area = ((dynamic)worksheet).Range[bounds.Address]; sheet = ((dynamic)area).Worksheet;
+                var port = new ExcelDirectColorCell(area, sheet, !bounds.Single);
+                area = sheet = null;
+                return port;
+            }
+            finally { Release(sheet); Release(area); }
+        }
         public void ValidateWrite()
         {
             Alive();
-            if (!IsSingleCell) throw new InvalidOperationException("Les couleurs directes exigent une seule cellule.");
-            // Merged targets alias several physical cells; a one-cell snapshot cannot restore them.
-            if (Convert.ToBoolean(((dynamic)range).MergeCells)) throw new InvalidOperationException("Les cellules fusionnées ne sont pas prises en charge pour les couleurs directes.");
+            if (!fillBlock && !IsSingleCell) throw new InvalidOperationException("Les couleurs directes exigent une seule cellule.");
+            if (!IndependentFill) throw new InvalidOperationException("Les cellules fusionnées ne sont pas prises en charge pour les couleurs directes.");
             if (Convert.ToBoolean(((dynamic)worksheet).ProtectContents)) throw new InvalidOperationException("La feuille est protégée.");
             object owner = null;
             try
@@ -70,6 +88,8 @@ namespace FormulaExplorer
         object Format(DirectColorProperty property)
         {
             Alive(); Property(property);
+            if (fillBlock && property == DirectColorProperty.Font && !IsSingleCell)
+                throw new InvalidOperationException("La police de couleurs directes exige une seule cellule.");
             return property == DirectColorProperty.Fill ? ((dynamic)range).Interior : ((dynamic)range).Font;
         }
         static int ScalarInt(object value)
@@ -214,6 +234,11 @@ namespace FormulaExplorer
             var after = (FormatState)second;
             return before.Color.Same(after.Color) && (before.Property == DirectColorProperty.Font ||
                 (before.Pattern == after.Pattern && before.PatternColor.Same(after.PatternColor)));
+        }
+        internal object RebindFormat(object snapshot)
+        {
+            var source = (FormatState)snapshot;
+            return new FormatState { Owner = this, Property = source.Property, Pattern = source.Pattern, Color = source.Color, PatternColor = source.PatternColor };
         }
         static void RestoreState(object format, ColorState state, bool pattern)
         {

@@ -245,7 +245,7 @@ public static class MapSelectionPanelTests
             Equal(restoredCf.Errors.Count, 0, "native-only CF restoration has no errors");
             DirectHighlightRestoreResult restored = bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Restore);
             Equal(restored.RestoredCount > 0, true, "native-only unload restores saved bases");
-            Equal(restored.RemainingCount, 0, "native-only unload leaves no pending restoration");
+            Equal(restored.RemainingCount, 0L, "native-only unload leaves no pending restoration");
             Equal(Fill(reopenedCell), Ole(BaseB), "native-only restoration recovers original direct fill");
             Equal((string)reopenedCell.Formula, "=B2*B3", "native-only restoration preserves formula");
             Equal((int)Keep(reopenedCell.FormatConditions).Count, 1, "native-only restoration preserves user CF");

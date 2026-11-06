@@ -285,6 +285,8 @@ namespace FormulaExplorer
             if (e.Cancel) return;
             try
             {
+                var traceFailures = new List<Exception>();
+                ClearTraceHighlightOwners(traceFailures);
                 var failures = new List<Exception>();
                 foreach (ExcelBridge connection in flowConnections)
                     try
@@ -304,6 +306,7 @@ namespace FormulaExplorer
                     catch (Exception error) { failures.Add(error); }
                 if (failures.Count != 0) throw new AggregateException("Retrait incomplet dans une connexion Excel.", failures);
                 CleanupMapDirectColors(true);
+                if (traceFailures.Count != 0) throw new AggregateException("Retrait incomplet des surbrillances de trace.", traceFailures);
                 UntrackDirectConnections();
             }
             catch (Exception ex)
@@ -311,7 +314,7 @@ namespace FormulaExplorer
                 if (hostIsClosing || e.CloseReason == CloseReason.WindowsShutDown || e.CloseReason == CloseReason.ApplicationExitCall)
                 { UntrackDirectConnections(); return; }
                 e.Cancel = true;
-                MessageBox.Show(this, "Couleurs de flux non retirées : " + ex.Message + "\nRetirez la protection ou cochez « Conserver les couleurs à la fermeture » pour fermer en les gardant.", "Clair", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "Couleurs Excel non restaurées. " + ex.Message + "\nRetirez la protection et réessayez. Pour les flux, vous pouvez aussi cocher « Conserver les couleurs à la fermeture ».", "Clair", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
     }

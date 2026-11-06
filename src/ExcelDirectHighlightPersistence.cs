@@ -59,12 +59,12 @@ namespace FormulaExplorer
         }
         public DirectHighlightRestoreResult RestoreDirectHighlightData(Book book, DirectHighlightRestoreChoice choice)
         { return WithDirectWorkbook(book, delegate(object workbook) { return RestoreDirectHighlightData(workbook, choice); }); }
-        public int PostponedDirectHighlightCount(Book book)
+        public long PostponedDirectHighlightCount(Book book)
         { return WithDirectWorkbook(book, PostponedDirectHighlightCount); }
-        public int PostponedDirectHighlightCount(object workbook)
+        public long PostponedDirectHighlightCount(object workbook)
         {
             DirectSession session = DirectColors; session.Enter();
-            try { CheckDirectWorkbook(workbook); session.Reconcile(false); return session.RestoredTargets(workbook).Count; }
+            try { CheckDirectWorkbook(workbook); session.Reconcile(false); return session.CountProperties(session.RestoredTargets(workbook)); }
             finally { session.Exit(); }
         }
         public DirectHighlightRestoreResult RestorePostponedDirectHighlightData(Book book, DirectHighlightRestoreChoice choice = DirectHighlightRestoreChoice.Restore)
@@ -336,25 +336,27 @@ namespace FormulaExplorer
             public DirectHighlightDocument Project(object workbook)
             {
                 Dictionary<long, string> sheets = WorkbookSheets(workbook); DirectColorLayers snapshot = Transaction.Snapshot;
-                var singles = new List<DirectHighlightRecord>();
+                var blocks = new List<DirectHighlightRecord>();
                 foreach (DirectColorTarget target in snapshot.Targets)
                 {
                     DirectReference reference = references[target.CellKey]; string sheet;
                     if (!reference.Valid || !sheets.TryGetValue(reference.Port.SheetIdentity, out sheet)) continue;
                     DirectColorValue original = snapshot.GetBase(target.CellKey, target.Property), visible = snapshot.GetVisible(target.CellKey, target.Property);
                     if (original.Equals(visible)) continue;
-                    int row, column;
-                    if (!Coordinates.TryCell(reference.Port.CurrentAddress, out row, out column)) throw new InvalidOperationException("Adresse actuelle de couleur invalide.");
-                    singles.Add(new DirectHighlightRecord(sheet, row, column, 1, 1, target.Property, original, visible));
+                    Reference bounds = Reference.Parse(sheet, reference.Port.CurrentAddress);
+                    if (bounds == null) throw new InvalidOperationException("Adresse actuelle de couleur invalide.");
+                    blocks.Add(new DirectHighlightRecord(sheet, bounds.FirstRow, bounds.FirstColumn,
+                        bounds.LastRow - bounds.FirstRow + 1, bounds.LastColumn - bounds.FirstColumn + 1, target.Property, original, visible));
                 }
                 // Horizontal runs keep normal large ranges compact. Every
                 // saved coordinate came from its retained Range at save time.
                 var packed = new List<DirectHighlightRecord>(); DirectHighlightRecord run = null;
-                foreach (DirectHighlightRecord item in singles.OrderBy(r => r.Sheet, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Property).ThenBy(r => r.FirstRow).ThenBy(r => r.FirstColumn))
+                foreach (DirectHighlightRecord item in blocks.OrderBy(r => r.Sheet, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Property).ThenBy(r => r.FirstRow).ThenBy(r => r.FirstColumn))
                 {
                     if (run != null && String.Equals(run.Sheet, item.Sheet, StringComparison.OrdinalIgnoreCase) && run.Property == item.Property &&
-                        run.FirstRow == item.FirstRow && run.FirstColumn + run.ColumnCount == item.FirstColumn && run.BaseColor.Equals(item.BaseColor) && run.TopColor.Equals(item.TopColor))
-                        run = new DirectHighlightRecord(run.Sheet, run.FirstRow, run.FirstColumn, 1, run.ColumnCount + 1, run.Property, run.BaseColor, run.TopColor);
+                        run.FirstRow == item.FirstRow && run.RowCount == item.RowCount && run.FirstColumn + run.ColumnCount == item.FirstColumn &&
+                        run.BaseColor.Equals(item.BaseColor) && run.TopColor.Equals(item.TopColor))
+                        run = new DirectHighlightRecord(run.Sheet, run.FirstRow, run.FirstColumn, run.RowCount, run.ColumnCount + item.ColumnCount, run.Property, run.BaseColor, run.TopColor);
                     else { if (run != null) packed.Add(run); run = item; }
                 }
                 if (run != null) packed.Add(run);
@@ -375,32 +377,30 @@ namespace FormulaExplorer
                         try
                         {
                             sheet = ((dynamic)sheets).Item[group.Key];
-                            foreach (DirectHighlightRecord record in group)
-                                for (int row = record.FirstRow; row < record.FirstRow + record.RowCount; row++)
-                                    for (int column = record.FirstColumn; column < record.FirstColumn + record.ColumnCount; column++)
-                                    {
-                                        object range = null, retainedSheet = null;
-                                        try
-                                        {
-                                            range = ((dynamic)sheet).Range[Coordinates.Address(row, column)]; retainedSheet = ((dynamic)range).Worksheet;
-                                            var port = new ExcelDirectColorCell(range, retainedSheet); range = retainedSheet = null;
-                                            DirectReference reference = Resolve(port, index);
-                                            DirectColorValue current;
-                                            // Mixed manual font colors cannot match a saved
-                                            // uniform top. Exclude only this property, just
-                                            // as for any other external color edit.
-                                            if (!reference.Port.TryRead(record.Property, out current)) continue;
-                                            Lease(reference);
-                                            saved.Add(new DirectColorAdoption(new DirectColorTarget(reference.Key, record.Property), record.BaseColor, record.TopColor, layer, owner));
-                                        }
-                                        finally { Release(retainedSheet); Release(range); }
-                                    }
+                            // Point references for fonts establish boundaries before
+                            // any fill tile is adopted on this sheet.
+                            foreach (DirectHighlightRecord record in group.OrderByDescending(item => item.Property))
+                            {
+                                Reference bounds = Reference.FromBounds(group.Key, record.FirstRow, record.FirstColumn,
+                                    record.FirstRow + record.RowCount - 1, record.FirstColumn + record.ColumnCount - 1);
+                                IEnumerable<DirectReference> targets = record.Property == DirectColorProperty.Fill ?
+                                    FillTargets(sheet, bounds, index, true) : FontTargets(sheet, bounds, index);
+                                foreach (DirectReference reference in targets)
+                                {
+                                    var target = new DirectColorTarget(reference.Key, record.Property);
+                                    DirectColorValue current;
+                                    if (Transaction.HasTarget(target) || !reference.Port.TryRead(record.Property, out current) ||
+                                        !current.Equals(record.TopColor)) continue;
+                                    Lease(reference);
+                                    saved.Add(new DirectColorAdoption(target, record.BaseColor, record.TopColor, layer, owner));
+                                }
+                            }
                         }
                         finally { Release(sheet); }
                     }
                 }
                 finally { Release(sheets); }
-                var accepted = Transaction.Adopt(saved); result.ExcludedCount = document.CellCount - accepted.Count;
+                var accepted = Transaction.Adopt(saved); result.ExcludedCount = document.CellCount - CountProperties(accepted);
                 if (accepted.Count != 0)
                 {
                     Register(owner, "restored", new Book { Name = (string)((dynamic)workbook).Name, FullName = (string)((dynamic)workbook).FullName }); owners[owner].Detached = true;
@@ -411,9 +411,25 @@ namespace FormulaExplorer
                         result.Errors = errors.Distinct(StringComparer.Ordinal).ToList().AsReadOnly();
                     }
                     DirectColorLayers remaining = Transaction.Snapshot;
-                    result.RemainingCount = remaining.Targets.Count(target => remaining.GetLayers(target.CellKey, target.Property).Any(item => item.OwnerId == owner));
+                    result.RemainingCount = CountProperties(remaining.Targets.Where(target => remaining.GetLayers(target.CellKey, target.Property).Any(item => item.OwnerId == owner)));
                     if (!remaining.HasOwner(owner)) RemoveDetached(new[] { owner });
                 }
+            }
+            IEnumerable<DirectReference> FontTargets(object sheet, Reference bounds, Dictionary<string, DirectReference> index)
+            {
+                for (int row = bounds.FirstRow; row <= bounds.LastRow; row++)
+                    for (int column = bounds.FirstColumn; column <= bounds.LastColumn; column++)
+                        yield return Resolve(OpenFill(sheet, Reference.FromBounds(bounds.Sheet, row, column, row, column)), index);
+            }
+            public long CountProperties(IEnumerable<DirectColorTarget> targets)
+            {
+                return targets.Sum(target =>
+                {
+                    ExcelDirectColorCell port = references[target.CellKey].Port;
+                    if (!port.IsFillBlock) return 1L;
+                    Reference bounds = port.CurrentBounds;
+                    return (long)(bounds.LastRow - bounds.FirstRow + 1) * (bounds.LastColumn - bounds.FirstColumn + 1);
+                });
             }
             public List<DirectColorTarget> RestoredTargets(object workbook)
             {
@@ -429,7 +445,7 @@ namespace FormulaExplorer
                 var layers = targets.SelectMany(target => snapshot.GetLayers(target.CellKey, target.Property).Where(layer => ownerSet.Contains(layer.OwnerId))
                     .Select(layer => new { Target = target, Layer = layer.LayerId, Owner = layer.OwnerId })).ToList();
                 var selectedOwners = layers.Select(item => item.Owner).Distinct(StringComparer.Ordinal).ToList();
-                var result = new DirectHighlightRestoreResult { SavedCount = targets.Count };
+                var result = new DirectHighlightRestoreResult { SavedCount = CountProperties(targets) };
                 if (choice == DirectHighlightRestoreChoice.KeepPermanent)
                     Transaction.Run(new DirectColorTarget[0], delegate(DirectColorLayers next) { next.MakePermanentOwners(selectedOwners, targets); });
                 else if (choice == DirectHighlightRestoreChoice.Restore)
@@ -439,7 +455,7 @@ namespace FormulaExplorer
                         RestoreEligible(group.Key, group.Select(item => item.Target).Distinct().ToList(), result, errors);
                     result.Errors = errors.Distinct(StringComparer.Ordinal).ToList().AsReadOnly();
                 }
-                result.RemainingCount = RestoredTargets(workbook).Count;
+                result.RemainingCount = CountProperties(RestoredTargets(workbook));
                 DirectColorLayers remaining = Transaction.Snapshot;
                 RemoveDetached(selectedOwners.Where(owner => !remaining.HasOwner(owner)).ToList());
                 return result;
@@ -466,8 +482,9 @@ namespace FormulaExplorer
                 if (targets.Count == 0 || Transaction.PendingRepair.Count != 0) return;
                 try
                 {
+                    long restored = CountProperties(targets);
                     Transaction.Run(new DirectColorTarget[0], delegate(DirectColorLayers next) { next.Remove(layer, targets); });
-                    result.RestoredCount += targets.Count;
+                    result.RestoredCount += restored;
                 }
                 catch (Exception error)
                 {

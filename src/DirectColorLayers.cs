@@ -148,6 +148,18 @@ namespace FormulaExplorer
         }
         internal object LastWrittenFormat(DirectColorTarget target) { return GetStack(target).LastWrittenFormat; }
         internal void RecordWrittenFormat(DirectColorTarget target, object format) { GetStack(target).LastWrittenFormat = format; }
+        internal void PartitionFill(DirectColorTarget target, IEnumerable<DirectColorTarget> pieces, Func<string, object, object> rebind)
+        {
+            Stack source = GetStack(target);
+            foreach (DirectColorTarget piece in pieces)
+            {
+                Stack copy = source.Copy();
+                if (copy.BaseFormat != null) copy.BaseFormat = rebind(piece.CellKey, copy.BaseFormat);
+                if (copy.LastWrittenFormat != null) copy.LastWrittenFormat = rebind(piece.CellKey, copy.LastWrittenFormat);
+                stacks.Add(piece, copy);
+            }
+            stacks.Remove(target);
+        }
         public DirectColorValue GetVisible(string cellKey, DirectColorProperty property)
         {
             Stack stack = GetStack(new DirectColorTarget(cellKey, property));

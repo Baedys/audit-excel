@@ -58,6 +58,7 @@ namespace FormulaExplorer
         readonly List<DirectColorRepair> abandoned = new List<DirectColorRepair>();
         bool running, disposed;
         public DirectColorLayers Snapshot { get { return state.Clone(); } }
+        internal bool HasTarget(DirectColorTarget target) { return state.HasTarget(target); }
         public ReadOnlyCollection<DirectColorRepair> PendingRepair { get { return new List<DirectColorRepair>(repairs).AsReadOnly(); } }
         public ReadOnlyCollection<DirectColorRepair> AbandonedRepairHistory { get { return new List<DirectColorRepair>(abandoned).AsReadOnly(); } }
         public ReadOnlyCollection<string> CellKeys { get { return cells.Keys.ToList().AsReadOnly(); } }
@@ -70,6 +71,21 @@ namespace FormulaExplorer
             if (cells.ContainsKey(key)) throw new ArgumentException("Cellule déjà attachée.", "key");
             if (cells.Values.Any(value => Object.ReferenceEquals(value, cell))) throw new ArgumentException("Ce port possède déjà une identité de cellule.", "cell");
             cells.Add(key, cell);
+        }
+        // Re-key an unchanged physical fill. No Excel setter or new base read:
+        // every disjoint child inherits the same stack and rollback format.
+        internal void PartitionFill(string key, IEnumerable<string> pieces, Func<string, object, object> rebind)
+        {
+            RequireIdle();
+            var previous = new DirectColorTarget(key, DirectColorProperty.Fill);
+            var nextKeys = pieces.Select(piece => new DirectColorTarget(piece, DirectColorProperty.Fill)).ToArray();
+            if (nextKeys.Length < 2 || state.HasBase(key, DirectColorProperty.Font) ||
+                nextKeys.Any(piece => !cells.ContainsKey(piece.CellKey) || state.HasTarget(piece)))
+                throw new InvalidOperationException("Découpe de fond incompatible avec la pile active.");
+            DirectColorLayers next = state.Clone();
+            next.PartitionFill(previous, nextKeys, rebind);
+            state = next;
+            IDirectColorCell old = cells[key]; cells.Remove(key); old.Dispose();
         }
         void RequireIdle()
         {

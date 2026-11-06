@@ -180,7 +180,7 @@ namespace FormulaExplorer
             finally { session.Exit(); }
         }
         static void CheckDirectFamily(string family)
-        { if (family != "flow" && family != "map") throw new ArgumentException("Famille de couleurs invalide.", "family"); }
+        { if (family != "flow" && family != "map" && family != "trace") throw new ArgumentException("Famille de couleurs invalide.", "family"); }
         public void RemoveAllDirectHighlights(string family, bool makePermanent = false)
         { CheckDirectFamily(family); RemoveDirectHighlights(DirectColors.Owners(family), makePermanent); }
         public void DetachDirectHighlightOwner(string ownerId, bool keepColors)
@@ -324,7 +324,10 @@ namespace FormulaExplorer
                 {
                     if (!live.Contains(reference.Port.SheetIdentity)) { dead.Add(reference); continue; }
                     try
-                    { if (!reference.Port.IsSingleCell || reference.Port.CurrentAddress.IndexOf('#') >= 0) dead.Add(reference); }
+                    {
+                        if (reference.Port.IsFillBlock ? reference.Port.CurrentBounds == null :
+                            !reference.Port.IsSingleCell || reference.Port.CurrentAddress.IndexOf('#') >= 0) dead.Add(reference);
+                    }
                     catch (COMException error)
                     { if ((uint)error.ErrorCode == 0x800A01A8 || (uint)error.ErrorCode == 0x800A03EC) dead.Add(reference); else throw; }
                 }
@@ -334,11 +337,15 @@ namespace FormulaExplorer
                 if (Transaction.PendingRepair.Count != 0)
                 { if (allowPendingRepair) return; throw new InvalidOperationException("Réparez d'abord les couleurs incomplètement restaurées."); }
                 DirectColorLayers snapshot = Transaction.Snapshot; var invalid = new List<DirectColorTarget>();
+                Dictionary<string, DirectReference> index = null;
                 foreach (DirectColorTarget target in snapshot.Targets)
                 {
-                    ExcelDirectColorCell cell = references[target.CellKey].Port;
+                    DirectReference reference = references[target.CellKey];
+                    ExcelDirectColorCell cell = reference.Port;
                     object expected = snapshot.LastWrittenFormat(target);
-                    if (expected != null)
+                    if (cell.IsFillBlock && target.Property == DirectColorProperty.Fill)
+                        ReconcileFillBlock(reference, snapshot.GetVisible(target.CellKey, target.Property), expected, invalid, ref index);
+                    else if (expected != null)
                     {
                         object actual;
                         if (!cell.TryReadFormat(target.Property, out actual) || !cell.SameFormat(expected, actual)) invalid.Add(target);
@@ -353,7 +360,11 @@ namespace FormulaExplorer
                 if (invalid.Count != 0) Transaction.Discard(invalid);
             }
             static string IndexKey(ExcelDirectColorCell cell)
-            { return cell.SheetIdentity.ToString("x", CultureInfo.InvariantCulture) + "|" + cell.CurrentAddress.ToUpperInvariant(); }
+            {
+                string address = cell.CurrentAddress;
+                Reference bounds = cell.IsFillBlock ? Reference.Parse("", address) : null;
+                return cell.SheetIdentity.ToString("x", CultureInfo.InvariantCulture) + "|" + (bounds == null ? address.ToUpperInvariant() : bounds.Address);
+            }
             public Dictionary<string, DirectReference> Index()
             {
                 var index = new Dictionary<string, DirectReference>(StringComparer.Ordinal);
@@ -371,7 +382,9 @@ namespace FormulaExplorer
                 {
                     string address = IndexKey(port); DirectReference reference;
                     if (index.TryGetValue(address, out reference)) return reference;
-                    reference = new DirectReference(port); references.Add(reference.Key, reference); index.Add(address, reference); port = null; return reference;
+                    reference = SplitForPoint(port, index);
+                    if (reference != null) return reference;
+                    reference = AddReference(port, address, index); port = null; return reference;
                 }
                 finally { if (port != null) port.Dispose(); }
             }
@@ -381,7 +394,10 @@ namespace FormulaExplorer
                 Transaction.Attach(reference.Key, new DirectLease(this, reference)); reference.HasLease = true;
             }
             public void Prune(DirectReference reference)
-            { if (reference.Owners == 0 && !reference.HasLease) { references.Remove(reference.Key); reference.Port.Dispose(); } }
+            {
+                if (reference.Owners == 0 && !reference.HasLease)
+                { references.Remove(reference.Key); fillBlocks.Remove(reference); reference.Port.Dispose(); }
+            }
             public void ReleaseUnusedLeases()
             {
                 if (Transaction.PendingRepair.Count == 0) Transaction.Run(new DirectColorTarget[0], delegate(DirectColorLayers unchanged) { });

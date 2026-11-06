@@ -36,34 +36,34 @@ public static class ExcelDirectEventTests
             Book snapshot = bridge.Capture(workbook);
             bridge.ApplyDirectHighlights(snapshot, "event-flow", "flow", new[] { new DirectHighlight { Cell = snapshot.Get("Events", "A1"), LayerId = "input", FillColor = 255 } });
             wb.SaveAs(path, 51); Application.DoEvents();
-            Equal(bridge.ReadSavedDirectHighlightData(workbook).CellCount, 1); Equal(prompts, 0);
+            Equal(bridge.ReadSavedDirectHighlightData(workbook).CellCount, 1L); Equal(prompts, 0);
             // Saved XML from this same session must never be imported as a new top
             // layer. A second Save followed by Remove still restores the real base.
-            wb.Save(); Equal(bridge.ReadUnloadedDirectHighlightData(workbook).CellCount, 0);
+            wb.Save(); Equal(bridge.ReadUnloadedDirectHighlightData(workbook).CellCount, 0L);
             bridge.RemoveAllDirectHighlights("flow"); Equal(Convert.ToInt32(Keep(range.Interior).Color), 1193046);
             // Reopen the saved temporary color; actual WorkbookOpen callback asks
             // once. Cancel keeps a restored owner which is reachable immediately.
             wb.Close(false); workbook = Keep(app.Workbooks).Open(path); wb = workbook; Application.DoEvents();
-            Equal(prompts, 1); Equal(bridge.PostponedDirectHighlightCount(workbook), 1);
+            Equal(prompts, 1); Equal(bridge.PostponedDirectHighlightCount(workbook), 1L);
             choice = DialogResult.Yes; bridge.RestoreSavedDirectHighlightColors();
-            Equal(prompts, 2); Equal(bridge.PostponedDirectHighlightCount(workbook), 0);
+            Equal(prompts, 2); Equal(bridge.PostponedDirectHighlightCount(workbook), 0L);
             sheet = Keep(Keep(wb.Worksheets).Item["Events"]); range = Keep(sheet.Range["A1"]);
             Equal(Convert.ToInt32(Keep(range.Interior).Color), 1193046);
             // Refusing permanence must preserve the unadopted metadata on Save.
             wb.Close(false); choice = DialogResult.No; keep = false;
             workbook = Keep(app.Workbooks).Open(path); wb = workbook; Application.DoEvents();
-            Equal(prompts, 3); Equal(bridge.ReadUnloadedDirectHighlightData(workbook).CellCount, 0);
+            Equal(prompts, 3); Equal(bridge.ReadUnloadedDirectHighlightData(workbook).CellCount, 0L);
             snapshot = bridge.Capture(workbook);
             bridge.ApplyDirectHighlights(snapshot, "after-refusal", "flow", new[] { new DirectHighlight { Cell = snapshot.Get("Events", "A1"), LayerId = "new", FillColor = 16711680 } });
-            Equal(bridge.PostponedDirectHighlightCount(workbook), 1);
-            wb.Save(); Equal(bridge.ReadSavedDirectHighlightData(workbook).CellCount, 1);
-            Equal(bridge.PostponedDirectHighlightCount(workbook), 1);
+            Equal(bridge.PostponedDirectHighlightCount(workbook), 1L);
+            wb.Save(); Equal(bridge.ReadSavedDirectHighlightData(workbook).CellCount, 1L);
+            Equal(bridge.PostponedDirectHighlightCount(workbook), 1L);
             bridge.RemoveAllDirectHighlights("flow");
             choice = DialogResult.No; keep = true; bridge.RestoreSavedDirectHighlightColors();
-            Equal(bridge.PostponedDirectHighlightCount(workbook), 0);
+            Equal(bridge.PostponedDirectHighlightCount(workbook), 0L);
             sheet = Keep(Keep(wb.Worksheets).Item["Events"]); range = Keep(sheet.Range["A1"]);
             Equal(Convert.ToInt32(Keep(range.Interior).Color), 255);
-            wb.Save(); Equal(bridge.ReadSavedDirectHighlightData(workbook).CellCount, 0);
+            wb.Save(); Equal(bridge.ReadSavedDirectHighlightData(workbook).CellCount, 0L);
             // Last lease disconnects callbacks; another bridge's lease keeps them.
             first.Dispose(); first = null; Equal(Field(session, "ColorEvents") != null, true);
             second.Dispose(); second = null; Equal(Field(session, "ColorEvents") == null, true);

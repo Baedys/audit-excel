@@ -208,13 +208,20 @@ namespace FormulaExplorer
         void LoadExcel()
         {
             if (bridge == null) bridge = ExcelBridge.Connect();
-            Book captured = bridge.CaptureActive(); Cell current = bridge.ActiveCell(captured);
+            ClearTraceHighlightOwners();
+            Book captured;
+            Cell current;
             TraceLocation selection = null;
-            if (tabs.SelectedIndex == 0)
+            try
             {
-                List<Reference> areas = bridge.ReadSelectionRanges(captured, true);
-                if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
+                captured = bridge.CaptureActive(); current = bridge.ActiveCell(captured);
+                if (tabs.SelectedIndex == 0)
+                {
+                    List<Reference> areas = bridge.ReadSelectionRanges(captured, true);
+                    if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
+                }
             }
+            catch { RefreshTraceHighlights(); throw; }
             SetCapturedBook(captured, current.Sheet, current.Address, selection);
         }
         void SetBook(Book captured, string sheet, string address)
@@ -223,18 +230,20 @@ namespace FormulaExplorer
         void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection)
         {
             DependencyEngine next = new DependencyEngine(captured);
+            ClearTraceHighlightOwners();
             book = captured; engine = next; mapAnalysisOptions = mapPalette.AnalysisOptions;
             mapAnalysis = FormulaMap.Analyze(captured, mapAnalysisOptions); history.Clear();
+            highlightTraceCells.Enabled = bridge != null;
             title.Text = IsDocked ? book.Name : "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
             sheets.Items.Clear(); foreach (string item in book.Sheets.OrderBy(s => s)) sheets.Items.Add(item);
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
             flow.Rows.Clear(); differences.DataSource = null;
-            SetExplorerRoot(book.Get(sheet, address), false, selection, null);
             string[] issues = engine.Warnings.Distinct().ToArray();
+            if (selection == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + issues.Length + " avertissements";
+            SetExplorerRoot(book.Get(sheet, address), false, selection, null);
             warnings.Text = "Analyse statique. Rechargez après modification Excel.\r\n" +
                 (issues.Length == 0 ? "Aucune référence non résolue détectée. Les branches conditionnelles sont toutes incluses." : String.Join("\r\n", issues.Take(200)) + (issues.Length > 200 ? "\r\n… " + (issues.Length - 200) + " autres avertissements (rapport complet disponible)." : ""));
-            if (traceSource == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + issues.Length + " avertissements";
         }
         void SetRoot(Cell cell, bool remember)
         { SetExplorerRoot(cell, remember, null, null); }
@@ -242,7 +251,8 @@ namespace FormulaExplorer
         void SetExplorerRoot(Cell cell, bool remember, TraceLocation selection, bool? downstream)
         {
             if (remember && root != null)
-                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, Reverse = reverse, Selection = CaptureExplorerSelection() });
+                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, Reverse = reverse, Selection = CaptureExplorerSelection(), HighlightOwner = traceHighlightOwner });
+            traceHighlightOwner = "trace-" + Guid.NewGuid().ToString("N");
             root = cell; traceSource = selection;
             if (downstream.HasValue) reverse = downstream.Value;
             ResetFlowDisplay(); ShowTree();
@@ -250,8 +260,10 @@ namespace FormulaExplorer
         void Back()
         {
             if (history.Count == 0) return;
+            RemoveTraceHighlightOwner(traceHighlightOwner);
             ExplorerHistory previous = history.Pop();
             root = previous.Cell; traceSource = previous.Source; reverse = previous.Reverse;
+            traceHighlightOwner = previous.HighlightOwner;
             ResetFlowDisplay(); ShowTreeSelection(previous.Selection);
         }
         void SelectExplorerTab(bool dependentsDirection)
@@ -322,6 +334,7 @@ namespace FormulaExplorer
             }
             finally { tree.EndUpdate(); updatingExplorer = false; }
             ShowRelationDetails();
+            RefreshTraceHighlights();
         }
         void ExpandNode(TreeNode node)
         {
@@ -389,6 +402,7 @@ namespace FormulaExplorer
         {
             if (baseline == null) throw new InvalidOperationException("Mémorisez d'abord une référence.");
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour comparer deux captures.");
+            ClearTraceHighlightOwners();
             Book captured = bridge.CaptureActive(); Cell selected = bridge.ActiveCell(captured);
             List<Difference> results = Comparison.Compare(baseline, captured, valuesOnly.Checked, (double)tolerance.Value);
             SetBook(captured, selected.Sheet, selected.Address); differences.DataSource = results;
