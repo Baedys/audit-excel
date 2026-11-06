@@ -676,6 +676,9 @@ namespace FormulaExplorer
         }
 
         internal List<Reference> ReadSelectionRanges(Book book, bool forTrace)
+        { return ReadSelectionRangeBounds(book, forTrace, false); }
+
+        List<Reference> ReadSelectionRangeBounds(Book book, bool forTrace, bool allowLargeSelection)
         {
             object selection = null, worksheet = null, workbook = null, areas = null, window = null, selectedSheets = null;
             try
@@ -686,7 +689,7 @@ namespace FormulaExplorer
                 worksheet = ((dynamic)selection).Worksheet;
                 workbook = ((dynamic)worksheet).Parent;
                 if (!String.Equals((string)((dynamic)workbook).FullName, book.FullName, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Sélection dans un autre classeur : rechargez la capture.");
-                if (!forTrace && Convert.ToDouble(((dynamic)selection).CountLarge) > 250000)
+                if (!forTrace && !allowLargeSelection && Convert.ToDouble(((dynamic)selection).CountLarge) > 250000)
                     throw new InvalidOperationException("Sélection limitée à 250 000 cellules pour cette version.");
                 string sheet = (string)((dynamic)worksheet).Name;
                 var ranges = new List<Reference>();

@@ -18,7 +18,11 @@ namespace FormulaExplorer
             finally
             {
                 try { if (colorEventLease != null) colorEventLease.Dispose(); }
-                finally { colorEventLease = null; colorBridge = null; }
+                finally
+                {
+                    try { if (colorBridge != null) colorBridge.ClearComparisonReference(); }
+                    finally { colorEventLease = null; colorBridge = null; }
+                }
             }
         }
         public void RestoreSavedColors([MarshalAs(UnmanagedType.IDispatch)] object control)

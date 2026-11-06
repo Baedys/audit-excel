@@ -194,6 +194,7 @@ static class Tests
             Check("Excel navigation corner shortcuts", ExcelNavigationShortcutTests.Run);
             Check("Excel worksheet shortcut locations", WorksheetShortcutTests.RunExcel);
             Check("Excel worksheet formula undo transfer", ExcelWorksheetFormulaUndoTests.Run);
+            Check("Excel live comparison scopes and offsets", ExcelComparisonTests.Run);
             Check("Excel explorer exit shortcuts", ExcelExplorerExitTests.Run);
             Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);

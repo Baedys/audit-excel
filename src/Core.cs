@@ -553,7 +553,7 @@ namespace FormulaExplorer
             }
             return result;
         }
-        static bool EqualValue(Cell a, Cell b, double tolerance)
+        internal static bool EqualValue(Cell a, Cell b, double tolerance)
         {
             if (a.Kind != b.Kind) return false;
             double x, y;

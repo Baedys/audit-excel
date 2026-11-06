@@ -194,7 +194,7 @@ namespace FormulaExplorer
             finally { Release(names); Release(worksheets); }
         }
 
-        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned, bool recordUsedRange = false)
+        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned, bool recordUsedRange = false, bool modernRelative = false)
         {
             object rows = null, columns = null;
             dynamic used = usedObject; string sheet = (string)((dynamic)worksheet).Name;
@@ -212,7 +212,12 @@ namespace FormulaExplorer
                 catch (COMException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
                 catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }
                 object relativeFormulas = null;
-                try { relativeFormulas = OfficeCall(usedObject, "FormulaR1C1", System.Reflection.BindingFlags.GetProperty); }
+                try
+                {
+                    string property;
+                    relativeFormulas = modernRelative ? ReadFormulaInStyle(usedObject, new FormulaDisplayStyle(true), out property) :
+                        OfficeCall(usedObject, "FormulaR1C1", System.Reflection.BindingFlags.GetProperty);
+                }
                 catch (COMException) { book.Warnings.Add(sheet + " : structure relative des formules indisponible ; carte partielle."); }
                 HashSet<string> formulaCells = SpecialCellAddresses(used, -4123, startRow, startCol, height, width);
                 // SpecialCells raises the same 1004 for an empty result

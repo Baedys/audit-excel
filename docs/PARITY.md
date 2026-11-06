@@ -205,6 +205,8 @@ W4 distingue périmètre analysé et zone centrale. Vue entrées/sorties : cellu
 
 W5 décrit référence classeur/feuille/plage, plusieurs comparateurs, modes formules/valeurs, option ignorant les entrées, blocs de différences, alignement par insertion puis suppression de lignes/colonnes, fusion directionnelle, édition, undo et rapport. E3 corrobore `AlignmentDiff`, `UndoAlignmentDiff`, `CopyFormats`, `ValueTolerance`, `MaxAlignmentDistance`. E4 montre un contrôle de tailles identiques dans `TaskItem.Compare` ; il ne prouve pas l'absence d'une normalisation préalable.
 
+P01 et P02 progressent dans le volet. La référence physique est partagée entre les fenêtres et ses données sont lues au lancement. Les plages comparent par décalage. Les feuilles comparent aux mêmes adresses, et les classeurs apparient leurs feuilles par nom. Les options couvrent R1C1, A1, valeurs calculées et ignorance des entrées. Le mode Instantané conserve la comparaison d’états enregistrés. Les témoins Excel et les écarts connus sont décrits dans la [validation](VALIDATION.md).
+
 | ID | Exigence | État initial | Acceptation requise |
 | --- | --- | --- | --- |
 | P01 | Référence et comparateurs aux trois échelles, plusieurs cibles. | Partiel : deux captures classeur par nom de feuille/adresse. | Feuille renommée, plages décalées, comparateurs multiples et sélection de coin supérieur gauche ; appariement explicite. |

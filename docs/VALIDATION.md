@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Comparaison de classeurs, de feuilles et de plages — 6 novembre 2026
+
+Le CIL de `RangeJobSpec` 264776 étend un coin cible à la taille de la référence et découpe les sélections plus grandes en blocs complets, avec saut des lignes ou colonnes séparatrices vides. `TaskItem` 378176 compare les plages par décalage. `JobItem` 247420 et 249272 apparie les feuilles de classeur par nom ou prend les onglets cibles sélectionnés, puis compare aux mêmes coordonnées. `Options` 247276 et les comparateurs 378940 et 379328 établissent R1C1 par défaut, A1 au choix, l’ignorance des entrées sans formule et la tolérance absolue inclusive de 0,000001 sur les valeurs. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Le témoin Clair utilise deux volets et deux classeurs dans Excel masqué. Il modifie la référence après l’avoir définie, compare une plage ancrée puis plusieurs blocs, vérifie la sélection physique des deux côtés, change la notation et le mode de comparaison, groupe deux onglets cibles et renomme la feuille de référence. Les feuilles présentes d’un seul côté sont listées séparément. Les blocs de résultats, l’alignement et les opérations d’écriture restent à couvrir. Clair utilise ici les valeurs typées de `Value2` et la formule invariante d’Excel. Les conversions de types propres à `Value`, la présentation locale d’Arixcel et les grandes plages au-delà de la limite de capture restent ouvertes.
+
 ## Annulation dans les sous-tracés — 6 novembre 2026
 
 Le CIL d’Arixcel donne une pile à chaque tracé et la relie à celle du parent. L’ouverture interne suspend les événements de focus. Ctrl+Z prend la dernière action dans la première pile liée qui contient une entrée. À la fermeture d’un enfant, les piles liées sont vidées du plus récent au plus ancien, puis leur contenu forme une seule action dans le parent immédiat. Un retour à Excel transfère la chaîne dans l’annulation globale et détache ses liens. Le chemin relève de `ModelessForm` aux RVA 57684, 58327, 58340 et 59720, et de `UndoStack` aux RVA 67272 et 67604 dans l’assemblage commun.

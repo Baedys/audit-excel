@@ -26,9 +26,6 @@ namespace FormulaExplorer
         readonly TableLayoutPanel dockedExplorerBody;
         readonly DataGridView map = Grid(), flow = Grid(), differences = Grid();
         readonly ComboBox sheets = new ComboBox();
-        readonly CheckBox valuesOnly = new CheckBox();
-        readonly NumericUpDown tolerance = new NumericUpDown();
-        readonly Label referenceLabel = new Label();
         readonly Button precedents = new Button(), dependents = new Button();
         readonly bool IsDocked;
 
@@ -137,23 +134,7 @@ namespace FormulaExplorer
                 if (cell != null) { SetRoot(cell, true); tabs.SelectedIndex = 0; }
             };
 
-            TableLayoutPanel compareLayout = PageLayout(compareTab, 100);
-            FlowLayoutPanel compareBar = CommandBar();
-            compareBar.Controls.Add(ActionButton("Mémoriser référence", Remember));
-            compareBar.Controls.Add(ActionButton(IsDocked ? "Comparer avec Excel" : "Comparer classeur Excel actif", CompareActive));
-            valuesOnly.Text = "Valeurs calculées"; valuesOnly.AutoSize = true; valuesOnly.Padding = new Padding(0, 8, 0, 0); compareBar.Controls.Add(valuesOnly);
-            compareBar.Controls.Add(new Label { Text = "Tolérance absolue", AutoSize = true, Padding = new Padding(4, 8, 0, 0) });
-            tolerance.DecimalPlaces = 6; tolerance.Maximum = 1000000; tolerance.Width = 100; compareBar.Controls.Add(tolerance);
-            referenceLabel.AutoSize = true; referenceLabel.Width = 900; referenceLabel.Text = "Aucune référence. Comparaison par feuille et adresse ; alignement des lignes non pris en charge.";
-            compareBar.SetFlowBreak(tolerance, true); compareBar.Controls.Add(referenceLabel);
-            if (IsDocked) WrapPaneLabel(compareBar, referenceLabel);
-            PlaceCommandBar(compareLayout, compareBar, 0); compareLayout.Controls.Add(differences, 0, 1);
-            differences.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e)
-            {
-                if (e.RowIndex < 0) return;
-                Difference diff = differences.Rows[e.RowIndex].DataBoundItem as Difference;
-                if (diff != null && book.Sheets.Contains(diff.Sheet)) { SetRoot(book.Get(diff.Sheet, diff.Address), true); tabs.SelectedIndex = 0; }
-            };
+            ConfigureComparison(compareTab);
             warnings.Dock = DockStyle.Fill; warnings.Multiline = true; warnings.ReadOnly = true; warnings.ScrollBars = ScrollBars.Vertical; warnings.BackColor = Color.FromArgb(255, 249, 231); warnings.Font = new Font(Font.FontFamily, 9);
             layout.Controls.Add(warnings, 0, 3);
             status.Dock = DockStyle.Fill; status.ForeColor = Color.DimGray; layout.Controls.Add(status, 0, 4);
@@ -285,7 +266,8 @@ namespace FormulaExplorer
             sheets.Items.Clear(); foreach (string item in book.Sheets.OrderBy(s => s)) sheets.Items.Add(item);
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
-            flow.Rows.Clear(); differences.DataSource = null;
+            flow.Rows.Clear();
+            if (!(differences.DataSource is List<ComparisonRow>)) differences.DataSource = null;
             TraceWarnings();
         }
 
@@ -369,7 +351,7 @@ namespace FormulaExplorer
                 LoadExcel(); return;
             }
             ExecuteRibbonCommand(command);
-            if (book == null && command != "map-palette") LoadExcel();
+            if (book == null && command != "map-palette" && command != "compare") LoadExcel();
         }
         public void ExecuteRibbonCommand(string command)
         {
@@ -383,7 +365,7 @@ namespace FormulaExplorer
                     case "map": CloseMapPalette(); tabs.SelectedIndex = 1; break;
                     case "map-palette": ToggleMapPalette(); break;
                     case "flow": tabs.SelectedIndex = 2; break;
-                    case "compare": tabs.SelectedIndex = 3; break;
+                    case "compare": tabs.SelectedIndex = 3; ShowComparisonReference(); break;
                     case "refresh": LoadExcel(); break;
                     default: throw new ArgumentException("Commande inconnue : " + command);
                 }
@@ -491,14 +473,14 @@ namespace FormulaExplorer
             CellColumns(flow); foreach (Cell cell in cells) AddRow(flow, cell);
             status.Text = (downstream ? "Impacts depuis " : "Entrées vers ") + FlowRoot.Location + " : " + cells.Count + " cellules" + (truncated ? " · limite de 2 000 atteinte, résultat incomplet" : "") + " · dépendances statiques, consulter les avertissements";
         }
-        void Remember()
+        void RememberSnapshot()
         {
             baseline = book;
             differences.DataSource = null;
             referenceLabel.Text = "Référence : " + baseline.Name + " · " + baseline.Captured.ToString("HH:mm:ss") + " · formules et constantes, ou valeurs calculées. Appariement feuille + adresse.";
             status.Text = "Capture actuelle mémorisée. Modifiez Excel, puis comparez.";
         }
-        void CompareActive()
+        void CompareSnapshot()
         {
             if (baseline == null) throw new InvalidOperationException("Mémorisez d'abord une référence.");
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour comparer deux captures.");
@@ -514,13 +496,16 @@ namespace FormulaExplorer
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 StringBuilder output = new StringBuilder();
-                output.AppendLine("Clair 0.6 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + TraceCellLabel(root)).AppendLine("\nAVERTISSEMENTS");
-                foreach (string warning in traceEngine.Warnings.Distinct()) output.AppendLine(warning);
-                output.AppendLine("\nCELLULES");
-                foreach (Cell c in book.Cells.Values.OrderBy(c => c.Sheet).ThenBy(c => c.Row).ThenBy(c => c.Column)) output.AppendLine(c.Location + "\t" + c.Kind + "\t" + c.Value + "\t" + c.Formula);
+                output.AppendLine("Clair 0.6 — Rapport");
+                if (book != null)
+                {
+                    output.AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + TraceCellLabel(root)).AppendLine("\nAVERTISSEMENTS");
+                    foreach (string warning in traceEngine.Warnings.Distinct()) output.AppendLine(warning);
+                    output.AppendLine("\nCELLULES");
+                    foreach (Cell c in book.Cells.Values.OrderBy(c => c.Sheet).ThenBy(c => c.Row).ThenBy(c => c.Column)) output.AppendLine(c.Location + "\t" + c.Kind + "\t" + c.Value + "\t" + c.Formula);
+                }
                 output.AppendLine("\nCOMPARAISON");
-                List<Difference> diff = differences.DataSource as List<Difference>;
-                if (diff != null) foreach (Difference d in diff) output.AppendLine(d.Sheet + "!" + d.Address + "\t" + d.Change + "\t" + d.Before + "\t" + d.After);
+                AppendComparisonReport(output);
                 File.WriteAllText(dialog.FileName, output.ToString(), Encoding.UTF8); status.Text = "Rapport enregistré.";
             }
         }
