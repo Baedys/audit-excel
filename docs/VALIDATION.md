@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Volet latéral Excel — 6 novembre 2026
+
+- Compilation .NET Framework et **64 groupes sans Excel réussis**. Aperçus WinForms compacts examinés à **420 × 650** et **320 × 540**, avec la formule, les arbres, les commandes de carte et les filtres de flux empilés ou repliés selon la largeur.
+- Dans une instance Excel dédiée, `test-addin.ps1` charge le complément enregistré et reçoit le ruban et `CTPFactoryAvailable`. Les quatre vues réutilisent un volet qui réduit le bord droit de la zone de feuille. Aucun explorateur de premier niveau n'est créé. Une seconde fenêtre du même classeur ouvre son propre volet. Fermer cette fenêtre retire son volet. **Tout fermer** redonne sa largeur initiale à la grille. Le test retire l'enregistrement temporaire.
+- Deux tentatives initiales ont expiré avant les contrôles du volet, pendant l'acquisition du modèle Excel ou l'ouverture du classeur. Le test garde des délais séparés et ouvre explicitement son fichier jetable si l'instance est prête et vide. Le passage réussi utilise le complément réel avec Office 64 bits. [Documentation Office sur les volets personnalisés](https://learn.microsoft.com/en-us/office/vba/api/office.ictpfactory.createctp)
+
 ## Options d'analyse des cartes — 6 novembre 2026
 
 - Compilation .NET Framework et **64 groupes sans Excel réussis**. Le moteur ajoute **67 assertions** sur les options. Le stockage de palette atteint **375 assertions** avec migration v1/v2. L'éditeur couvre **166 contrôles** sur la case d'analyse, l'import, l'export et la remise par défaut.

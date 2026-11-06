@@ -18,14 +18,15 @@ namespace FormulaExplorer
         void InitializeExpressions(TableLayoutPanel parent)
         {
             var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 72)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            panel.RowStyles.Add(BarRow(72)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); panel.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 43 : 76));
+            var actions = CommandBar(); actions.Margin = Padding.Empty;
             actions.Controls.Add(ActionButton("Évaluer", EvaluateSelectedExpression));
-            actions.Controls.Add(ActionButton("Modifier (F2)", EditSelectedFormula));
-            actions.Controls.Add(ActionButton("Annuler édition", UndoLastFormula));
-            evaluateOnSelect.Text = "Évaluer à la sélection"; evaluateOnSelect.AutoSize = true; evaluateOnSelect.Checked = true;
-            actions.Controls.Add(evaluateOnSelect); panel.Controls.Add(actions, 0, 0);
+            actions.Controls.Add(ActionButton(IsDocked ? "Modifier" : "Modifier (F2)", EditSelectedFormula));
+            actions.Controls.Add(ActionButton(IsDocked ? "Annuler" : "Annuler édition", UndoLastFormula));
+            evaluateOnSelect.Text = IsDocked ? "Évaluer au clic" : "Évaluer à la sélection"; evaluateOnSelect.AutoSize = true; evaluateOnSelect.Checked = true;
+            actions.Controls.Add(evaluateOnSelect); PlaceCommandBar(panel, actions, 0);
             expressions.Dock = DockStyle.Fill; expressions.HideSelection = false; expressions.BorderStyle = BorderStyle.FixedSingle;
+            expressions.AccessibleName = "Sous-expressions de la formule";
             expressions.AfterSelect += delegate
             {
                 if (buildingExpressions) return;

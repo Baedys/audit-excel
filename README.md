@@ -75,7 +75,9 @@ Pour ajouter le ruban à Excel :
 # Pour désinstaller : .\install-addin.ps1 -Uninstall
 ```
 
-Le ruban ouvre plusieurs explorateurs indépendants ; **Tout fermer** les ferme ensemble. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier : ne le déplacez pas sans réinstaller.
+Sur la branche de développement, **Clair → Antécédents** ouvre le volet **Formule**, ancré à droite de la feuille. **Dépendants** change le sens dans le même volet. Les onglets **Carte**, **Flux** et **Comparer** donnent accès aux autres analyses. Le bouton principal **Carte des cellules** bascule les couleurs sur la grille. Sa flèche ouvre le volet Carte. Redimensionnez le volet à la souris ou fermez-le avec sa croix pour retrouver toute la largeur de la feuille.
+
+Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 
 Pour comparer : chargez le premier état, ouvrez **Comparaison**, puis **Mémoriser référence**. Modifiez le classeur ou activez un autre classeur dans Excel, puis cliquez sur **Comparer classeur Excel actif**. Les cellules sont appariées par nom de feuille et adresse. En mode formules, un changement de résultat calculé seul n'est pas une différence ; activez **Valeurs calculées** pour le comparer.
 
@@ -86,7 +88,7 @@ Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle 
 ```powershell
 .\test.ps1          # moteur, syntaxe, flux, carte et palette (sans Excel)
 .\test.ps1 -Excel   # sessions Excel isolées, expressions, édition, couleurs et restauration
-.\test-addin.ps1    # démarrage Excel /x, ruban, fenêtres, nettoyage registre
+.\test-addin.ps1    # démarrage Excel /x, ruban, volet natif et nettoyage du registre
 ```
 
 Le test Excel crée des instances et classeurs jetables. Il vérifie aussi les évaluations en français/anglais, les noms et tableaux, les sélections de plages/formes, l'édition, l'annulation, les conflits et les formats. Le test de couleurs enregistre une copie temporaire, la rouvre, retire la carte et contrôle les formats effectifs, l'ordre relatif et `StopIfTrue` des règles préexistantes ; le fichier est ensuite supprimé. Le test COM installe temporairement les clés propres à Clair, lance son propre processus Excel identifié, vérifie le chargement puis supprime les clés. Il refuse de remplacer une installation Clair existante.

@@ -12,6 +12,12 @@ namespace FormulaExplorer
         void InitializeFlowDirectCommands(FlowLayoutPanel bar)
         {
             var menu = new ContextMenuStrip();
+            if (IsDocked)
+            {
+                menu.Items.Add("En amont : entrées", null, delegate { Safe(delegate { ShowFlow(false); }); });
+                menu.Items.Add("En aval : impacts", null, delegate { Safe(delegate { ShowFlow(true); }); });
+                menu.Items.Add(new ToolStripSeparator());
+            }
             menu.Items.Add("Palette des flux…", null, delegate { Safe(EditFlowPalette); });
             menu.Items.Add("Exporter rapport des flux…", null, delegate { Safe(ExportFlow); });
             menu.Items.Add(new ToolStripSeparator());
@@ -23,7 +29,7 @@ namespace FormulaExplorer
             menu.Items.Add("Retirer les anciens flux Clair 0.6", null, delegate { Safe(RemoveLegacyFlowColors); });
             Button button = ActionButton("Autres actions…", delegate { });
             button.Click += delegate { menu.Show(button, 0, button.Height); };
-            bar.Controls.Add(button); bar.SetFlowBreak(button, true);
+            bar.Controls.Add(button); if (!IsDocked) bar.SetFlowBreak(button, true);
             Disposed += delegate { menu.Dispose(); };
         }
         void TrackDirectConnection(ExcelBridge connection)

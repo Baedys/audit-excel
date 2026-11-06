@@ -31,22 +31,25 @@ namespace FormulaExplorer
             LoadFlowViewSettings();
             try { if (File.Exists(FlowPalettePath)) flowPalette = FlowPalette.Load(FlowPalettePath); }
             catch (Exception ex) { flowPaletteWarning = "Palette flux illisible : " + ex.Message + " Défaut utilisé."; }
-            bar.SetFlowBreak(bar.Controls[bar.Controls.Count - 1], true);
-            foreach (ComboBox combo in new[] { flowScope, flowFocus, flowView }) { combo.DropDownStyle = ComboBoxStyle.DropDownList; combo.Width = 210; }
+            if (!IsDocked) bar.SetFlowBreak(bar.Controls[bar.Controls.Count - 1], true);
+            foreach (ComboBox combo in new[] { flowScope, flowFocus, flowView }) { combo.DropDownStyle = ComboBoxStyle.DropDownList; combo.Width = IsDocked ? 142 : 210; }
             flowScope.Items.AddRange(new object[] { "Classeur capturé", "Feuille de la racine", "Sélection Excel" }); flowScope.SelectedIndex = 0;
             flowFocus.Items.AddRange(new object[] { "Tout le périmètre", "Feuille de la racine", "Sélection Excel" }); flowFocus.SelectedIndex = 0;
             flowView.Items.AddRange(new object[] { "Rôles de calcul", "Flux de la zone centrale" }); flowView.SelectedIndex = 0;
             bar.Controls.Add(new Label { Text = "Périmètre", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }); bar.Controls.Add(flowScope);
+            Button analyze = ActionButton("Analyser", AnalyzeFlow);
+            if (IsDocked) { bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true); }
             bar.Controls.Add(new Label { Text = "Zone centrale", AutoSize = true, Padding = new Padding(8, 5, 0, 0) }); bar.Controls.Add(flowFocus);
-            Button analyze = ActionButton("Analyser", AnalyzeFlow); bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true);
+            if (!IsDocked) { bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true); }
             bar.Controls.Add(flowView);
             flowCellDetails.Text = "Détail par cellule"; flowCellDetails.AutoSize = true; flowCellDetails.Padding = new Padding(0, 6, 0, 0);
             bar.Controls.Add(flowCellDetails);
             flowCellDetails.CheckedChanged += delegate { if (flowResult != null) ShowFlowCategories(); };
-            bar.Controls.Add(ActionButton("Retirer tous les flux", RemoveFlowColors));
+            bar.Controls.Add(ActionButton(IsDocked ? "Retirer" : "Retirer tous les flux", RemoveFlowColors));
             InitializeFlowDirectCommands(bar);
-            keepFlowColors.Text = "Conserver les couleurs à la fermeture"; keepFlowColors.AutoSize = true; keepFlowColors.Padding = new Padding(0, 6, 0, 0); bar.Controls.Add(keepFlowColors);
-            bar.Controls.Add(ActionButton("Fermer en conservant", delegate { keepFlowColors.Checked = true; Close(); }));
+            keepFlowColors.Text = IsDocked ? "Garder les couleurs" : "Conserver les couleurs à la fermeture";
+            keepFlowColors.AutoSize = true; keepFlowColors.Padding = new Padding(0, 6, 0, 0); bar.Controls.Add(keepFlowColors);
+            if (!IsDocked) bar.Controls.Add(ActionButton("Fermer en conservant", delegate { keepFlowColors.Checked = true; Close(); }));
             flowView.SelectedIndexChanged += delegate
             {
                 SyncFlowGroupOption();
@@ -56,15 +59,18 @@ namespace FormulaExplorer
         }
         Control CreateFlowBody()
         {
-            SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 230 };
             TableLayoutPanel left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3 };
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 24 : 32));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 0 : 28)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             InitializeFlowTree(left);
-            left.Controls.Add(flowGroups, 0, 2); split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
+            left.Controls.Add(flowGroups, 0, 2);
             flow.CellContentClick += delegate(object sender, DataGridViewCellEventArgs e)
             {
                 if (e.RowIndex >= 0 && e.ColumnIndex == 0) Safe(delegate { ToggleFlowRole(e.RowIndex); });
             };
+            if (IsDocked) return StackPaneControls(left, flow, 61);
+            SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 230 };
+            split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
             return split;
         }
         List<Cell> FlowSelection()

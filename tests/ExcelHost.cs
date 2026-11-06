@@ -13,7 +13,25 @@ public static class ExcelHost
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int length);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder name, int length);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Bounds bounds);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
     [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out object nativeObject);
+    [StructLayout(LayoutKind.Sequential)] struct Bounds { public int Left, Top, Right, Bottom; }
+
+    public static int[] WorksheetBounds(int window)
+    {
+        Bounds best = new Bounds(); int bestArea = 0;
+        EnumChildWindows(new IntPtr(window), delegate(IntPtr child, IntPtr unused)
+        {
+            var name = new StringBuilder(64); Bounds bounds;
+            GetClassName(child, name, name.Capacity);
+            if (name.ToString() != "EXCEL7" || !IsWindowVisible(child) || !GetWindowRect(child, out bounds)) return true;
+            int area = (bounds.Right - bounds.Left) * (bounds.Bottom - bounds.Top);
+            if (area > bestArea) { best = bounds; bestArea = area; }
+            return true;
+        }, IntPtr.Zero);
+        return bestArea > 0 ? new[] { best.Left, best.Top, best.Right, best.Bottom } : null;
+    }
 
     public static object FindWindowObject(int processId)
     {

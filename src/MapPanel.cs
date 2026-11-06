@@ -45,11 +45,11 @@ namespace FormulaExplorer
             if (bridge != null) MapDirectState(bridge);
             mapAllSheets.Text = "Toutes les feuilles"; mapAllSheets.AutoSize = true; mapAllSheets.Padding = new Padding(4, 6, 0, 0);
             bar.Controls.Add(mapAllSheets);
-            bar.Controls.Add(ActionButton("Colorer dans Excel", ApplyMap));
-            bar.Controls.Add(ActionButton("Retirer couleurs", RemoveMap));
+            bar.Controls.Add(ActionButton(IsDocked ? "Colorer" : "Colorer dans Excel", ApplyMap));
+            bar.Controls.Add(ActionButton(IsDocked ? "Retirer" : "Retirer couleurs", RemoveMap));
             Button paletteButton = ActionButton("Palette…", EditMapPalette); bar.Controls.Add(paletteButton); bar.SetFlowBreak(paletteButton, true);
             InitializeMapDirectCommands(bar);
-            bar.Controls.Add(ActionButton("Rapport carte", ExportMap));
+            bar.Controls.Add(ActionButton(IsDocked ? "Rapport" : "Rapport carte", ExportMap));
             mapSummary.AutoSize = true; mapSummary.MaximumSize = new Size(690, 0); mapSummary.ForeColor = Color.DimGray;
             bar.Controls.Add(mapSummary);
         }

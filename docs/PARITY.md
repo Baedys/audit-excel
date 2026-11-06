@@ -32,6 +32,10 @@ Le développement raccorde formats directs partagés, références physiques, co
 
 M05 progresse avec le réglage des références des formules uniques et l'analyse de validation dérivée de sa couleur. Recoloration en mémoire et réanalyse des zones conservées suivent les cas relevés dans le binaire. Le XML Clair conserve le réglage et charge les profils v1. Le dialogue reste modal avec **Utiliser** et **Enregistrer par défaut**. L'original applique et enregistre depuis sa fenêtre de réglages. L'interaction et le format d'échange Arixcel restent ouverts. [Preuves de la carte](MAP-EVIDENCE.md)
 
+## Présentation Excel demandée pour Clair
+
+L'utilisateur demande un ruban et un volet latéral qui laisse la grille dégagée. Dans le complément Excel, les vues Formule, Carte, Flux et Comparer s'ouvrent dans un volet Office redimensionnable à droite. Une fenêtre de classeur a son propre volet. La bascule des couleurs de carte reste accessible directement depuis le ruban. Cette présentation remplace les explorateurs flottants documentés dans l'historique de la version 0.6.
+
 ## Sources et limites
 
 | Repère | Preuve réutilisée | Portée |
