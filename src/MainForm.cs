@@ -19,7 +19,8 @@ namespace FormulaExplorer
         bool reverse, updatingExplorer;
         readonly Stack<ExplorerHistory> history = new Stack<ExplorerHistory>();
         readonly Label title = new Label(), status = new Label(), detail = new Label();
-        readonly TextBox formula = new TextBox(), warnings = new TextBox();
+        readonly RichTextBox formula = new RichTextBox { DetectUrls = false };
+        readonly TextBox warnings = new TextBox();
         readonly TreeView tree = new TreeView();
         readonly TabControl tabs = new TabControl();
         readonly TableLayoutPanel dockedExplorerBody;
@@ -88,7 +89,8 @@ namespace FormulaExplorer
             formulaLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             detail.Dock = DockStyle.Fill; detail.AutoEllipsis = true; formulaLayout.Controls.Add(detail, 0, 0);
             formula.Dock = DockStyle.Fill; formula.Multiline = true; formula.ReadOnly = true;
-            formula.ScrollBars = IsDocked ? ScrollBars.Vertical : ScrollBars.Both; formula.WordWrap = false; formula.Font = new Font("Consolas", 11); formula.BackColor = Color.White;
+            formula.ScrollBars = IsDocked ? RichTextBoxScrollBars.Vertical : RichTextBoxScrollBars.Both;
+            formula.WordWrap = false; formula.Font = new Font("Consolas", 11); formula.BackColor = Color.White;
             formulaLayout.Controls.Add(formula, 0, 1);
             InitializeExpressions(formulaLayout);
             if (IsDocked)

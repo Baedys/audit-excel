@@ -134,27 +134,32 @@ namespace FormulaExplorer
                 try { tree.SelectedNode = node; }
                 finally { updatingExplorer = false; }
             }
+            UpdateTreeSelection(tree, node, modifiers, selectedRelations, ref relationAnchor);
+            RefreshRelationSelection();
+            RefreshTraceHighlights();
+        }
+
+        static void UpdateTreeSelection(TreeView view, TreeNode node, Keys modifiers, List<TreeNode> selected, ref TreeNode anchorNode)
+        {
             if ((modifiers & Keys.Shift) != 0)
             {
-                selectedRelations.Clear();
+                selected.Clear();
                 var visible = new List<TreeNode>();
-                for (TreeNode row = tree.Nodes[0]; row != null; row = row.NextVisibleNode) visible.Add(row);
-                int anchor = visible.IndexOf(relationAnchor), current = visible.IndexOf(node);
-                if (anchor < 0 || current < 0) { relationAnchor = node; selectedRelations.Add(node); }
+                for (TreeNode row = view.Nodes[0]; row != null; row = row.NextVisibleNode) visible.Add(row);
+                int anchor = visible.IndexOf(anchorNode), current = visible.IndexOf(node);
+                if (anchor < 0 || current < 0) { anchorNode = node; selected.Add(node); }
                 else
                 {
                     int first = Math.Min(anchor, current), last = Math.Max(anchor, current);
-                    selectedRelations.AddRange(visible.GetRange(first, last - first + 1));
+                    selected.AddRange(visible.GetRange(first, last - first + 1));
                 }
             }
             else
             {
-                if ((modifiers & Keys.Control) == 0) selectedRelations.Clear();
-                if (!selectedRelations.Remove(node)) selectedRelations.Add(node);
-                relationAnchor = node;
+                if ((modifiers & Keys.Control) == 0) selected.Clear();
+                if (!selected.Remove(node)) selected.Add(node);
+                anchorNode = node;
             }
-            RefreshRelationSelection();
-            RefreshTraceHighlights();
         }
 
         void RefreshRelationSelection()
@@ -187,8 +192,14 @@ namespace FormulaExplorer
                 foreach (Reference range in location.Ranges)
                     if (seen.Add(TraceRangeKey(range)))
                         yield return new TraceHighlightRange { Range = range, Color = resultColor };
+            if (expressionGridActive)
+                foreach (Reference range in selectedExpressions.Where(expressionLocations.ContainsKey).SelectMany(node => expressionLocations[node])
+                    .GroupBy(TraceRangeKey, StringComparer.OrdinalIgnoreCase).Select(group => group.First()))
+                    yield return new TraceHighlightRange { Range = range, Color = tracePrecedentsColor };
             foreach (Reference range in uniqueSources)
                 yield return new TraceHighlightRange { Range = range, Color = traceSourceColor };
+            if (expressionGridActive && expressionOwner != null && expressionOwner.IsFormula)
+                yield return new TraceHighlightRange { Range = TraceCellReference(expressionOwner), Color = traceSourceColor };
         }
 
         void RemoveTraceHighlightOwner(string owner, ICollection<Exception> failures = null)
@@ -215,17 +226,19 @@ namespace FormulaExplorer
         }
 
         void DrawRelationNode(object sender, DrawTreeNodeEventArgs e)
+        { DrawTreeSelection(tree, e, selectedRelations.Contains(e.Node)); }
+
+        static void DrawTreeSelection(TreeView view, DrawTreeNodeEventArgs e, bool selected)
         {
-            bool selected = selectedRelations.Contains(e.Node);
             bool current = (e.State & TreeNodeStates.Selected) != 0;
             if (!selected && !current) { e.DrawDefault = true; return; }
-            Color foreground = e.Node.ForeColor.IsEmpty ? tree.ForeColor : e.Node.ForeColor;
-            Color background = e.Node.BackColor.IsEmpty ? tree.BackColor : e.Node.BackColor;
+            Color foreground = e.Node.ForeColor.IsEmpty ? view.ForeColor : e.Node.ForeColor;
+            Color background = e.Node.BackColor.IsEmpty ? view.BackColor : e.Node.BackColor;
             if (selected) { foreground = SystemColors.HighlightText; background = SystemColors.Highlight; }
             using (var brush = new SolidBrush(background)) e.Graphics.FillRectangle(brush, e.Bounds);
-            TextRenderer.DrawText(e.Graphics, e.Node.Text, e.Node.NodeFont ?? tree.Font, e.Bounds, foreground,
+            TextRenderer.DrawText(e.Graphics, e.Node.Text, e.Node.NodeFont ?? view.Font, e.Bounds, foreground,
                 TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-            if (current && tree.Focused) ControlPaint.DrawFocusRectangle(e.Graphics, e.Bounds, foreground, background);
+            if (current && view.Focused) ControlPaint.DrawFocusRectangle(e.Graphics, e.Bounds, foreground, background);
         }
 
         string[] RelationPath(TreeNode node)

@@ -44,14 +44,7 @@ namespace FormulaExplorer
             targetMenu.Opening += delegate(object sender, System.ComponentModel.CancelEventArgs e) { e.Cancel = !CanNavigateSelectedExpression(); };
             expressions.ContextMenuStrip = targetMenu;
             Disposed += delegate { targetMenu.Dispose(); if (chosenExpressionFont != null) chosenExpressionFont.Dispose(); };
-            expressions.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
-            { if (e.Button == MouseButtons.Right) expressions.SelectedNode = e.Node; };
-            expressions.KeyDown += delegate(object sender, KeyEventArgs e)
-            {
-                if (e.KeyCode != Keys.Enter || !CanNavigateSelectedExpression()) return;
-                e.Handled = e.SuppressKeyPress = true;
-                NavigateSelectedExpression();
-            };
+            InitializeExpressionSelection();
             evaluateOnSelect.CheckedChanged += delegate
             {
                 string warning = RefreshExpressionAnnotations(evaluateOnSelect.Checked);
@@ -67,14 +60,6 @@ namespace FormulaExplorer
                 if (criterion != null) ShowCriterionValue(criterion, warning);
                 else if (warning != null) expressionValue.Text = warning;
             };
-            expressions.AfterSelect += delegate
-            {
-                if (buildingExpressions) return;
-                if (OfferSelectedWorkbook()) { HighlightExpression(expressions.SelectedNode); return; }
-                if (!HighlightExpression(expressions.SelectedNode)) return;
-                if (bridge != null && evaluateOnSelect.Checked) EvaluateExpressionInline();
-                else expressionValue.Text = bridge == null ? "Démonstration : connectez Excel pour calculer les sous-expressions." : "Sélectionnez Évaluer pour calculer cette expression dans Excel.";
-            };
             panel.Controls.Add(expressions, 0, 1);
             expressionValue.Dock = DockStyle.Fill; expressionValue.ReadOnly = true; expressionValue.Multiline = true; expressionValue.ScrollBars = ScrollBars.Both; expressionValue.WordWrap = false;
             expressionValue.Font = new Font("Consolas", 10); panel.Controls.Add(expressionValue, 0, 2); parent.Controls.Add(panel, 0, 2);
@@ -85,17 +70,6 @@ namespace FormulaExplorer
                 if (e.KeyCode == Keys.F2) { e.Handled = true; e.SuppressKeyPress = true; Safe(EditSelectedFormula); }
                 else if (e.Alt && e.KeyCode == Keys.Left) { e.Handled = true; Safe(Back); }
             };
-        }
-        bool HighlightExpression(TreeNode selected)
-        {
-            if (selected == null) return false;
-            var expression = selected.Tag as ExpressionNode;
-            var criterion = selected.Tag as CriterionGroup;
-            if (expression == null && criterion == null) return false;
-            int start = criterion == null ? expression.Start : criterion.Range.Start;
-            int end = criterion == null ? expression.Start + expression.Length : criterion.Criterion.Start + criterion.Criterion.Length;
-            formula.HideSelection = false; formula.Select(start, end - start); formula.ScrollToCaret();
-            return true;
         }
         TreeNode ExpressionTree(ExpressionNode expression)
         {
@@ -155,6 +129,9 @@ namespace FormulaExplorer
             CriterionGroup oldCriterion = SelectedCriterion();
             var oldExpression = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             ExpressionNode oldSpan = oldExpression == null ? null : oldExpression.SheetSpanOrigin;
+            var selectedKeys = selectedExpressions.Select(ExpressionSelectionKey).ToArray();
+            var anchorKey = ExpressionSelectionKey(expressionAnchor);
+            var locations = expressionLocations.ToDictionary(pair => ExpressionSelectionKey(pair.Key), pair => pair.Value);
             bool wasBuilding = buildingExpressions;
             buildingExpressions = true;
             expressions.BeginUpdate();
@@ -167,6 +144,8 @@ namespace FormulaExplorer
                 TreeNode root = ExpressionTree(syntaxRoot);
                 expressions.Nodes.Add(root);
                 TreeNode selection = root;
+                var rebuilt = new Dictionary<Tuple<ExpressionNode, bool>, TreeNode>();
+                selectedExpressions.Clear(); expressionAnchor = null; expressionLocations.Clear();
                 foreach (TreeNode node in ExpressionNodes())
                 {
                     var group = node.Tag as CriterionGroup;
@@ -183,10 +162,17 @@ namespace FormulaExplorer
                         if (oldExpression == expression || oldSpan == expression || (oldCriterion != null && oldCriterion.Range == expression &&
                             !shownCriteria.Contains(expression))) selection = node;
                     }
+                    var key = ExpressionSelectionKey(node);
+                    rebuilt.Add(key, node);
+                    Reference[] ranges;
+                    if (locations.TryGetValue(key, out ranges)) expressionLocations.Add(node, ranges);
+                    if (key.Equals(anchorKey)) expressionAnchor = node;
                 }
                 expressions.SelectedNode = selection;
-                if ((oldCriterion != null && !shownCriteria.Contains(oldCriterion.Range)) ||
-                    (oldSpan != null && selection.Tag == oldSpan)) HighlightExpression(selection);
+                selectedExpressions.AddRange(selectedKeys.Where(rebuilt.ContainsKey).Select(key => rebuilt[key]));
+                if (selectedKeys.Length != 0 && selectedExpressions.Count == 0) selectedExpressions.Add(selection);
+                if (expressionAnchor == null) expressionAnchor = selection;
+                HighlightFormulaSelection();
             }
             finally { expressions.EndUpdate(); buildingExpressions = wasBuilding; }
         }
@@ -266,13 +252,16 @@ namespace FormulaExplorer
             criterionResults.Clear();
             shownCriteria.Clear();
             shownSheetSpans.Clear();
+            selectedExpressions.Clear(); expressionAnchor = null; expressionLocations.Clear(); expressionGridActive = false;
             expressions.BeginUpdate(); expressions.Nodes.Clear(); expressionValue.Clear();
             try
             {
                 if (!cell.IsFormula) { expressionValue.Text = cell.Value; return; }
                 syntaxRoot = FormulaSyntax.Parse(cell.Formula);
                 TreeNode node = ExpressionTree(syntaxRoot); expressions.Nodes.Add(node); node.Expand(); expressions.SelectedNode = node;
+                selectedExpressions.Add(node); expressionAnchor = node;
                 string warning = RefreshExpressionAnnotations(tabs.SelectedIndex == 0 && evaluateOnSelect.Checked);
+                HighlightFormulaSelection();
                 expressionValue.ForeColor = SystemColors.WindowText;
                 expressionValue.Text = "Valeur capturée : " + cell.Value + "\r\n" + (warning ?? "Sélectionnez un élément pour examiner sa valeur.");
                 OfferSelectedWorkbook();
@@ -316,7 +305,8 @@ namespace FormulaExplorer
             var node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             return bridge != null && expressionOwner != null && syntaxRoot != null &&
                 (SelectedCriterion() != null || (node != null &&
-                (pendingWorkbookPath != null || ExcelBridge.SupportsDirectExpressionTarget(node) ||
+                (pendingWorkbookPath != null || selectedExpressions.Count > 1 || ExcelBridge.SupportsDirectExpressionTarget(node) ||
+                IsExpressionReferenceCandidate(node) ||
                 ExcelBridge.SupportsExpressionTarget(node) || ExcelBridge.FindFilterWithMask(syntaxRoot, node) != null)));
         }
         void NavigateSelectedExpression()
@@ -326,6 +316,10 @@ namespace FormulaExplorer
             try
             {
                 if (OfferSelectedWorkbook()) return;
+                var current = selected.Tag as ExpressionNode;
+                if ((selectedExpressions.Count > 1 || (current != null && IsExpressionReferenceCandidate(current) &&
+                    !ExcelBridge.SupportsExpressionTarget(current) && !ExcelBridge.SupportsDirectExpressionTarget(current) &&
+                    ExcelBridge.FindFilterWithMask(syntaxRoot, current) == null)) && NavigateExpressionSelection()) return;
                 CriterionGroup criterion = SelectedCriterion();
                 if (criterion != null)
                 {

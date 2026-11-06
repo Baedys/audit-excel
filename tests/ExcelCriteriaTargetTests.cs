@@ -218,7 +218,11 @@ public static class ExcelCriteriaTargetTests
                 TreeNode first = resultNode.Nodes[1];
                 Equal(first.Nodes.Count, 2, "range and criterion remain selectable");
                 first.Expand(); tree.SelectedNode = first;
-                Equal(Field<TextBox>(form, "formula").SelectedText, "Data!$A$2:$A$6,\"A*\"", "group selects both arguments in formula");
+                var formula = Field<RichTextBox>(form, "formula");
+                const string arguments = "Data!$A$2:$A$6,\"A*\"";
+                Equal(formula.SelectionLength, 0, "group leaves a collapsed formula caret");
+                formula.Select(formula.Text.IndexOf(arguments, StringComparison.Ordinal), arguments.Length);
+                Equal(formula.SelectionFont.Underline, true, "group underlines both arguments in formula");
                 Invoke(form, "EvaluateSelectedExpression");
                 Equal(tree.SelectedNode, first, "evaluation keeps the group selected");
                 Equal(first.IsExpanded, true, "evaluation keeps both arguments open");

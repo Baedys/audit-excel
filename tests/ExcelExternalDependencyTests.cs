@@ -160,13 +160,13 @@ public static class ExcelExternalDependencyTests
                 ((dynamic)other).Close(false);
                 command("precedents");
                 var expressionTree = Field<TreeView>(form, "expressions");
-                var formulaText = Field<TextBox>(form, "formula");
+                var formulaText = Field<RichTextBox>(form, "formula");
                 var value = Field<TextBox>(form, "expressionValue");
                 Equal(expressionTree.Handle != IntPtr.Zero, true, "expression tree handle created");
                 TreeNode declined = FormulaReference(expressionTree, "Link Data2.xlsx");
                 int caret = ((ExpressionNode)declined.Tag).Start + 2;
                 formulaText.Select(caret, 0);
-                Invoke(form, "SelectLinkedReferenceAtCaret");
+                Invoke(form, "SelectExpressionAtCaret", Keys.None);
                 Equal(expressionTree.SelectedNode, declined, "formula caret selects the closed link");
                 Equal(formulaText.SelectionStart, caret, "formula caret is preserved");
                 Equal(Field<string>(form, "pendingWorkbookPath"), otherPath, "exact closed path offered from formula text");
@@ -199,6 +199,10 @@ public static class ExcelExternalDependencyTests
                 Equal(Field<string>(form, "pendingWorkbookPath"), null, "open workbook no longer offers to open");
                 Equal(tree.Nodes[0].Nodes[0].Text, "'[Link Data.xlsx]Data'!A4   30", "new snapshot resolves the workbook-scoped name");
                 Equal(warnings.Text.Contains("Link Data2.xlsx"), true, "remaining closed link is still reported");
+                Invoke(form, "ApplyExpressionSelection", expressionTree.SelectedNode, Keys.None, true);
+                Equal((string)keep(app.ActiveWorkbook).Name, "Link Audit.xlsx", "ordinary expression selection keeps the docked workbook active");
+                dynamic reopenedSheet = keep(keep(((dynamic)reopened).Worksheets).Item[1]);
+                Equal((int)keep(keep(reopenedSheet.Range["A4"]).Interior).Color, 0xFFCC66, "named range in the linked workbook is highlighted");
                 Invoke(form, "NavigateSelectedExpression");
                 Equal((string)keep(app.ActiveWorkbook).Name, "Link Data.xlsx", "named reference navigates to the opened workbook");
                 Equal((string)keep(app.Selection).Address, "$A$4", "named reference navigates to its range");

@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Sélection de sous-expressions — 6 novembre 2026
+
+Le témoin Excel passe de l'arbre au texte et du curseur au composant. Il couvre deux portions disjointes, Ctrl additif dans le texte, Maj+Bas dans l'arbre et une sélection de caractères conservée. La source est rose et les références résolues sont bleues. L'union Excel reste sur la feuille du composant courant, tandis que les autres feuilles gardent leur surbrillance. Désactiver les couleurs rétablit les fonds et garde le soulignement de la formule.
+
+Le pont Excel est aussi vérifié séparément sur les noms locaux, références structurées, unions, intersections, débordements, axes entiers, cibles INDEX/FILTER et enfants 3D. Les interactions Arixcel sont établies par le CIL. Le témoin Clair exerce les gestionnaires WinForms et les sélections Excel.
+
 ## Ouverture des classeurs liés et noms externes — 6 novembre 2026
 
 Le témoin Excel ferme deux sources. Un curseur dans la référence montre le chemin complet et permet de le refuser. Une référence à un nom global propose l'autre source. Après ouverture, le volet retrouve la formule, son nœud sélectionné et le retour vers l'ancienne racine. Excel garde sa fenêtre et sa sélection. **Entrée** depuis le nom global sélectionne sa plage physique dans le classeur rouvert. Une modification de la formule entre la proposition et la confirmation invalide la demande.

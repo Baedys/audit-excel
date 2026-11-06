@@ -147,7 +147,11 @@ public static class ExcelSheetSpanTests
                 Equal(group.NodeFont != null && group.NodeFont.Bold, true, "bold 3D argument");
                 Equal(group.Nodes[2].NodeFont != null && group.Nodes[2].NodeFont.Bold, true, "bold winning worksheet");
                 group.Expand(); tree.SelectedNode = group.Nodes[2];
-                Equal(((TextBox)Field(form, "formula")).SelectedText, "Jan:Mar!$B$2:$B$3", "sheet selects the complete source span");
+                var formula = (RichTextBox)Field(form, "formula");
+                const string source = "Jan:Mar!$B$2:$B$3";
+                Equal(formula.SelectionLength, 0, "sheet leaves a collapsed formula caret");
+                formula.Select(formula.Text.IndexOf(source, StringComparison.Ordinal), source.Length);
+                Equal(formula.SelectionFont.Underline, true, "sheet underlines the complete source span");
                 Equal(((TextBox)Field(form, "expressionValue")).Text.EndsWith("\r\n40", StringComparison.Ordinal), true, "sheet preview shows its MAX");
 
                 app.EnableEvents = false;

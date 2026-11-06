@@ -182,6 +182,7 @@ static class Tests
             Check("Excel 3D worksheet spans and expression pane", delegate { ExcelSheetSpanTests.Run(); });
             Check("Excel multi-area direct dependency traces", delegate { ExcelDependencyRangesTests.Run(); });
             Check("Excel direct dependencies across workbooks", ExcelExternalDependencyTests.Run);
+            Check("Excel formula text, tree and cell selection", ExcelFormulaSelectionTests.Run);
             Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });

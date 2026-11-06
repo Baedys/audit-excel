@@ -19,17 +19,6 @@ namespace FormulaExplorer
             workbookOffer.Controls.Add(ActionButton("Ouvrir le classeur", OpenLinkedWorkbook));
             workbookOffer.Controls.Add(ActionButton("Ignorer", IgnoreLinkedWorkbook));
             PlaceCommandBar(panel, workbookOffer, 3);
-            formula.MouseUp += delegate(object sender, MouseEventArgs args)
-            { if (args.Button == MouseButtons.Left) SelectLinkedReferenceAtCaret(); };
-            formula.KeyUp += delegate(object sender, KeyEventArgs args)
-            {
-                switch (args.KeyCode)
-                {
-                    case Keys.Left: case Keys.Right: case Keys.Up: case Keys.Down:
-                    case Keys.Home: case Keys.End: case Keys.PageUp: case Keys.PageDown:
-                        SelectLinkedReferenceAtCaret(); break;
-                }
-            };
         }
 
         string ClosedWorkbookPath(ExpressionNode node)
@@ -57,20 +46,6 @@ namespace FormulaExplorer
             string path = ClosedWorkbookPath(selected == null ? null : selected.Tag as ExpressionNode);
             SetWorkbookOffer(path);
             return path != null;
-        }
-
-        void SelectLinkedReferenceAtCaret()
-        {
-            if (buildingExpressions || syntaxRoot == null || expressionOwner == null || formula.SelectionLength != 0) return;
-            int caret = formula.SelectionStart;
-            ExpressionNode link = FormulaSyntax.Flatten(syntaxRoot).Where(node => node.Start <= caret && caret < node.Start + node.Length)
-                .OrderBy(node => node.Length).FirstOrDefault(node => WorkbookLink.ReadExpression(node) != null);
-            TreeNode selected = link == null ? null : ExpressionNodes().FirstOrDefault(node => node.Tag == link);
-            if (selected == null) { SetWorkbookOffer(null); return; }
-            expressions.SelectedNode = selected;
-            if (expressions.SelectedNode != null) expressions.SelectedNode.EnsureVisible();
-            OfferSelectedWorkbook();
-            formula.Select(caret, 0);
         }
 
         void IgnoreLinkedWorkbook()
