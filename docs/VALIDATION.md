@@ -1,10 +1,16 @@
 # Revue et validation
 
+## Langue et notation des formules — 6 novembre 2026
+
+Le CIL d’Arixcel distingue la langue, activée par défaut, de la notation Excel relue au retour du focus. Le changement redessine les composants et leurs positions dans le même arbre. Le témoin Clair compare le texte du champ aux quatre membres Excel `Formula2*`, conserve le nœud courant et la sélection de la grille, et vérifie la préférence entre deux volets. La sélection de texte utilise les positions recalculées, tandis que l’évaluation utilise toujours le texte A1 invariant.
+
+Le témoin Excel français couvre les références relatives `LC(-1)`, les fonctions, décimales et séparateurs matriciels locaux, et un changement de notation pendant un brouillon. Un changement des séparateurs locaux pendant le brouillon suspend son application. La conversion CSE utilise l’ancre du bloc et conserve la sélection Excel. Les tests sans Excel couvrent les chaînes échappées, les axes compressés, les retours à la ligne et les correspondances contradictoires. Certaines réécritures de références structurées ou de qualifiants 3D peuvent laisser le texte affiché sans surlignage. Les variantes anciennes de l’API et les autres installations linguistiques restent à valider. [Application.ConvertFormula](https://learn.microsoft.com/en-us/office/vba/api/excel.application.convertformula)
+
 ## Saisie directe, constantes et matrices CSE — 6 novembre 2026
 
 Le CIL distingue le texte affiché avant l’édition et le premier brouillon après une mutation. Les témoins WinForms exercent le remplacement d’une sélection, une frappe, la suppression, Alt+Entrée et Ctrl+Z. Excel masqué confirme l’interprétation des nombres, booléens, erreurs et textes, la différence entre un blanc et un texte vide, et la restauration du préfixe apostrophe. Le contrôle de conflit distingue un nombre d’un texte identique à l’affichage.
 
-Les témoins CSE partent d’une cellule intérieure ou d’une sélection du bloc. Ils vérifient la formule canonique, l’étendue, les formats mixtes, les constantes répétées, l’effacement, la recréation après annulation et le rollback après recapture impossible. Une modification externe de la géométrie ou du contenu bloque l’opération. Les feuilles protégées et les tables de simulation refusent l’édition. Clair utilise la limite vérifiée du setter `FormulaArray` sans pilotage clavier. La saisie reste en A1 anglais. Les formules CSE plus longues, la frappe physique et la composition IME restent à vérifier ou à prendre en charge. [Range.FormulaArray](https://learn.microsoft.com/en-us/office/vba/api/excel.range.formulaarray)
+Les témoins CSE partent d’une cellule intérieure ou d’une sélection du bloc. Ils vérifient la formule canonique, l’étendue, les formats mixtes, les constantes répétées, l’effacement, la recréation après annulation et le rollback après recapture impossible. Une modification externe de la géométrie ou du contenu bloque l’opération. Les feuilles protégées et les tables de simulation refusent l’édition. Clair utilise la limite vérifiée du setter `FormulaArray` sans pilotage clavier. Ce lot utilisait A1 anglais. Les formules CSE plus longues, la frappe physique et la composition IME restent à vérifier ou à prendre en charge. [Range.FormulaArray](https://learn.microsoft.com/en-us/office/vba/api/excel.range.formulaarray)
 
 ## Éditer une formule dans le volet — 6 novembre 2026
 

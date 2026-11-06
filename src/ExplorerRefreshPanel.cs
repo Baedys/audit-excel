@@ -83,6 +83,7 @@ namespace FormulaExplorer
                 throw new InvalidOperationException("Chargez une sélection Excel pour actualiser le tracé.");
             if (!fromWorksheetHistory && navigationView != null && IsDocked && explorerWindow != 0 &&
                 explorerWindow != bridge.ActiveNavigationWindowHandle()) return;
+            RefreshFormulaDisplayStyle(false);
 
             Book previous = book;
             Book fresh = bridge.RefreshDependencyWorkbook(previous);

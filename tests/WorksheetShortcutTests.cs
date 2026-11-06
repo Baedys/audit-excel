@@ -112,6 +112,7 @@ public static class WorksheetShortcutTests
                 Invoke(control, "ShowCommand", bridge, "precedents", firstWindow);
                 Invoke(addin, "RememberWorksheetLaunch", pane, launch);
                 var explorer = Value<MainForm>(control, "explorer");
+                ExcelFormulaStyleTests.UseInvariant(explorer, application);
                 var formula = Value<RichTextBox>(explorer, "formula");
                 int exits = 0;
                 Field(explorer, "LeaveExplorerForWorksheet").SetValue(explorer, (Func<bool>)(() => { exits++; return true; }));

@@ -65,6 +65,7 @@ public static class ExcelFormulaSelectionTests
             using (var form = (MainForm)typeof(MainForm).GetConstructor(Members, null, new[] { typeof(ExcelBridge), typeof(bool) }, null)
                 .Invoke(new object[] { bridge, true }))
             {
+                ExcelFormulaStyleTests.UseInvariant(form, application);
                 host.Controls.Add(form);
                 var tree = Field<TreeView>(form, "expressions");
                 var formula = Field<RichTextBox>(form, "formula");

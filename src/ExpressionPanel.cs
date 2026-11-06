@@ -93,13 +93,20 @@ namespace FormulaExplorer
             }
             return node;
         }
-        static string ExpressionNodeText(ExpressionNode expression)
+        string PresentedExpressionText(ExpressionNode expression)
+        {
+            int start, end;
+            return expression.SheetSpanOrigin == null && TryPresentationSpan(expression.Start, expression.Start + expression.Length, out start, out end) ?
+                formulaDisplayContent.Substring(start, end - start) : expression.Text;
+        }
+
+        string ExpressionNodeText(ExpressionNode expression)
         {
             if (expression.Kind == "Missing argument") return "(argument omis)";
-            string text = expression.Text.Replace("\r", " ").Replace("\n", " ");
+            string text = PresentedExpressionText(expression).Replace("\r", " ").Replace("\n", " ");
             return text.Length > 180 ? text.Substring(0, 177) + "…" : text;
         }
-        static string ExpressionToolTip(ExpressionNode expression) { return expression.Kind + " · " + expression.Text; }
+        string ExpressionToolTip(ExpressionNode expression) { return expression.Kind + " · " + PresentedExpressionText(expression); }
 
         IEnumerable<TreeNode> ExpressionNodes()
         {

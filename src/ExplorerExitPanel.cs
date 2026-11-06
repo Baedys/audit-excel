@@ -10,16 +10,33 @@ namespace FormulaExplorer
     public sealed partial class MainForm
     {
         const string ReturnOnEscapeValue = "ReturnOnEscape";
+        const string LocalFormulaValue = "ShowLocalFormulas";
         string explorerOptionsKey = @"HKEY_CURRENT_USER\Software\Clair\Explorer";
         ExcelExplorerLaunchSelection explorerLaunchSelection;
         internal Action HideClosedExplorerPane;
 
         bool ReturnOnEscape()
+        { return ExplorerOption(ReturnOnEscapeValue, false); }
+
+        bool ExplorerOption(string name, bool fallback)
         {
-            try { return Object.Equals(Registry.GetValue(explorerOptionsKey, ReturnOnEscapeValue, 0), 1); }
-            catch (UnauthorizedAccessException) { return false; }
-            catch (SecurityException) { return false; }
-            catch (IOException) { return false; }
+            try
+            {
+                object value = Registry.GetValue(explorerOptionsKey, name, null);
+                return value == null ? fallback : Object.Equals(value, 1);
+            }
+            catch (UnauthorizedAccessException) { return fallback; }
+            catch (SecurityException) { return fallback; }
+            catch (IOException) { return fallback; }
+        }
+
+        bool SaveExplorerOption(string name, bool enabled)
+        {
+            try { Registry.SetValue(explorerOptionsKey, name, enabled ? 1 : 0, RegistryValueKind.DWord); return true; }
+            catch (UnauthorizedAccessException error) { status.Text = error.Message; }
+            catch (SecurityException error) { status.Text = error.Message; }
+            catch (IOException error) { status.Text = error.Message; }
+            return false;
         }
 
         void ConfigureExplorerExitOptions(FlowLayoutPanel direction)
@@ -27,15 +44,17 @@ namespace FormulaExplorer
             if (!IsDocked) return;
             var menu = new ContextMenuStrip();
             var returnToSource = new ToolStripMenuItem("Échap revient à la sélection précédente") { CheckOnClick = true };
+            var localFormulas = new ToolStripMenuItem("Formules dans la langue d’Excel") { CheckOnClick = true };
             menu.Items.Add(returnToSource);
-            menu.Opening += delegate { returnToSource.Checked = ReturnOnEscape(); };
-            returnToSource.Click += delegate
+            menu.Items.Add(localFormulas);
+            menu.Opening += delegate
             {
-                try { Registry.SetValue(explorerOptionsKey, ReturnOnEscapeValue, returnToSource.Checked ? 1 : 0, RegistryValueKind.DWord); }
-                catch (UnauthorizedAccessException error) { status.Text = error.Message; }
-                catch (SecurityException error) { status.Text = error.Message; }
-                catch (IOException error) { status.Text = error.Message; }
+                returnToSource.Checked = ReturnOnEscape();
+                localFormulas.Enabled = ReadExplorerFormulaStyle(true).Local;
+                localFormulas.Checked = localFormulas.Enabled && ExplorerOption(LocalFormulaValue, true);
             };
+            returnToSource.Click += delegate { SaveExplorerOption(ReturnOnEscapeValue, returnToSource.Checked); };
+            localFormulas.Click += delegate { ChangeExplorerFormulaLanguage(localFormulas.Checked); };
             var options = new Button();
             ConfigureButton(options, "Options", delegate { menu.Show(options, 0, options.Height); });
             direction.Controls.Add(options);

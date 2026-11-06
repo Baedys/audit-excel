@@ -258,6 +258,7 @@ namespace FormulaExplorer
 
         void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection, IReadOnlyList<Book> peers = null)
         {
+            RefreshFormulaDisplayStyle(false);
             ClearExplorerLaunch();
             ResetExplorerNavigation();
             ClearTraceHighlightOwners();

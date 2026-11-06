@@ -1,6 +1,8 @@
 using System;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.CSharp.RuntimeBinder;
 
 namespace FormulaExplorer
@@ -27,17 +29,14 @@ namespace FormulaExplorer
         const int LegacyArrayFormulaLimit = 255;
         const int LegacyArrayCellLimit = 250000;
 
-        internal FormulaEditorKind InspectFormulaEditor(Book book, Cell cell)
+        static FormulaEditorKind InspectFormulaEditor(object sheet, object range)
         {
-            return AtDirectCell(book, cell.Sheet, cell.Address, delegate(object sheet, object range)
-            {
-                if (!IsLegacyArrayMember(range)) return FormulaEditorKind.Scalar;
-                string formula = ReadLegacyArrayFormula(range);
-                if (IsLegacyDataTable(formula)) return FormulaEditorKind.DataTable;
-                if ((bool)((dynamic)sheet).ProtectContents || !CanWriteLegacyArrayFormula(formula))
-                    return FormulaEditorKind.ReadOnlyLegacyArray;
-                return FormulaEditorKind.LegacyArray;
-            });
+            if (!IsLegacyArrayMember(range)) return FormulaEditorKind.Scalar;
+            string formula = ReadLegacyArrayFormula(range);
+            if (IsLegacyDataTable(formula)) return FormulaEditorKind.DataTable;
+            if ((bool)((dynamic)sheet).ProtectContents || !CanWriteLegacyArrayFormula(formula))
+                return FormulaEditorKind.ReadOnlyLegacyArray;
+            return FormulaEditorKind.LegacyArray;
         }
 
         static object RetainEditableLegacyArray(object worksheet, object cell)
@@ -205,14 +204,85 @@ namespace FormulaExplorer
             return true;
         }
 
-        static void WriteLegacyArrayText(object block, string text)
+        void WriteLegacyArrayText(object block, string text, FormulaDisplayStyle style)
+        {
+            if (text.Length > LegacyArrayFormulaLimit)
+                throw new ArgumentException("Excel limite l’édition des formules matricielles à 255 caractères.", "text");
+            bool convertNotation = style.R1C1 && text.StartsWith("=", StringComparison.Ordinal);
+            bool invariantLcid = style.Local && style.Culture.LCID == FormulaCulture.LCID;
+            if (convertNotation || invariantLcid)
+            {
+                object cells = null, anchor = null;
+                try
+                {
+                    cells = ((dynamic)block).Cells;
+                    anchor = ((dynamic)cells).Item[1, 1];
+                    if (FormulaNumberFormat(anchor) != "@")
+                    {
+                        if (invariantLcid) text = NormalizeEnglishLegacyArrayText(text, style);
+                        if (convertNotation)
+                        {
+                            object converted = OfficeCallWithCulture(application, "ConvertFormula", BindingFlags.InvokeMethod, style.Culture,
+                                text, -4150, 1, Type.Missing, anchor);
+                            text = converted as string;
+                            if (String.IsNullOrEmpty(text) || !text.StartsWith("=", StringComparison.Ordinal))
+                                throw new InvalidOperationException("Excel n’a pas pu convertir la formule matricielle en A1.");
+                        }
+                    }
+                }
+                finally { Release(anchor); Release(cells); }
+            }
+            WriteLegacyArrayText(block, text, style.Culture);
+        }
+
+        static string NormalizeEnglishLegacyArrayText(string text, FormulaDisplayStyle style)
+        {
+            // FormulaArray has no Local property. LCID 1033 always takes invariant separators.
+            if (!text.StartsWith("=", StringComparison.Ordinal))
+            {
+                string value = text.Trim();
+                if (value.EndsWith("%", StringComparison.Ordinal)) value = value.Substring(0, value.Length - 1);
+                var numericStyle = (NumberFormatInfo)NumberFormatInfo.InvariantInfo.Clone();
+                numericStyle.NumberDecimalSeparator = style.DecimalSeparator.ToString();
+                double number;
+                return Double.TryParse(value, NumberStyles.Float, numericStyle, out number) ? text.Replace(style.DecimalSeparator, '.') : text;
+            }
+
+            var invariant = new StringBuilder(text.Length);
+            int previous = 0, arrays = 0;
+            try
+            {
+                foreach (FormulaSyntax.Token token in FormulaSyntax.PresentationTokens(text, style, null))
+                {
+                    invariant.Append(text, previous, token.Start - previous);
+                    string value = token.Text;
+                    if (token.Kind == "Number") value = value.Replace(style.DecimalSeparator, '.');
+                    else if (token.Kind == "Symbol" && value.Length == 1)
+                    {
+                        char symbol = value[0];
+                        if (symbol == style.ArrayOpen) { arrays++; value = "{"; }
+                        else if (symbol == style.ArrayClose) { arrays--; value = "}"; }
+                        else if (arrays != 0 && symbol == style.ArrayColumnSeparator) value = ",";
+                        else if (arrays != 0 && symbol == style.ArrayRowSeparator) value = ";";
+                        else if (arrays == 0 && symbol == style.ListSeparator) value = ",";
+                    }
+                    invariant.Append(value);
+                    previous = token.End;
+                }
+            }
+            catch (FormatException error)
+            { throw new ArgumentException("Les séparateurs de cette formule matricielle n’ont pas pu être convertis.", "text", error); }
+            return invariant.ToString();
+        }
+
+        static void WriteLegacyArrayText(object block, string text, CultureInfo culture = null)
         {
             // FormulaArray is the reversible COM setter. A longer formula would need a
             // different restore path, and substitution does not cover arbitrary formulas.
             if (text.Length > LegacyArrayFormulaLimit)
                 throw new ArgumentException("Excel limite l’édition des formules matricielles à 255 caractères.", "text");
             if (IsLegacyDataTable(text)) throw new InvalidOperationException("Les tables de simulation se modifient dans Excel.");
-            OfficeCall(block, "FormulaArray", BindingFlags.SetProperty, text);
+            OfficeCallWithCulture(block, "FormulaArray", BindingFlags.SetProperty, culture ?? FormulaCulture, text);
         }
 
         static void RestoreLegacyArrayContent(object block, LegacyArrayContent content)

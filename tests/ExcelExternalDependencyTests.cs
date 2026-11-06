@@ -95,6 +95,7 @@ public static class ExcelExternalDependencyTests
             using (var form = (MainForm)typeof(MainForm).GetConstructor(Members, null, new[] { typeof(ExcelBridge), typeof(bool) }, null)
                 .Invoke(new object[] { bridge, true }))
             {
+                ExcelFormulaStyleTests.UseInvariant(form, application);
                 host.Controls.Add(form);
                 var tree = Field<TreeView>(form, "tree");
                 var warnings = Field<TextBox>(form, "warnings");

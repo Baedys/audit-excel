@@ -53,6 +53,12 @@ namespace FormulaExplorer
             return explorer.IsDisposed;
         }
 
+        protected override void OnEnter(EventArgs e)
+        {
+            base.OnEnter(e);
+            if (explorer != null && !explorer.IsDisposed) explorer.RefreshFormulaDisplayStyle(true);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing) CloseExplorer(true);

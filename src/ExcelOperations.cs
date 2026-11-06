@@ -39,8 +39,11 @@ namespace FormulaExplorer
         // Explicit LCID: Excel's IDispatch otherwise interprets SUM as a local function
         // name under a French Windows locale, returning #NAME? instead of a value.
         static object OfficeCall(object target, string member, BindingFlags flags, params object[] args)
+        { return OfficeCallWithCulture(target, member, flags, FormulaCulture, args); }
+
+        static object OfficeCallWithCulture(object target, string member, BindingFlags flags, CultureInfo culture, params object[] args)
         {
-            try { return target.GetType().InvokeMember(member, flags, null, target, args, FormulaCulture); }
+            try { return target.GetType().InvokeMember(member, flags, null, target, args, culture); }
             catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
         }
         static object ReadFormula(object range)
@@ -49,14 +52,12 @@ namespace FormulaExplorer
             catch (COMException) { return OfficeCall(range, "Formula", BindingFlags.GetProperty); }
             catch (MissingMethodException) { return OfficeCall(range, "Formula", BindingFlags.GetProperty); }
         }
-        static void WriteFormula(object range, string text, bool forceFormula = true)
+        static void WriteFormula(object range, string text, bool forceFormula = true, FormulaDisplayStyle style = null)
         {
             // Detect property availability separately: an invalid formula must never
             // be retried through a different formula dialect.
-            bool modern = true;
-            try { OfficeCall(range, "Formula2", BindingFlags.GetProperty); }
-            catch (COMException) { modern = false; }
-            catch (MissingMethodException) { modern = false; }
+            string property;
+            ReadFormulaInStyle(range, style ?? FormulaDisplayStyle.Invariant, out property);
             object app = null, autoCorrect = null;
             bool autoFill = false, captured = false;
             try
@@ -66,7 +67,7 @@ namespace FormulaExplorer
                 ((dynamic)autoCorrect).AutoFillFormulasInLists = false;
                 bool textFormat = forceFormula && String.Equals(FormulaNumberFormat(range), "@", StringComparison.Ordinal);
                 if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "General");
-                try { OfficeCall(range, modern ? "Formula2" : "Formula", BindingFlags.SetProperty, text); }
+                try { OfficeCall(range, property, BindingFlags.SetProperty, text); }
                 finally { if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "@"); }
             }
             finally
@@ -407,10 +408,10 @@ namespace FormulaExplorer
             });
         }
 
-        internal FormulaChange EditDisplayedCell(Book book, Cell cell, object target, object array, string text)
-        { return EditCellContent(book, cell, text, false, target, array); }
+        internal FormulaChange EditDisplayedCell(Book book, Cell cell, object target, object array, string text, FormulaDisplayStyle style)
+        { return EditCellContent(book, cell, text, false, target, array, style); }
 
-        FormulaChange EditCellContent(Book book, Cell cell, string text, bool requireFormula, object retained = null, object retainedArray = null)
+        FormulaChange EditCellContent(Book book, Cell cell, string text, bool requireFormula, object retained = null, object retainedArray = null, FormulaDisplayStyle style = null)
         {
             Func<object, object, FormulaChange> edit = delegate(object worksheet, object range)
             {
@@ -441,7 +442,7 @@ namespace FormulaExplorer
                     {
                         if (isArray)
                         {
-                            WriteLegacyArrayText(target, text);
+                            WriteLegacyArrayText(target, text, style ?? FormulaDisplayStyle.Invariant);
                             change.AfterArray = ReadLegacyArrayContent(target);
                             if (change.AfterArray == null) throw new InvalidOperationException("Excel n’a pas restitué la plage matricielle attendue.");
                             if (change.AfterArray.Formula != null && !CanWriteLegacyArrayFormula(change.AfterArray.Formula))
@@ -450,7 +451,7 @@ namespace FormulaExplorer
                         else
                         {
                             if (text.Length == 0) ((dynamic)target).ClearContents();
-                            else WriteFormula(target, text, requireFormula);
+                            else WriteFormula(target, text, requireFormula, style);
                             change.After = ReadFormulaContent(target);
                             if (requireFormula && change.After.Formula == null) throw new InvalidOperationException("Excel n’a pas accepté le texte comme formule.");
                             change.AfterFormat = FormulaNumberFormat(target);

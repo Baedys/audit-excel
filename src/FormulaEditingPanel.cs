@@ -8,14 +8,18 @@ namespace FormulaExplorer
 {
     public sealed partial class MainForm
     {
-        const string FormulaEditingHint = "Fonctions en anglais · Entrée applique · Échap annule · Alt+Entrée ajoute une ligne";
+        const string FormulaEditingHint = "Entrée applique · Échap annule · Alt+Entrée ajoute une ligne";
         readonly RichTextBox formulaEditor = new RichTextBox();
         readonly Stack<FormulaChange> formulaChanges = new Stack<FormulaChange>();
         Cell formulaDisplayCell, formulaEditCell;
         FormulaEditorKind formulaDisplayKind;
+        FormulaDisplayStyle explorerFormulaStyle = FormulaDisplayStyle.Invariant;
+        FormulaDisplayStyle formulaCellStyle = FormulaDisplayStyle.Invariant, formulaEditStyle;
+        FormulaPresentationMap formulaPresentation;
+        static event Action<string> ExplorerFormulaLanguageChanged;
         int formulaDisplayPrefix;
-        string formulaDisplayText = "", formulaEditOriginal, formulaEditUndoStart;
-        bool updatingFormulaDisplay;
+        string formulaDisplayText = "", formulaDisplayContent = "", formulaEditOriginal, formulaEditUndoStart;
+        bool updatingFormulaDisplay, formulaDisplayEditable, formulaDisplayIsCanonical;
         int formulaCaretBeforeInput;
         int? formulaEditReturnCaret;
         object formulaEditTarget, formulaEditArray;
@@ -46,42 +50,121 @@ namespace FormulaExplorer
             layout.Controls.Add(field, 0, 1);
             formula.KeyDown += delegate { formulaCaretBeforeInput = formula.SelectionStart; };
             formula.TextChanged += delegate { StartFormulaEditFromDisplay(); };
+            formula.Enter += delegate { RefreshFormulaDisplayStyle(true); };
+            expressions.Enter += delegate { RefreshFormulaDisplayStyle(true); };
+            tree.Enter += delegate { RefreshFormulaDisplayStyle(true); };
+            Activated += delegate { RefreshFormulaDisplayStyle(true); };
+            ExplorerFormulaLanguageChanged += OnExplorerFormulaLanguageChanged;
             tabs.Selecting += delegate(object sender, TabControlCancelEventArgs e) { if (formulaEditCell != null) e.Cancel = true; };
             Disposed += delegate
             {
+                ExplorerFormulaLanguageChanged -= OnExplorerFormulaLanguageChanged;
                 ReleaseFormulaEditTarget();
                 foreach (FormulaChange change in formulaChanges) change.ReleaseTarget();
                 formulaChanges.Clear();
             };
         }
 
-        void ShowFormulaEditSource(Cell cell)
+        FormulaDisplayStyle ReadExplorerFormulaStyle(bool local)
         {
-            bool canEdit = bridge != null && cell != null && (cell.Workbook == null || cell.Workbook == book);
-            if (!ReferenceEquals(cell, formulaDisplayCell))
+            if (bridge == null) return FormulaDisplayStyle.Invariant;
+            try { return bridge.ReadFormulaDisplayStyle(local); }
+            catch (ArgumentException) { }
+            catch (COMException) { }
+            catch (InvalidOperationException) { }
+            if (local)
+                try { return bridge.ReadFormulaDisplayStyle(false); }
+                catch (COMException) { }
+                catch (InvalidOperationException) { }
+            return explorerFormulaStyle;
+        }
+
+        void ChangeExplorerFormulaLanguage(bool local)
+        {
+            if (!SaveExplorerOption(LocalFormulaValue, local)) return;
+            Action<string> changed = ExplorerFormulaLanguageChanged;
+            if (changed != null) changed(explorerOptionsKey);
+        }
+
+        void OnExplorerFormulaLanguageChanged(string optionsKey)
+        {
+            if (!String.Equals(optionsKey, explorerOptionsKey, StringComparison.OrdinalIgnoreCase) || !Visible || IsDisposed || Disposing) return;
+            if (InvokeRequired) BeginInvoke(new Action(delegate { RefreshFormulaDisplayStyle(true); }));
+            else RefreshFormulaDisplayStyle(true);
+        }
+
+        internal void RefreshFormulaDisplayStyle(bool redraw)
+        {
+            if (formulaEditCell != null || updatingFormulaDisplay) return;
+            FormulaDisplayStyle next = ReadExplorerFormulaStyle(ExplorerOption(LocalFormulaValue, true));
+            explorerFormulaStyle = next;
+            if (!redraw || formulaDisplayCell == null || next.SameAs(formulaCellStyle)) return;
+            ShowFormulaEditSource(formulaDisplayCell, true);
+            foreach (TreeNode node in ExpressionNodes())
+            {
+                var expression = node.Tag as ExpressionNode;
+                if (expression != null)
+                {
+                    ExpressionTarget target;
+                    expressionTargets.TryGetValue(expression, out target);
+                    ShowExpressionTarget(node, expression, target);
+                }
+            }
+            HighlightFormulaSelection();
+        }
+
+        void ShowFormulaEditSource(Cell cell, bool force = false)
+        {
+            if (force || !ReferenceEquals(cell, formulaDisplayCell) || !explorerFormulaStyle.SameAs(formulaCellStyle))
             {
                 formulaDisplayKind = FormulaEditorKind.Scalar;
-                if (canEdit && cell.IsFormula)
+                formulaCellStyle = FormulaDisplayStyle.Invariant;
+                formulaDisplayEditable = bridge != null && cell != null && (cell.Workbook == null || cell.Workbook == book);
+                string text = cell == null ? "" : cell.IsFormula ? cell.Formula : cell.Value ?? "";
+                if (cell != null && !cell.IsFormula && cell.Kind == "Booléen") text = text.ToUpperInvariant();
+                if (bridge != null && cell != null)
                 {
-                    try { formulaDisplayKind = bridge.InspectFormulaEditor(book, cell); }
-                    catch (COMException) { canEdit = false; }
-                    catch (InvalidOperationException) { canEdit = false; }
+                    try
+                    {
+                        DisplayedExcelFormula displayed = bridge.ReadDisplayedFormula(cell.Workbook ?? book, cell, explorerFormulaStyle);
+                        formulaCellStyle = explorerFormulaStyle;
+                        formulaDisplayKind = displayed.Kind;
+                        text = displayed.Text;
+                    }
+                    catch (COMException) { formulaDisplayEditable = false; }
+                    catch (InvalidOperationException) { formulaDisplayEditable = false; }
+                    catch (MissingMemberException) { formulaDisplayEditable = false; }
                 }
+                formulaDisplayContent = text.Replace("\r\n", "\n");
+                formulaDisplayIsCanonical = cell != null && cell.IsFormula && String.Equals(cell.Formula.Replace("\r\n", "\n"), formulaDisplayContent, StringComparison.Ordinal);
+                formulaPresentation = cell != null && cell.IsFormula && !formulaDisplayIsCanonical ?
+                    FormulaPresentationMap.TryCreate(cell.Formula, formulaDisplayContent, formulaCellStyle) : null;
+                formulaDisplayPrefix = formulaDisplayKind == FormulaEditorKind.LegacyArray || formulaDisplayKind == FormulaEditorKind.ReadOnlyLegacyArray ? 1 : 0;
             }
             formulaDisplayCell = cell;
             updatingFormulaDisplay = true;
             try
             {
-                formula.ReadOnly = !canEdit || formulaDisplayKind == FormulaEditorKind.ReadOnlyLegacyArray || formulaDisplayKind == FormulaEditorKind.DataTable;
-                formulaDisplayPrefix = formulaDisplayKind == FormulaEditorKind.LegacyArray || formulaDisplayKind == FormulaEditorKind.ReadOnlyLegacyArray ? 1 : 0;
-                string text = cell == null ? "" : (cell.IsFormula ? cell.Formula : cell.Value ?? "");
-                if (cell != null && !cell.IsFormula && cell.Kind == "Booléen") text = text.ToUpperInvariant();
-                formula.Text = formulaDisplayPrefix == 0 ? text : "{" + text + "}";
+                formula.ReadOnly = !formulaDisplayEditable || formulaDisplayKind == FormulaEditorKind.ReadOnlyLegacyArray || formulaDisplayKind == FormulaEditorKind.DataTable;
+                formula.Text = formulaDisplayPrefix == 0 ? formulaDisplayContent : formulaCellStyle.ArrayOpen + formulaDisplayContent + formulaCellStyle.ArrayClose;
                 formulaDisplayText = formula.Text;
                 formula.ClearUndo();
                 formulaCaretBeforeInput = 0;
             }
             finally { updatingFormulaDisplay = false; }
+        }
+
+        bool TryPresentationSpan(int sourceStart, int sourceEnd, out int start, out int end)
+        {
+            start = end = 0;
+            if (expressionOwner == null || !ReferenceEquals(expressionOwner, formulaDisplayCell)) return false;
+            if (formulaDisplayIsCanonical)
+            {
+                start = FormulaDisplayOffset(expressionOwner.Formula, sourceStart);
+                end = FormulaDisplayOffset(expressionOwner.Formula, sourceEnd);
+                return start < end && end <= formulaDisplayContent.Length;
+            }
+            return formulaPresentation != null && formulaPresentation.TrySpan(sourceStart, sourceEnd, out start, out end);
         }
 
         void StartFormulaEditFromDisplay()
@@ -130,10 +213,11 @@ namespace FormulaExplorer
             catch (InvalidOperationException error) { ReleaseFormulaEditTarget(); status.Text = error.Message; return false; }
             formulaEditFocus = source;
             formulaEditCell = cell;
+            formulaEditStyle = formulaCellStyle;
             formulaEditOriginal = formulaDisplayPrefix == 0 ? formulaDisplayText : StripArrayFormulaDelimiters(formulaDisplayText);
             if (formulaDisplayPrefix != 0)
             {
-                if (text.StartsWith("{", StringComparison.Ordinal)) start = Math.Max(0, start - 1);
+                if (text.Length != 0 && text[0] == formulaCellStyle.ArrayOpen) start = Math.Max(0, start - 1);
                 text = StripArrayFormulaDelimiters(text);
             }
             formulaEditor.Text = text;
@@ -144,14 +228,14 @@ namespace FormulaExplorer
             start = Math.Min(start, formulaEditor.TextLength);
             formulaEditor.Select(start, Math.Min(length, formulaEditor.TextLength - start));
             formulaEditor.ScrollToCaret();
-            status.Text = FormulaEditingHint;
+            status.Text = formulaEditStyle.InputHint + " · " + FormulaEditingHint;
             return true;
         }
 
-        static string StripArrayFormulaDelimiters(string text)
+        string StripArrayFormulaDelimiters(string text)
         {
-            if (text.StartsWith("{", StringComparison.Ordinal)) text = text.Substring(1);
-            if (text.EndsWith("}", StringComparison.Ordinal)) text = text.Substring(0, text.Length - 1);
+            if (text.Length != 0 && text[0] == formulaCellStyle.ArrayOpen) text = text.Substring(1);
+            if (text.Length != 0 && text[text.Length - 1] == formulaCellStyle.ArrayClose) text = text.Substring(0, text.Length - 1);
             return text;
         }
 
@@ -170,6 +254,7 @@ namespace FormulaExplorer
         {
             ReleaseFormulaEditTarget();
             formulaEditCell = null;
+            formulaEditStyle = null;
             formulaEditOriginal = formulaEditUndoStart = null;
             SetFormulaEditingControls(false);
             caret = caret ?? formulaEditReturnCaret;
@@ -207,7 +292,9 @@ namespace FormulaExplorer
             try
             {
                 RequireFormulaEditWindow();
-                FormulaChange change = bridge.EditDisplayedCell(previous, formulaEditCell, formulaEditTarget, formulaEditArray, draft);
+                if (formulaEditStyle.Local && !formulaEditStyle.SameLanguage(bridge.ReadFormulaDisplayStyle(true)))
+                    throw new InvalidOperationException("La syntaxe locale d’Excel a changé. Rouvrez l’édition pour l’utiliser.");
+                FormulaChange change = bridge.EditDisplayedCell(previous, formulaEditCell, formulaEditTarget, formulaEditArray, draft, formulaEditStyle);
                 try
                 {
                     RefreshExplorerModelCore(null, false, true);

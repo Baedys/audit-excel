@@ -174,7 +174,13 @@ namespace FormulaExplorer
             return false;
         }
 
-        sealed class Token
+        internal static IReadOnlyList<Token> PresentationTokens(string formula, FormulaDisplayStyle style, Regex gridReference)
+        { return new Parser(formula, true, style, gridReference).Tokens; }
+
+        internal static bool IsInvariantFormulaError(string text)
+        { return Array.Exists(Parser.Errors, error => String.Equals(error, text, StringComparison.OrdinalIgnoreCase)); }
+
+        internal sealed class Token
         {
             public string Text, Kind;
             public int Start, End;
@@ -185,11 +191,22 @@ namespace FormulaExplorer
         {
             readonly string source;
             readonly List<Token> tokens = new List<Token>();
-            int index, depth;
+            readonly bool presentation;
+            readonly FormulaDisplayStyle displayStyle;
+            readonly Regex displayGridReference;
+            int index, depth, arrayDepth;
             static readonly Regex R1C1Token = new Regex(@"^R(?:\d+|\[-?\d+\])?C(?:\d+|\[-?\d+\])?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            static readonly string[] Errors = { "#GETTING_DATA", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#NULL!", "#N/A", "#SPILL!", "#CALC!", "#CONNECT!", "#BLOCKED!", "#UNKNOWN!", "#FIELD!", "#BUSY!", "#PYTHON!" };
+            internal static readonly string[] Errors = { "#GETTING_DATA", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#NULL!", "#N/A", "#SPILL!", "#CALC!", "#CONNECT!", "#BLOCKED!", "#UNKNOWN!", "#FIELD!", "#BUSY!", "#PYTHON!" };
 
-            public Parser(string text) { source = text; Lex(); }
+            public Parser(string text, bool presentation = false, FormulaDisplayStyle displayStyle = null, Regex displayGridReference = null)
+            {
+                source = text;
+                this.presentation = presentation;
+                this.displayStyle = displayStyle;
+                this.displayGridReference = displayGridReference;
+                Lex();
+            }
+            internal IReadOnlyList<Token> Tokens { get { return tokens; } }
             Token Current { get { return tokens[index]; } }
             Token Take() { return tokens[index++]; }
             FormatException Error(string message, int position) { return new FormatException(message + " (position " + position + ")."); }
@@ -388,12 +405,13 @@ namespace FormulaExplorer
             void Lex()
             {
                 int p = 0;
+                char decimalPoint = displayStyle == null ? '.' : displayStyle.DecimalSeparator;
                 while (p < source.Length)
                 {
                     if (Char.IsWhiteSpace(source[p])) { p++; continue; }
                     int start = p;
                     char c = source[p];
-                    if (c == '\'' || c == '[' || IsNameCharacter(c))
+                    if (!presentation && (c == '\'' || c == '[' || IsNameCharacter(c)))
                     {
                         int end;
                         SheetSpanReference span = SheetSpanReference.Read(source, p, out end);
@@ -416,11 +434,11 @@ namespace FormulaExplorer
                         }
                         if (!closed) throw Error("Unclosed string literal", start);
                     }
-                    else if (Char.IsDigit(c) || (c == '.' && p + 1 < source.Length && Char.IsDigit(source[p + 1])))
+                    else if (Char.IsDigit(c) || (c == decimalPoint && p + 1 < source.Length && Char.IsDigit(source[p + 1])))
                     {
                         kind = "Number";
                         while (p < source.Length && Char.IsDigit(source[p])) p++;
-                        if (p < source.Length && source[p] == '.') { p++; while (p < source.Length && Char.IsDigit(source[p])) p++; }
+                        if (p < source.Length && source[p] == decimalPoint) { p++; while (p < source.Length && Char.IsDigit(source[p])) p++; }
                         if (p + 1 < source.Length && (source[p] == 'E' || source[p] == 'e') && (Char.IsDigit(source[p + 1]) || source[p + 1] == '+' || source[p + 1] == '-'))
                         {
                             p++; if (p < source.Length && (source[p] == '+' || source[p] == '-')) p++;
@@ -428,7 +446,7 @@ namespace FormulaExplorer
                             if (digits == p) throw Error("Invalid numeric exponent", start);
                         }
                         // Sheet names may begin with a digit, e.g. 2026!A1.
-                        if (p < source.Length && (source[p] == '!' || IsNameCharacter(source[p])))
+                        if (p < source.Length && (source[p] == '!' || (IsNameCharacter(source[p]) && !IsStyledSymbol(source[p]))))
                         {
                             p = start; ScanAtom(ref p); kind = "Atom";
                             if (source.Substring(start, p - start).IndexOf('!') < 0) throw Error("Invalid number or identifier beginning with a digit", start);
@@ -436,13 +454,14 @@ namespace FormulaExplorer
                     }
                     else if (c == '#')
                     {
-                        bool found = false;
-                        foreach (string error in Errors)
-                        {
-                            if (source.Length - p >= error.Length && String.Compare(source, p, error, 0, error.Length, StringComparison.OrdinalIgnoreCase) == 0)
-                            { p += error.Length; kind = "Error"; found = true; break; }
-                        }
-                        if (!found) p++;
+                        if (TryScanError(ref p)) kind = "Error";
+                        else p++;
+                    }
+                    else if (IsStyledSymbol(c))
+                    {
+                        if (c == displayStyle.ArrayOpen) arrayDepth++;
+                        else if (c == displayStyle.ArrayClose) arrayDepth--;
+                        p++;
                     }
                     else if (c == '\'' || c == '[' || IsNameCharacter(c)) { ScanAtom(ref p); kind = "Atom"; }
                     else if ("+-*/^&=<>%:,;(){}@".IndexOf(c) >= 0)
@@ -457,10 +476,42 @@ namespace FormulaExplorer
             }
             static bool IsNameCharacter(char c) { return Char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '$' || c == '\\' || c == '?'; }
 
+            bool IsStyledSymbol(char c)
+            {
+                return displayStyle != null && (c == displayStyle.ArrayOpen || c == displayStyle.ArrayClose ||
+                    c == displayStyle.ListSeparator || (arrayDepth > 0 && (c == displayStyle.ArrayColumnSeparator || c == displayStyle.ArrayRowSeparator)));
+            }
+
+            bool TryScanError(ref int p)
+            {
+                foreach (string error in Errors)
+                    if (source.Length - p >= error.Length && String.Compare(source, p, error, 0, error.Length, StringComparison.OrdinalIgnoreCase) == 0)
+                    { p += error.Length; return true; }
+                if (displayStyle == null || !displayStyle.Local) return false;
+                int end = p + 1;
+                if (end >= source.Length || !Char.IsLetter(source[end])) return false;
+                while (end < source.Length && (Char.IsLetterOrDigit(source[end]) || "_./".IndexOf(source[end]) >= 0)) end++;
+                if (end < source.Length && (source[end] == '!' || source[end] == '?')) end++;
+                p = end;
+                return true;
+            }
+
+            bool TryScanStyledGrid(ref int p)
+            {
+                if (displayGridReference == null) return false;
+                Match match = displayGridReference.Match(source, p);
+                if (!match.Success || match.Index != p) return false;
+                int end = p + match.Length;
+                if (end < source.Length && (IsNameCharacter(source[end]) || source[end] == '!' || source[end] == '[')) return false;
+                p = end;
+                return true;
+            }
+
             void ScanAtom(ref int p)
             {
                 int start = p;
                 bool qualified = false;
+                if (TryScanStyledGrid(ref p)) return;
                 if (source[p] == '\'')
                 {
                     p++; bool closed = false;
@@ -473,17 +524,21 @@ namespace FormulaExplorer
                     if (!closed) throw Error("Unclosed quoted sheet or workbook name", start);
                     if (p >= source.Length || source[p] != '!') throw Error("Quoted sheet or workbook name must be followed by '!'", p);
                     p++; qualified = true;
+                    if (TryScanStyledGrid(ref p)) return;
                 }
                 while (p < source.Length)
                 {
+                    if (IsStyledSymbol(source[p])) break;
                     if (IsNameCharacter(source[p])) { p++; continue; }
                     if (source[p] == '!')
                     {
                         if (qualified) throw Error("A reference has more than one sheet separator", p);
-                        qualified = true; p++; continue;
+                        qualified = true; p++;
+                        if (TryScanStyledGrid(ref p)) return;
+                        continue;
                     }
-                    if (qualified && source.Length - p >= 5 && String.Compare(source, p, "#REF!", 0, 5, StringComparison.OrdinalIgnoreCase) == 0)
-                    { p += 5; break; }
+                    if (qualified && source[p] == '#' && displayStyle != null && TryScanError(ref p)) return;
+                    if (qualified && source.Length - p >= 5 && String.Compare(source, p, "#REF!", 0, 5, StringComparison.OrdinalIgnoreCase) == 0) { p += 5; break; }
                     if (source[p] != '[') break;
                     int bracketStart = p, brackets = 0;
                     do

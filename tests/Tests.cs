@@ -178,6 +178,7 @@ static class Tests
         Check("Conditional fill snapshots and XML", delegate { Console.WriteLine("CONDITIONAL_FILL_XML_ASSERTIONS " + ConditionalFillDataTests.Run()); });
         Check("Conditional rule reference mode witnesses", delegate { Console.WriteLine("CONDITIONAL_WITNESS_ASSERTIONS " + ConditionalRuleWitnessTests.Run()); });
         Check("Combined highlight XML journal replacement", delegate { Console.WriteLine("COMBINED_XML_ASSERTIONS " + CombinedHighlightXmlStorageTests.Run()); });
+        Check("Formula presentation spans across Excel styles", delegate { Console.WriteLine("FORMULA_PRESENTATION_ASSERTIONS " + ExcelFormulaStyleTests.RunMapping()); });
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
@@ -188,6 +189,7 @@ static class Tests
             Check("Excel formula text, tree and cell selection", ExcelFormulaSelectionTests.Run);
             Check("Excel in-pane formula editing", ExcelFormulaEditingPanelTests.Run);
             Check("Excel in-pane legacy array editing", ExcelFormulaEditingPanelTests.RunArrays);
+            Check("Excel local and R1C1 formula display and editing", ExcelFormulaStyleTests.Run);
             Check("Excel temporary navigation visibility", ExcelNavigationVisibilityTests.Run);
             Check("Excel navigation corner shortcuts", ExcelNavigationShortcutTests.Run);
             Check("Excel worksheet shortcut locations", WorksheetShortcutTests.RunExcel);

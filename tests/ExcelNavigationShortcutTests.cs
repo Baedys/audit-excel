@@ -85,6 +85,7 @@ public static class ExcelNavigationShortcutTests
             using (var form = (MainForm)typeof(MainForm).GetConstructor(Members, null, new[] { typeof(ExcelBridge), typeof(bool) }, null)
                 .Invoke(new object[] { bridge, true }))
             {
+                ExcelFormulaStyleTests.UseInvariant(form, application);
                 host.Controls.Add(form);
                 var expressions = Field<TreeView>(form, "expressions");
                 var relations = Field<TreeView>(form, "tree");

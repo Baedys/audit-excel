@@ -196,6 +196,7 @@ public static class ExcelCriteriaTargetTests
             using (var form = (MainForm)typeof(MainForm).GetConstructor(Members, null, new[] { typeof(ExcelBridge), typeof(bool) }, null)
                 .Invoke(new object[] { bridge, true }))
             {
+                ExcelFormulaStyleTests.UseInvariant(form, application);
                 host.Controls.Add(form);
                 var tabs = Field<TabControl>(form, "tabs");
                 Equal(tabs.Handle != IntPtr.Zero, true, "docked tabs initialized");

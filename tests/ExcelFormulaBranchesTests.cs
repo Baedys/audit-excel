@@ -139,7 +139,9 @@ public static class ExcelFormulaBranchesTests
             using (var form = (MainForm)typeof(MainForm).GetConstructor(members, null, new[] { typeof(ExcelBridge), typeof(bool) }, null)
                 .Invoke(new object[] { bridge, true }))
             {
+                ExcelFormulaStyleTests.UseInvariant(form, application);
                 host.Controls.Add(form);
+                form.Show();
                 var tabs = (TabControl)typeof(MainForm).GetField("tabs", members).GetValue(form);
                 Equal(tabs.Handle != IntPtr.Zero, true, "native tab control created for selection events");
                 form.ExecuteRibbonCommand("flow");
@@ -150,8 +152,13 @@ public static class ExcelFormulaBranchesTests
                 Equal(root.Nodes.Count, 3, "all formula arguments visible");
                 Equal(root.Nodes[1].NodeFont, null, "hidden formula tab does not evaluate choices");
                 tabs.SelectedIndex = 0;
+                Equal(tabs.SelectedIndex, 0, "formula tab is selected");
+                // The unshown host does not consistently deliver the native tab notification.
+                typeof(TabControl).GetMethod("OnSelectedIndexChanged", members).Invoke(tabs, new object[] { EventArgs.Empty });
+                root = tree.Nodes[0];
                 Equal(root.Nodes[0].NodeFont, null, "condition is not bolded");
-                Equal(root.Nodes[1].NodeFont != null && root.Nodes[1].NodeFont.Bold, true, "active branch is bold on capture");
+                var preview = (TextBox)typeof(MainForm).GetField("expressionValue", members).GetValue(form);
+                Equal(root.Nodes[1].NodeFont != null && root.Nodes[1].NodeFont.Bold, true, "active branch is bold on capture · " + preview.Text.Replace("\r\n", " · "));
                 Equal(root.Nodes[2].NodeFont, null, "inactive branch remains regular");
                 toggle.Checked = false;
                 Equal(root.Nodes[1].NodeFont, null, "auto-evaluation disabled");

@@ -92,6 +92,7 @@ public static class ExcelFormulaEditingPanelTests
             using (var pane = (MainForm)typeof(MainForm).GetConstructor(Members, null,
                 new[] { typeof(ExcelBridge), typeof(bool), typeof(int) }, null).Invoke(new object[] { bridge, true, hwnd }))
             {
+                ExcelFormulaStyleTests.UseInvariant(pane, application);
                 host.Controls.Add(pane); pane.Show();
                 Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
                 var tree = Field<TreeView>(pane, "tree");
@@ -340,6 +341,7 @@ public static class ExcelFormulaEditingPanelTests
             using (var pane = (MainForm)typeof(MainForm).GetConstructor(Members, null,
                 new[] { typeof(ExcelBridge), typeof(bool), typeof(int) }, null).Invoke(new object[] { bridge, true, hwnd }))
             {
+                ExcelFormulaStyleTests.UseInvariant(pane, application);
                 host.Controls.Add(pane); pane.Show();
                 Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
                 var formula = Field<RichTextBox>(pane, "formula");

@@ -125,8 +125,9 @@ namespace FormulaExplorer
             if (expression != null && expression.SheetSpanOrigin != null) expression = expression.SheetSpanOrigin;
             ExpressionNode first = group == null ? expression : group.Range;
             ExpressionNode last = group == null ? expression : group.Criterion;
-            start = formulaDisplayPrefix + FormulaDisplayOffset(expressionOwner.Formula, first.Start);
-            end = formulaDisplayPrefix + FormulaDisplayOffset(expressionOwner.Formula, last.Start + last.Length);
+            if (!TryPresentationSpan(first.Start, last.Start + last.Length, out start, out end)) return false;
+            start += formulaDisplayPrefix;
+            end += formulaDisplayPrefix;
             return start < end && end <= formula.TextLength;
         }
 
@@ -179,9 +180,9 @@ namespace FormulaExplorer
         void SelectExpressionAtCaret(Keys modifiers)
         {
             if (stylingFormula || selectingFromFormula || buildingExpressions || syntaxRoot == null || formula.SelectionLength != 0 || expressions.Nodes.Count == 0) return;
-            string source = expressionOwner.Formula;
+            if (!formulaDisplayIsCanonical && formulaPresentation == null) return;
             int caret = formula.SelectionStart;
-            if (caret < formulaDisplayPrefix || caret > formulaDisplayPrefix + FormulaDisplayOffset(source, source.Length)) return;
+            if (caret < formulaDisplayPrefix || caret > formulaDisplayPrefix + formulaDisplayContent.Length) return;
             TreeNode rootNode = expressions.Nodes[0];
             TreeNode node = FindExpressionAtCaret(rootNode, caret);
             selectingFromFormula = true;
