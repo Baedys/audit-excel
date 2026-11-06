@@ -32,6 +32,7 @@ namespace FormulaExplorer
             internal ExplorerLiveSource LiveSource;
             internal ExplorerExpressionState Expressions;
             internal ExcelNavigationCursor Navigation;
+            internal FormulaTraceUndo FormulaUndo;
             internal bool ExpressionNavigation;
             internal string HighlightOwner;
             internal bool Reverse;

@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Annulation dans les sous-tracés — 6 novembre 2026
+
+Le CIL d’Arixcel donne une pile à chaque tracé et la relie à celle du parent. L’ouverture interne suspend les événements de focus. Ctrl+Z prend la dernière action dans la première pile liée qui contient une entrée. À la fermeture d’un enfant, les piles liées sont vidées du plus récent au plus ancien, puis leur contenu forme une seule action dans le parent immédiat. Un retour à Excel transfère la chaîne dans l’annulation globale et détache ses liens. Le chemin relève de `ModelessForm` aux RVA 57684, 58327, 58340 et 59720, et de `UndoStack` aux RVA 67272 et 67604 dans l’assemblage commun.
+
+Les témoins Clair dans Excel masqué exercent l’ouverture, la fermeture et l’annulation sur trois tracés liés. Ils vérifient la priorité de l’édition enfant, le repli sur le parent, le regroupement à la fermeture d’un enfant vide et l’unique publication du lot à la sortie du volet. Un nouveau lancement transmet aussi l’ancien lot. Quand Alt+R retire un tracé dont la feuille source a disparu, Clair garde son édition dans la chaîne si sa cible physique est toujours accessible. La garde de conflit et la compensation du lot restent actives. La référence Arixcel provient du CIL. Le focus physique et la délégation d’édition à une comparaison restent à vérifier.
+
 ## Annulation des éditions depuis Excel — 6 novembre 2026
 
 Le CIL d’Arixcel transfère l’historique local lors de la perte de focus. L’application inscrit une seule action `OnUndo`. Son lot est exécuté du changement le plus récent au plus ancien. Une sélection sûre est tentée après l’écriture. Clair enregistre une commande XLL dédiée, sélectionne la cible la plus ancienne après succès et conserve ses contrôles de conflit. Si un élément du lot échoue, les écritures déjà annulées sont compensées. [Application.OnUndo](https://learn.microsoft.com/en-us/office/vba/api/excel.application.onundo)

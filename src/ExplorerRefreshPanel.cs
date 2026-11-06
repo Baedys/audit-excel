@@ -139,6 +139,7 @@ namespace FormulaExplorer
                 refreshedHistory.Add(new ExplorerHistory {
                     Cell = refreshed, LiveSource = item.LiveSource, Reverse = item.Reverse, HighlightOwner = item.HighlightOwner,
                     Expressions = item.Expressions, Navigation = item.Navigation, ExpressionNavigation = item.ExpressionNavigation,
+                    FormulaUndo = item.FormulaUndo,
                     Source = RefreshTraceSource(item.Source, saved, replace, sheetName),
                     Selection = RefreshRelationPaths(item.Selection, item.Cell, refreshed, sheetKeys)
                 });

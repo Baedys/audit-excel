@@ -263,6 +263,7 @@ namespace FormulaExplorer
             ResetExplorerNavigation();
             ClearTraceHighlightOwners();
             UpdateCapturedBook(captured, sheet, address, peers);
+            RestartFormulaUndoTrace();
             ClearExplorerHistory();
             if (selection == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + traceWarningCount + " avertissements";
             SetExplorerRoot(capturedRoot, false, selection, null);
@@ -313,12 +314,15 @@ namespace FormulaExplorer
         {
             ExplorerLiveSource nextSource = bridge == null ? null : new ExplorerLiveSource(bridge, book, cell, selection);
             if (remember && root != null)
+            {
                 history.Push(new ExplorerHistory {
                     Cell = root, Source = traceSource, LiveSource = liveSource, Reverse = reverse,
                     Selection = CaptureExplorerSelection(), Expressions = CaptureExplorerExpressions(),
                     HighlightOwner = traceHighlightOwner, ExpressionNavigation = lastExplorerNavigation == expressionNavigationCursor,
-                    Navigation = TakeExplorerNavigation()
+                    Navigation = TakeExplorerNavigation(), FormulaUndo = formulaUndo
                 });
+                formulaUndo = new FormulaTraceUndo { Previous = formulaUndo };
+            }
             else
             {
                 if (liveSource != null) liveSource.Dispose();
@@ -335,6 +339,7 @@ namespace FormulaExplorer
             if (history.Count == 0) return;
             RemoveTraceHighlightOwner(traceHighlightOwner);
             ExplorerHistory previous = history.Pop();
+            MergeFormulaUndoInto(previous.FormulaUndo);
             if (liveSource != null) liveSource.Dispose();
             liveSource = previous.LiveSource;
             root = previous.Cell; traceSource = previous.Source; reverse = previous.Reverse;

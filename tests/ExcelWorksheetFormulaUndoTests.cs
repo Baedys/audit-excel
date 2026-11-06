@@ -70,18 +70,30 @@ public static class ExcelWorksheetFormulaUndoTests
                 var tree = (TreeView)Field(explorer, "tree").GetValue(explorer);
                 var editor = (RichTextBox)Field(explorer, "formulaEditor").GetValue(explorer);
                 var status = (Label)Field(explorer, "status").GetValue(explorer);
-                var local = (Stack<FormulaChange>)Field(explorer, "formulaChanges").GetValue(explorer);
+                object firstTrace = Field(explorer, "formulaUndo").GetValue(explorer);
+                var local = (Stack<FormulaChange[]>)Field(firstTrace, "Entries").GetValue(firstTrace);
                 Func<string> active = () => (string)keep(app.ActiveCell).Address;
+                Func<string> traceRoot = () => ((Cell)Field(explorer, "root").GetValue(explorer)).Address;
+                Func<string, TreeNode> relation = address => tree.Nodes[0].Nodes.Cast<TreeNode>().Concat(new[] { tree.Nodes[0] })
+                    .Single(n => n.Tag is Cell && ((Cell)n.Tag).Address == address);
                 Action<string, string> edit = (address, text) =>
                 {
-                    TreeNode relation = tree.Nodes[0].Nodes.Cast<TreeNode>().Single(n => ((Cell)n.Tag).Address == address);
-                    Invoke(explorer, "ApplyRelationSelection", relation, Keys.None);
+                    Invoke(explorer, "ApplyRelationSelection", relation(address), Keys.None);
                     Invoke(explorer, "EditSelectedFormula");
                     Equal(editor.Visible, true, "edition opens for " + address);
                     editor.Text = text;
                     Invoke(explorer, "ApplyFormulaEdit");
                     Equal(editor.Visible, false, "edition applies · " + status.Text);
                 };
+                Action<string> openChild = address =>
+                {
+                    Invoke(explorer, "ApplyRelationSelection", relation(address), Keys.None);
+                    Invoke(explorer, "ExploreFromNavigationTree", tree, false);
+                    Equal(traceRoot(), address, "Ctrl+Q opens child " + address);
+                };
+                Action closeChild = () => Equal(Invoke(explorer, "HandleExplorerExitKey", Keys.Enter), true, "Enter closes a child trace");
+                Action<bool> localUndo = expected => Equal(Invoke(explorer, "HandleFormulaEditingKey", Keys.Control | Keys.Z, tree),
+                    expected, "Ctrl+Z follows the linked trace history");
                 Action leave = () =>
                 {
                     IntPtr handle = control.Handle;
@@ -137,11 +149,88 @@ public static class ExcelWorksheetFormulaUndoTests
                 Equal(active(), "$J$9", "a failed batch leaves the worksheet selection alone");
                 Equal(status.Text.Contains("refusée"), true, "the pane reports the conflict");
 
+                second.Formula2 = "=C2";
+                root.Select(); Invoke(control, "ShowCommand", bridge, "precedents", hwnd);
+                edit("C2", "=78");
+                openChild("D2");
+                localUndo(true);
+                Equal((string)first.Formula2, "=77", "an empty child can undo its parent's latest edit");
+                closeChild();
+
+                edit("C2", "=78");
+                openChild("D2");
+                edit("C2", "=79");
+                openChild("C2");
+                edit("C2", "=80");
+                localUndo(true);
+                Equal((string)first.Formula2, "=79", "the child's own edit comes before older traces");
+                edit("C2", "=81");
+                closeChild();
+                Equal(traceRoot(), "D2", "the immediate parent receives the composite");
+                Equal(registered.Count, 2, "internal trace transitions do not register Excel undo");
+                localUndo(true);
+                Equal((string)first.Formula2, "=77", "one Ctrl+Z reverses all three linked traces newest first");
+                localUndo(false);
+                closeChild();
+                Equal(traceRoot(), "B2", "return to the original trace");
+                localUndo(false);
+
+                edit("C2", "=82"); edit("C2", "=83");
+                openChild("D2");
+                closeChild();
+                localUndo(true);
+                Equal((string)first.Formula2, "=77", "closing an empty child groups its parent's existing edits");
+
+                edit("C2", "=84");
+                openChild("D2");
+                edit("C2", "=85");
+                leave();
+                Equal(registered.Count, 3, "leaving an active child publishes the linked chain once");
+                leave();
+                Equal(registered.Count, 3, "repeat notification cannot publish a detached chain");
+                localUndo(false);
+                Invoke(addin, "DispatchWorksheetFormulaUndo");
+                Equal((string)first.Formula2, "=77", "Excel reverses child and parent in order");
+                closeChild();
+                localUndo(false);
+
+                edit("C2", "=86");
+                openChild("D2");
+                edit("C2", "=87");
+                root.Select(); Invoke(control, "ShowCommand", bridge, "precedents", hwnd);
+                Equal(traceRoot(), "B2", "new analysis replaces the whole visible trace");
+                Equal(registered.Count, 4, "replacing the trace publishes the linked edits");
+                localUndo(false);
+                Invoke(addin, "DispatchWorksheetFormulaUndo");
+                Equal((string)first.Formula2, "=77", "the replaced trace's edits remain available in Excel");
+
+                dynamic mid = keep(keep(((dynamic)workbook).Worksheets).Add());
+                mid.Name = "Intermediaire";
+                dynamic middleSource = keep(mid.Range["D2"]), endSource = keep(sheet.Range["E2"]);
+                root.Formula2 = "=Intermediaire!D2+C2";
+                middleSource.Formula2 = "=Audit!E2+Audit!C2";
+                endSource.Formula2 = "=C2";
+                sheet.Activate(); root.Select(); Invoke(control, "ShowCommand", bridge, "precedents", hwnd);
+                edit("C2", "=86");
+                openChild("D2");
+                edit("C2", "=87");
+                openChild("E2");
+                mid.Delete();
+                Invoke(explorer, "RefreshExplorerModel", tree);
+                Equal(traceRoot(), "E2", "refresh keeps the live child after the middle trace loses its source");
+                closeChild();
+                Equal(traceRoot(), "B2", "the removed middle trace is skipped in navigation");
+                localUndo(true);
+                Equal((string)first.Formula2, "=77", "the edit from the removed trace still joins its linked batch");
+                localUndo(false);
+                Equal(registered.Count, 4, "refresh and child closure never publish that local action");
+
+                root.Formula2 = "=C2+D2";
                 root.Select(); Invoke(control, "ShowCommand", bridge, "precedents", hwnd);
                 edit("C2", "=88");
                 Equal(Invoke(control, "CloseExplorer", false), true, "the pane closes normally");
-                Equal(registered.Count, 3, "closing the pane transfers its last local edit");
-                Equal(registered[2], "Annuler l’édition Clair", "one edit has a singular Excel label");
+                Equal(registered.Count, 5, "closing the pane transfers its last local edit");
+                Equal(registered[4], "Annuler l’édition Clair", "one edit has a singular Excel label");
                 Invoke(addin, "DispatchWorksheetFormulaUndo");
                 Equal((string)first.Formula2, "=77", "Excel can still undo after the pane closes");
                 Equal(active(), "$C$2", "closed-pane undo selects the retained target");

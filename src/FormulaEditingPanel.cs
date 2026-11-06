@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -10,7 +11,38 @@ namespace FormulaExplorer
     {
         const string FormulaEditingHint = "Entrée applique · Échap annule · Alt+Entrée ajoute une ligne";
         readonly RichTextBox formulaEditor = new RichTextBox();
-        readonly Stack<FormulaChange> formulaChanges = new Stack<FormulaChange>();
+        sealed class FormulaTraceUndo
+        {
+            internal readonly Stack<FormulaChange[]> Entries = new Stack<FormulaChange[]>();
+            // The undo chain can detach while the parent trace stays in navigation history.
+            internal FormulaTraceUndo Previous;
+
+            internal FormulaTraceUndo Latest()
+            {
+                for (FormulaTraceUndo trace = this; trace != null; trace = trace.Previous)
+                    if (trace.Entries.Count != 0) return trace;
+                return null;
+            }
+
+            internal IEnumerable<FormulaChange[]> LinkedEntries()
+            {
+                for (FormulaTraceUndo trace = this; trace != null; trace = trace.Previous)
+                    foreach (FormulaChange[] entry in trace.Entries) yield return entry;
+            }
+
+            internal void ClearLinkedEntries()
+            {
+                for (FormulaTraceUndo trace = this; trace != null;)
+                {
+                    trace.Entries.Clear();
+                    FormulaTraceUndo previous = trace.Previous;
+                    trace.Previous = null;
+                    trace = previous;
+                }
+            }
+        }
+
+        FormulaTraceUndo formulaUndo = new FormulaTraceUndo();
         internal Func<WorksheetFormulaUndo> FormulaUndoSession;
         WorksheetFormulaUndo formulaUndoOwner;
         long formulaUndoRevision;
@@ -327,7 +359,7 @@ namespace FormulaExplorer
                 }
                 if (session != null && (!ReferenceEquals(formulaUndoOwner, session) || formulaUndoRevision != revision))
                     ReleaseLocalFormulaUndo();
-                formulaChanges.Push(change);
+                formulaUndo.Entries.Push(new[] { change });
                 formulaUndoOwner = session;
                 formulaUndoRevision = session == null ? 0 : session.Revision;
                 CloseFormulaEdit("Cellule modifiée · " + change.Location + " · Ctrl+Z dans Clair", caret + formulaDisplayPrefix);
@@ -341,24 +373,29 @@ namespace FormulaExplorer
         void UndoLastFormula()
         {
             if (formulaEditCell != null) { CloseFormulaEdit("Édition abandonnée."); return; }
-            if (bridge == null || formulaChanges.Count == 0) { status.Text = "Aucune édition Clair à annuler."; return; }
-            FormulaChange change = formulaChanges.Peek();
+            FormulaTraceUndo trace = formulaUndo.Latest();
+            if (bridge == null || trace == null) { status.Text = "Aucune édition Clair à annuler."; return; }
+            FormulaChange[] changes = trace.Entries.Peek();
+            bool undone = false;
             try
             {
                 RequireFormulaEditWindow();
-                if (bridge.DependencyWorkbookIdentity(change.Workbook) != bridge.DependencyWorkbookIdentity(book))
+                long workbookIdentity = bridge.DependencyWorkbookIdentity(book);
+                if (changes.Any(change => bridge.DependencyWorkbookIdentity(change.Workbook) != workbookIdentity))
                     throw new InvalidOperationException("La dernière édition Clair appartient à un autre classeur.");
                 WorksheetFormulaUndo session = CurrentFormulaUndoSession();
                 bool fresh = session != null && ReferenceEquals(formulaUndoOwner, session) && formulaUndoRevision == session.Revision;
-                bridge.UndoFormula(change);
-                formulaChanges.Pop();
+                bridge.UndoFormulaBatch(changes);
+                trace.Entries.Pop();
+                undone = true;
                 if (fresh) formulaUndoRevision = session.Revision;
                 RefreshExplorerModelCore(null, false, true);
-                status.Text = "Édition annulée · " + change.Location;
+                status.Text = changes.Length == 1 ? "Édition annulée · " + changes[0].Location :
+                    changes.Length + " éditions annulées · " + changes[changes.Length - 1].Location;
             }
-            catch (InvalidOperationException error) { status.Text = (change.Undone ? "Édition annulée · actualisation impossible · " : "") + error.Message; }
-            catch (COMException error) { status.Text = (change.Undone ? "Édition annulée · actualisation impossible · " : "Annulation indisponible · ") + error.Message; }
-            catch (AggregateException error) { status.Text = (change.Undone ? "Édition annulée · actualisation impossible · " : "") + error.Message; }
+            catch (InvalidOperationException error) { status.Text = (undone ? "Édition annulée · actualisation impossible · " : "") + error.Message; }
+            catch (COMException error) { status.Text = (undone ? "Édition annulée · actualisation impossible · " : "Annulation indisponible · ") + error.Message; }
+            catch (AggregateException error) { status.Text = (undone ? "Édition annulée · actualisation impossible · " : "") + error.Message; }
         }
 
         WorksheetFormulaUndo CurrentFormulaUndoSession()
@@ -366,21 +403,41 @@ namespace FormulaExplorer
 
         void ReleaseLocalFormulaUndo()
         {
-            foreach (FormulaChange change in formulaChanges) change.ReleaseTarget();
-            formulaChanges.Clear();
+            foreach (FormulaChange change in formulaUndo.LinkedEntries().SelectMany(entry => entry)) change.ReleaseTarget();
+            formulaUndo.ClearLinkedEntries();
             formulaUndoOwner = null;
+        }
+
+        void MergeFormulaUndoInto(FormulaTraceUndo parent)
+        {
+            FormulaChange[] changes = formulaUndo.LinkedEntries().SelectMany(entry => entry).ToArray();
+            formulaUndo.ClearLinkedEntries();
+            formulaUndo = parent;
+            if (changes.Length != 0) parent.Entries.Push(changes);
+        }
+
+        void RestartFormulaUndoTrace()
+        {
+            TransferFormulaUndo();
+            FormulaChange[][] entries = formulaUndo.LinkedEntries().Reverse().ToArray();
+            formulaUndo.ClearLinkedEntries();
+            formulaUndo = new FormulaTraceUndo();
+            foreach (FormulaChange[] entry in entries) formulaUndo.Entries.Push(entry);
         }
 
         internal void TransferFormulaUndo()
         {
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
-            if (formulaChanges.Count == 0 || session == null || !ReferenceEquals(formulaUndoOwner, session)) return;
+            if (session == null) return;
+            if (formulaUndo.Latest() == null) { formulaUndo.ClearLinkedEntries(); return; }
+            if (!ReferenceEquals(formulaUndoOwner, session)) return;
             if (formulaUndoRevision != session.Revision) { ReleaseLocalFormulaUndo(); return; }
             try
             {
-                if (session.Publish(formulaUndoRevision, formulaChanges.ToArray(), WorksheetUndoFinished))
+                FormulaChange[] changes = formulaUndo.LinkedEntries().SelectMany(entry => entry).ToArray();
+                if (session.Publish(formulaUndoRevision, changes, WorksheetUndoFinished))
                 {
-                    formulaChanges.Clear();
+                    formulaUndo.ClearLinkedEntries();
                     formulaUndoOwner = null;
                     status.Text = "Annulation Clair disponible dans Excel · Ctrl+Z";
                 }
@@ -416,7 +473,7 @@ namespace FormulaExplorer
             if (formulaEditCell == null)
             {
                 if (keyData == Keys.F2 && book != null) { EditSelectedFormula(); return true; }
-                if (keyData == (Keys.Control | Keys.Z) && formulaChanges.Count != 0) { UndoLastFormula(); return true; }
+                if (keyData == (Keys.Control | Keys.Z) && formulaUndo.Latest() != null) { UndoLastFormula(); return true; }
                 if (keyData == (Keys.Alt | Keys.Enter) && source == formula && !formula.ReadOnly)
                 {
                     formulaCaretBeforeInput = formula.SelectionStart;

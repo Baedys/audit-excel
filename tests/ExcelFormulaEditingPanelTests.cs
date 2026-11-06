@@ -21,8 +21,8 @@ public static class ExcelFormulaEditingPanelTests
         if (!Object.Equals(actual, expected)) throw new Exception(label + ": expected " + expected + ", got " + actual);
     }
 
-    static T Field<T>(MainForm pane, string name)
-    { return (T)typeof(MainForm).GetField(name, Members).GetValue(pane); }
+    static T Field<T>(object target, string name)
+    { return (T)target.GetType().GetField(name, Members).GetValue(target); }
 
     static object Invoke(MainForm pane, string method, params object[] args)
     {
@@ -99,7 +99,7 @@ public static class ExcelFormulaEditingPanelTests
                 var expressions = Field<TreeView>(pane, "expressions");
                 var formula = Field<RichTextBox>(pane, "formula");
                 var editor = Field<RichTextBox>(pane, "formulaEditor");
-                var undo = Field<Stack<FormulaChange>>(pane, "formulaChanges");
+                Func<int> undoCount = () => Field<Stack<FormulaChange[]>>(Field<object>(pane, "formulaUndo"), "Entries").Count;
                 var status = Field<Label>(pane, "status");
                 var tabs = Field<TabControl>(pane, "tabs");
                 Action<string> choose = address => Invoke(pane, "ApplyRelationSelection", Relation(tree, address), Keys.None);
@@ -126,7 +126,7 @@ public static class ExcelFormulaEditingPanelTests
                 Equal(editor.Text, "=SUM(D2,E2)", "Ctrl+Z undoes the newline");
                 Key(editor, Keys.Escape);
                 Equal(!editor.Visible && formula.Visible && !pane.IsDisposed, true, "Escape cancels only editing");
-                Equal(undo.Count, 0, "cancel does not add undo");
+                Equal(undoCount(), 0, "cancel does not add undo");
                 Equal(active(), "$J$9", "cancel preserves Excel selection");
 
                 formula.Select(5, 2);
@@ -144,18 +144,18 @@ public static class ExcelFormulaEditingPanelTests
                 chooseArgument(0);
                 Key(expressions, Keys.F2);
                 Key(editor, Keys.Enter);
-                Equal(undo.Count, 0, "unchanged Enter does not write or add undo");
+                Equal(undoCount(), 0, "unchanged Enter does not write or add undo");
                 Key(expressions, Keys.F2);
                 editor.Text = "=1+*";
                 Key(editor, Keys.Enter);
                 Equal(editor.Visible, true, "invalid formula keeps the editor open");
                 Equal((string)c2.Formula2, "=SUM(D2,E2)", "invalid formula leaves cell intact");
-                Equal(undo.Count, 0, "invalid formula does not add undo");
+                Equal(undoCount(), 0, "invalid formula does not add undo");
                 editor.Text = "=SUM(D2,E2)+1";
                 editor.Select(7, 0);
                 Key(editor, Keys.Enter);
                 Equal(editor.Visible, false, "successful Enter returns to read-only view");
-                Equal(undo.Count, 1, "successful edit adds undo");
+                Equal(undoCount(), 1, "successful edit adds undo");
                 Equal((string)c2.Formula2, "=SUM(D2,E2)+1", "edited the displayed cell");
                 Equal((double)d2.Value2, 2d, "selected operand was not edited");
                 Equal((string)b2.Formula2, originalRootFormula, "trace root formula was not edited");
@@ -172,12 +172,12 @@ public static class ExcelFormulaEditingPanelTests
                 dynamic extra = keep(((dynamic)workbook).NewWindow());
                 extra.Activate(); anchor.Select();
                 Key(editor, Keys.Enter);
-                Equal(editor.Visible && undo.Count == 1, true, "background pane preserves draft and prior undo");
+                Equal(editor.Visible && undoCount() == 1, true, "background pane preserves draft and prior undo");
                 Equal((string)c2.Formula2, "=SUM(D2,E2)+1", "background pane does not write");
                 extra.Close(false);
                 Key(editor, Keys.Escape);
                 Chord(pane, expressions, Keys.Control | Keys.Z);
-                Equal(undo.Count, 0, "worksheet edit consumed by Ctrl+Z in pane");
+                Equal(undoCount(), 0, "worksheet edit consumed by Ctrl+Z in pane");
                 Equal((string)c2.Formula2, "=SUM(D2,E2)", "Ctrl+Z restores the previous formula");
                 Equal(root(), "B2", "undo preserves root");
                 Equal(tree.SelectedNode, Relation(tree, "C2"), "undo preserves relation selection");
@@ -222,7 +222,7 @@ public static class ExcelFormulaEditingPanelTests
                 c2.Value2 = "'12.5";
                 Chord(pane, formula, Keys.Control | Keys.Z);
                 Equal((string)c2.Value2, "12.5", "undo preserves a conflicting text constant");
-                Equal(undo.Count, 2, "conflict keeps the undo entries");
+                Equal(undoCount(), 2, "conflict keeps the undo entries");
                 c2.Value2 = 12.5d;
                 Chord(pane, formula, Keys.Control | Keys.Z);
                 Equal((object)c2.Value2, null, "undo numeric constant restores the empty cell");
@@ -282,7 +282,7 @@ public static class ExcelFormulaEditingPanelTests
 
                 Chord(pane, formula, Keys.Control | Keys.Z);
                 Equal((string)c2.Formula2, "=SUM(D2,E2)", "undo clear restores the original formula");
-                Equal(undo.Count, 0, "all content changes can be undone in order");
+                Equal(undoCount(), 0, "all content changes can be undone in order");
                 Equal(active(), "$J$9", "direct and value edits preserve the selection");
 
                 Key(expressions, Keys.F2);
@@ -294,7 +294,7 @@ public static class ExcelFormulaEditingPanelTests
                 Equal(status.Text.Contains("250 000"), true, "status reports the failed recapture");
                 Equal((string)c2.Formula2, "=SUM(D2,E2)", "failed recapture restores formula");
                 Equal(NumberFormat(c2), "General", "failed recapture restores generated format");
-                Equal(undo.Count, 0, "failed recapture does not add undo");
+                Equal(undoCount(), 0, "failed recapture does not add undo");
                 Equal(root(), "B2", "failed recapture keeps root");
                 Equal(tree.SelectedNode, Relation(tree, "C2"), "failed recapture keeps relation selection");
                 Equal(active(), "$J$9", "failed recapture keeps selection");
@@ -346,7 +346,7 @@ public static class ExcelFormulaEditingPanelTests
                 Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
                 var formula = Field<RichTextBox>(pane, "formula");
                 var editor = Field<RichTextBox>(pane, "formulaEditor");
-                var undo = Field<Stack<FormulaChange>>(pane, "formulaChanges");
+                Func<int> undoCount = () => Field<Stack<FormulaChange[]>>(Field<object>(pane, "formulaUndo"), "Entries").Count;
                 var status = Field<Label>(pane, "status");
                 Func<string> active = () => (string)keep(app.ActiveCell).Address;
                 Action<string> apply = draft => { Key(formula, Keys.F2); editor.Text = draft; Key(editor, Keys.Enter); };
@@ -387,7 +387,7 @@ public static class ExcelFormulaEditingPanelTests
                 corner.Value2 = 99d;
                 undoEdit();
                 Equal((double)corner.Value2, 99d, "undo rejects a conflict anywhere in the block");
-                Equal(undo.Count, 1, "matrix conflict preserves undo action");
+                Equal(undoCount(), 1, "matrix conflict preserves undo action");
                 corner.ClearContents();
                 undoEdit();
                 Equal((string)inside.Formula2, original, "undo clear recreates the complete matrix");
@@ -410,7 +410,7 @@ public static class ExcelFormulaEditingPanelTests
                 Equal(status.Text.Contains("255"), true, "too long CSE reports the direct setter limit");
                 Equal((string)inside.Formula2, original, "too long CSE leaves the matrix intact");
                 Key(editor, Keys.Escape);
-                Equal(undo.Count, 0, "rejected matrix draft creates no undo");
+                Equal(undoCount(), 0, "rejected matrix draft creates no undo");
                 Equal(active(), "$J$9", "matrix undo preserves Excel selection");
 
                 NumberFormat(block, "@");
@@ -466,7 +466,7 @@ public static class ExcelFormulaEditingPanelTests
                 Equal(editor.Visible, true, "failed recapture keeps the array clear draft open");
                 Equal((string)inside.Formula2, original, "failed recapture recreates the cleared CSE");
                 Equal((string)keep(inside.CurrentArray).Address, "$D$3:$E$4", "rollback restores the complete matrix extent");
-                Equal(undo.Count, 0, "failed array recapture does not add undo");
+                Equal(undoCount(), 0, "failed array recapture does not add undo");
                 Key(editor, Keys.Escape);
             }
             Console.WriteLine("LEGACY_ARRAY_EDITING_ASSERTIONS " + checks);
