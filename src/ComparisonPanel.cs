@@ -79,6 +79,7 @@ namespace FormulaExplorer
                 else RemoveTraceHighlightOwner(comparisonHighlightOwner);
             };
             comparisonTree.AfterSelect += delegate { if (!loadingComparisonRows) UpdateComparisonSelection(); };
+            comparisonTree.AfterCheck += delegate { if (!loadingComparisonRows) RefreshAlignmentActions(SelectedComparisonRow()); };
             comparisonTree.NodeMouseDoubleClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
             {
                 if (e.Button == MouseButtons.Left)
@@ -218,6 +219,7 @@ namespace FormulaExplorer
             try
             {
                 comparisonTree.Nodes.Clear();
+                comparisonTree.CheckBoxes = rows != null && rows.Any(row => row.Alignment != null);
                 if (rows != null)
                     foreach (ComparisonRow row in rows) comparisonTree.Nodes.Add(ComparisonNode(row));
                 differences.Visible = rows == null;

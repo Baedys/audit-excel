@@ -7,17 +7,19 @@ namespace FormulaExplorer
 {
     public sealed partial class MainForm
     {
-        readonly Stack<AlignmentReceipt> comparisonAlignmentUndo = new Stack<AlignmentReceipt>();
+        readonly Stack<AlignmentReceipt[]> comparisonAlignmentUndo = new Stack<AlignmentReceipt[]>();
         WorksheetFormulaUndo comparisonAlignmentUndoOwner;
         long comparisonAlignmentRevision;
-        Button applyComparisonAlignment, undoComparisonAlignment, removeComparisonAlignment;
+        Button applyComparisonAlignment, applyAllComparisonAlignment, undoComparisonAlignment, removeComparisonAlignment;
 
         void ConfigureAlignmentActions(FlowLayoutPanel bar)
         {
             applyComparisonAlignment = ActionButton("Aligner", ApplySelectedComparisonAlignment);
+            applyAllComparisonAlignment = ActionButton("Tout aligner", ApplyAllComparisonAlignments);
             undoComparisonAlignment = ActionButton("Annuler l’alignement", UndoLastComparisonAlignment);
             removeComparisonAlignment = ActionButton("Retirer les axes du classeur", RemoveWorkbookComparisonAlignment);
             bar.Controls.Add(applyComparisonAlignment);
+            bar.Controls.Add(applyAllComparisonAlignment);
             bar.Controls.Add(undoComparisonAlignment);
             bar.Controls.Add(removeComparisonAlignment);
             bar.SetFlowBreak(removeComparisonAlignment, true);
@@ -27,39 +29,51 @@ namespace FormulaExplorer
         void RefreshAlignmentActions(ComparisonRow row)
         {
             if (applyComparisonAlignment == null) return;
-            applyComparisonAlignment.Enabled = bridge != null && row != null && row.Alignment != null;
+            applyAllComparisonAlignment.Enabled = bridge != null && comparisonTree.CheckBoxes && comparisonTree.Nodes.Count != 0;
+            applyComparisonAlignment.Enabled = applyAllComparisonAlignment.Enabled &&
+                ((row != null && row.Alignment != null) || comparisonTree.Nodes.Cast<TreeNode>().Any(node => node.Checked));
             undoComparisonAlignment.Enabled = bridge != null && comparisonAlignmentUndo.Count != 0;
             removeComparisonAlignment.Enabled = bridge != null;
         }
 
         void ApplySelectedComparisonAlignment()
         {
+            if (!comparisonTree.CheckBoxes) return;
+            ComparisonRow[] checkedRows = comparisonTree.Nodes.Cast<TreeNode>().Where(node => node.Checked)
+                .Select(node => (ComparisonRow)node.Tag).ToArray();
             ComparisonRow selected = SelectedComparisonRow();
-            if (bridge == null || selected == null || selected.Alignment == null ||
-                currentComparison == null || currentComparison.Recompare == null) return;
-            ComparisonResult fresh = currentComparison.Recompare();
-            ComparisonRow proposal = fresh.Alignment.FirstOrDefault(row => SameAlignmentProposal(selected, row));
-            if (proposal == null)
+            if (checkedRows.Length != 0) ApplyComparisonAlignments(checkedRows);
+            else if (selected != null && selected.Alignment != null) ApplyComparisonAlignments(new[] { selected });
+        }
+
+        void ApplyAllComparisonAlignments()
+        {
+            if (comparisonTree.CheckBoxes) ApplyComparisonAlignments(comparisonRows.ToArray());
+        }
+
+        void ApplyComparisonAlignments(ComparisonRow[] selected)
+        {
+            if (bridge == null || currentComparison == null || currentComparison.Recompare == null) return;
+            WorksheetFormulaUndo session = CurrentFormulaUndoSession();
+            bool retain = session == null || (ReferenceEquals(comparisonAlignmentUndoOwner, session) && comparisonAlignmentRevision == session.Revision);
+            ComparisonAlignmentBatch batch = bridge.ApplyComparisonAlignments(currentComparison, selected, ClearAlignmentHighlights);
+            if (batch.Receipts.Count == 0 && selected.Length == 1 && batch.Skipped == 1 && batch.FirstError == null)
             {
-                ShowComparisonResult(fresh);
+                ShowComparisonResult(batch.Before);
                 status.Text = "La proposition a changé. Sélectionnez la nouvelle position.";
                 return;
             }
-            ClearAlignmentHighlights();
-            WorksheetFormulaUndo session = CurrentFormulaUndoSession();
-            bool retain = session == null || (ReferenceEquals(comparisonAlignmentUndoOwner, session) && comparisonAlignmentRevision == session.Revision);
-            AlignmentReceipt receipt = bridge.InsertComparisonAlignment(proposal);
-            if (!retain) comparisonAlignmentUndo.Clear();
-            comparisonAlignmentUndo.Push(receipt);
-            RecordAlignmentChange(session, true);
-            RefreshAfterAlignment(fresh, "Axes insérés · " + receipt.Markers.Length);
-        }
-
-        static bool SameAlignmentProposal(ComparisonRow a, ComparisonRow b)
-        {
-            return a.Référence == b.Référence && a.Comparateur == b.Comparateur &&
-                a.Alignment.Rows == b.Alignment.Rows && a.Alignment.Delta == b.Alignment.Delta &&
-                a.Alignment.LeftBefore == b.Alignment.LeftBefore && a.Alignment.RightBefore == b.Alignment.RightBefore;
+            if (batch.Receipts.Count != 0)
+            {
+                if (!retain) comparisonAlignmentUndo.Clear();
+                comparisonAlignmentUndo.Push(batch.Receipts.AsEnumerable().Reverse().ToArray());
+                RecordAlignmentChange(session, true);
+            }
+            string summary = "Axes insérés · " + batch.Receipts.Sum(receipt => receipt.Markers.Length);
+            if (batch.Skipped != 0) summary += " · Propositions écartées · " + batch.Skipped;
+            if (batch.Failed != 0) summary += " · Échecs · " + batch.Failed;
+            if (batch.FirstError != null) summary += " · " + batch.FirstError;
+            RefreshAfterAlignment(batch.Before, summary);
         }
 
         void UndoLastComparisonAlignment()
@@ -68,8 +82,7 @@ namespace FormulaExplorer
             ClearAlignmentHighlights();
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             bool fresh = session == null || (ReferenceEquals(comparisonAlignmentUndoOwner, session) && comparisonAlignmentRevision == session.Revision);
-            AlignmentReceipt receipt = comparisonAlignmentUndo.Peek();
-            bridge.UndoComparisonAlignment(new[] { receipt });
+            bridge.UndoComparisonAlignment(comparisonAlignmentUndo.Peek());
             comparisonAlignmentUndo.Pop();
             RecordAlignmentChange(session, fresh);
             RefreshAfterAlignment(currentComparison, "Dernier alignement annulé");
@@ -142,7 +155,7 @@ namespace FormulaExplorer
             }
             try
             {
-                AlignmentReceipt[] batch = comparisonAlignmentUndo.ToArray();
+                AlignmentReceipt[] batch = comparisonAlignmentUndo.SelectMany(item => item).ToArray();
                 ComparisonResult previous = currentComparison;
                 ExcelBridge connection = bridge;
                 if (session.PublishAlignment(comparisonAlignmentRevision, batch.Length,

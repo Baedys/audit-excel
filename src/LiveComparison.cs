@@ -19,7 +19,7 @@ namespace FormulaExplorer
     {
         internal readonly List<ComparisonRow> Differences = new List<ComparisonRow>();
         internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
-        internal bool AlignmentLimited;
+        internal bool AlignmentLimited, SharedAlignmentReference;
         internal Action<List<ComparisonRow>> CompareSheets;
         internal Func<ComparisonResult> Recompare;
 

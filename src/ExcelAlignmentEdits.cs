@@ -39,9 +39,10 @@ namespace FormulaExplorer
             Reference source = gap.InsertLeft ? proposal.Right : proposal.Left;
             int before = gap.InsertLeft ? gap.LeftBefore : gap.RightBefore;
             int sourceFirst = gap.Rows ? source.FirstRow : source.FirstColumn;
+            int sourceLast = gap.Rows ? source.LastRow : source.LastColumn;
             int maximum = gap.Rows ? Coordinates.MaxRow : Coordinates.MaxColumn;
-            if (before < 1 || before + gap.Count - 1 > maximum ||
-                (gap.Rows ? source.LastRow : source.LastColumn) - sourceFirst + 1 != gap.Count)
+            if (before < 1 || before + gap.Count - 1 > maximum || sourceFirst < 1 || sourceLast > maximum ||
+                sourceLast - sourceFirst + 1 != gap.Count)
                 throw new InvalidOperationException("L’alignement dépasse les limites de la feuille.");
             RequireAlignmentBoundary(target.Workbook, target.Sheet, gap.Rows, before);
             var dimensions = AtDirectSheet(source.Workbook, source.Sheet, sheet =>
@@ -281,7 +282,7 @@ namespace FormulaExplorer
 
         static void EnsureAlignmentStyle(object workbook)
         {
-            object styles = null, style = null;
+            object styles = null, style = null, sheets = null;
             try
             {
                 styles = ((dynamic)workbook).Styles;
@@ -296,12 +297,33 @@ namespace FormulaExplorer
                         throw new InvalidOperationException("Le style Clair Alignment existe déjà avec d’autres propriétés.");
                     return;
                 }
+                // Excel refuses style setters when any sheet in the book has protected contents.
+                sheets = ((dynamic)workbook).Worksheets;
+                for (int i = 1; i <= (int)((dynamic)sheets).Count; i++)
+                {
+                    object sheet = ((dynamic)sheets).Item[i];
+                    try
+                    {
+                        if ((bool)((dynamic)sheet).ProtectContents)
+                            throw new InvalidOperationException("Le style d’alignement ne peut pas être créé dans un classeur contenant une feuille protégée.");
+                    }
+                    finally { Release(sheet); }
+                }
                 style = ((dynamic)styles).Add(AlignmentStyle, Type.Missing);
                 dynamic created = style;
-                created.IncludeAlignment = created.IncludeBorder = created.IncludeFont =
-                    created.IncludeNumber = created.IncludePatterns = created.IncludeProtection = false;
+                try
+                {
+                    created.IncludeAlignment = created.IncludeBorder = created.IncludeFont =
+                        created.IncludeNumber = created.IncludePatterns = created.IncludeProtection = false;
+                }
+                catch (Exception error)
+                {
+                    try { created.Delete(); }
+                    catch (Exception cleanup) { throw new AggregateException("Le style d’alignement incomplet n’a pas pu être retiré.", error, cleanup); }
+                    throw;
+                }
             }
-            finally { Release(style); Release(styles); }
+            finally { Release(sheets); Release(style); Release(styles); }
         }
 
         static string AddAlignmentName(object names, string sheet, bool rows, int index)

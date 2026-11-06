@@ -100,6 +100,7 @@ public static class ExcelAlignmentEditsTests
                 Invoke(control, "ShowCommand", bridge, "compare", hwnd);
                 object view = Field(control, "explorer").GetValue(control);
                 var tree = (TreeView)Field(view, "comparisonTree").GetValue(view);
+                ((dynamic)comparator).Activate(); right.Select(true);
                 Invoke(view, "CompareSelection");
                 Equal(tree.Nodes.Count, 2, "row and column proposals exist");
                 keep(right.Range["C2"]).Value2 = "Revenue";
@@ -108,6 +109,7 @@ public static class ExcelAlignmentEditsTests
                 Equal(((Label)Field(view, "status").GetValue(view)).Text.Contains("proposition a changé"), true,
                     "a stale proposal presents fresh results");
                 keep(right.Range["C2"]).Value2 = "Extra column";
+                ((dynamic)comparator).Activate(); right.Select(true);
                 Invoke(view, "CompareSelection");
                 left.Protect();
                 bool protectedRefused = false;
@@ -139,8 +141,22 @@ public static class ExcelAlignmentEditsTests
                 Equal((string)keep(left.Range["B3"]).Value2, "Alpha", "worksheet undo also removes the latest row insertion");
                 Equal((string)keep(left.Range["E1"]).Formula2, "=C2", "worksheet undo restores the dependent formula");
                 Equal((int)keep(((dynamic)reference).Names).Count, 0, "undo retires the durable names");
+                Equal(tree.CheckBoxes, true, "alignment offers a checked subset");
+                tree.Nodes[1].Checked = true;
                 Invoke(view, "ApplySelectedComparisonAlignment");
-                Invoke(view, "ApplySelectedComparisonAlignment");
+                Equal((string)keep(left.Range["C2"]).Value2, "Revenue", "a checked subset excludes the selected column");
+                Equal((string)keep(left.Range["B4"]).Value2, "Alpha", "the checked row is inserted");
+                Invoke(view, "UndoLastComparisonAlignment");
+                Invoke(view, "ApplyAllComparisonAlignments");
+                Equal((int)keep(((dynamic)reference).Names).Count, 2, "one action inserts both axes");
+                Invoke(view, "UndoLastComparisonAlignment");
+                Equal((int)keep(((dynamic)reference).Names).Count, 0, "one local undo removes the full batch");
+                Invoke(view, "ApplyAllComparisonAlignments");
+                Invoke(control, "TransferFormulaUndo");
+                Equal(registered.Count, 2, "the grouped action publishes one additional worksheet undo");
+                Invoke(addIn, "DispatchWorksheetFormulaUndo");
+                Equal((int)keep(((dynamic)reference).Names).Count, 0, "one dispatched undo removes the full batch");
+                Invoke(view, "ApplyAllComparisonAlignments");
                 Equal((int)keep(((dynamic)reference).Names).Count, 2, "two axes are marked for persistence");
             }
 
@@ -163,6 +179,8 @@ public static class ExcelAlignmentEditsTests
             Equal((int)Field(removal, "Removed").GetValue(removal), 1, "the still-owned row can be removed after clearing");
             Equal((string)keep(persisted.Range["B4"]).Value2, "Alpha", "the unrelated styled row is preserved");
             Equal((int)keep(((dynamic)reopened).Names).Count, 0, "the reopened workbook has no remaining ownership marks");
+            RunGroupedSheets(bridge, books, keep);
+            RunPartialBatch(bridge, books, keep);
             Equal((bool)app.EnableEvents, true, "Excel event state is restored");
             Console.WriteLine("EXCEL_ALIGNMENT_EDITS_ASSERTIONS " + checks);
         }
@@ -177,5 +195,100 @@ public static class ExcelAlignmentEditsTests
             ExcelBridge.Release(reopened); ExcelBridge.Release(comparator); ExcelBridge.Release(reference); ExcelBridge.Release(application);
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    static void WriteRows(dynamic sheet, Func<object, dynamic> keep, params string[] rows)
+    {
+        for (int i = 0; i < rows.Length; i++) keep(sheet.Cells[i + 2, 2]).Value2 = rows[i];
+    }
+
+    static void RunGroupedSheets(ExcelBridge bridge, dynamic books, Func<object, dynamic> keep)
+    {
+        dynamic workbook = keep(books.Add(-4167));
+        try
+        {
+            dynamic sheets = keep(workbook.Worksheets);
+            dynamic left = keep(sheets.Item[1]); left.Name = "Référence";
+            dynamic right = keep(sheets.Add(Type.Missing, left)); right.Name = "Première";
+            dynamic second = keep(sheets.Add(Type.Missing, right)); second.Name = "Seconde";
+            dynamic decoy = keep(sheets.Add(Type.Missing, second)); decoy.Name = "Hors sélection";
+            WriteRows(left, keep, "Alpha", "Bravo", "Charlie", "Delta", "Echo");
+            WriteRows(right, keep, "Alpha", "Commun", "Bravo", "Charlie", "Delta", "Echo");
+            WriteRows(second, keep, "Alpha", "Commun", "Bravo", "Charlie", "Echo");
+            WriteRows(decoy, keep, "Alpha", "Témoin", "Bravo", "Charlie", "Echo");
+            using (var view = new MainForm(bridge))
+            {
+                left.Select(true);
+                ((ComboBox)Field(view, "comparisonScope").GetValue(view)).SelectedIndex = 1;
+                Invoke(view, "SetComparisonReference");
+                right.Select(true); second.Select(false);
+                Invoke(view, "CompareSelection");
+                var tree = (TreeView)Field(view, "comparisonTree").GetValue(view);
+                Equal(tree.Nodes.Count, 3, "the group has two requests for the shared axis and one local gap");
+                Invoke(view, "ApplyAllComparisonAlignments");
+                Equal((int)keep(workbook.Names).Count, 2, "one shared insertion and one local insertion");
+                Equal((string)keep(left.Range["B4"]).Value2, "Bravo", "the shared axis is inserted once");
+                Equal((string)keep(right.Range["B6"]).Value2, "Delta", "a grouped neighbor does not receive the local insertion");
+                Equal((string)keep(second.Range["B7"]).Value2, "Echo", "the remaining local gap is still applied");
+                Equal((string)keep(decoy.Range["B6"]).Value2, "Echo", "an unselected comparator is untouched");
+                Equal(((Label)Field(view, "status").GetValue(view)).Text.Contains("Propositions écartées · 1"), true,
+                    "the duplicate proposal is reported as skipped");
+                Invoke(view, "UndoLastComparisonAlignment");
+                Equal((int)keep(workbook.Names).Count, 0, "one undo restores both physical sheets");
+                Equal((string)keep(left.Range["B3"]).Value2, "Bravo", "the reference is restored");
+                Equal((string)keep(second.Range["B6"]).Value2, "Echo", "the local comparator is restored");
+            }
+        }
+        finally { workbook.Close(false); }
+    }
+
+    static void RunPartialBatch(ExcelBridge bridge, dynamic books, Func<object, dynamic> keep)
+    {
+        dynamic before = keep(books.Add(-4167)), after = keep(books.Add(-4167));
+        try
+        {
+            dynamic leftSheets = keep(before.Worksheets), rightSheets = keep(after.Worksheets);
+            dynamic blocked = keep(leftSheets.Item[1]), blockedMatch = keep(rightSheets.Item[1]);
+            blocked.Name = blockedMatch.Name = "Protégée";
+            dynamic allowed = keep(leftSheets.Add(Type.Missing, blocked)), allowedMatch = keep(rightSheets.Add(Type.Missing, blockedMatch));
+            allowed.Name = allowedMatch.Name = "Autorisée";
+            WriteRows(blocked, keep, "Alpha", "Bravo", "Charlie", "Delta", "Echo");
+            WriteRows(blockedMatch, keep, "Alpha", "Interdit", "Bravo", "Charlie", "Delta", "Echo");
+            WriteRows(allowed, keep, "Alpha", "Premier", "Bravo", "Charlie", "Second", "Delta", "Echo");
+            WriteRows(allowedMatch, keep, "Alpha", "Bravo", "Charlie", "Delta", "Echo");
+            blocked.Protect();
+            using (var view = new MainForm(bridge))
+            {
+                before.Activate(); allowed.Select(true);
+                ((ComboBox)Field(view, "comparisonScope").GetValue(view)).SelectedIndex = 0;
+                Invoke(view, "SetComparisonReference");
+                after.Activate(); allowedMatch.Select(true);
+                Invoke(view, "CompareSelection");
+                var tree = (TreeView)Field(view, "comparisonTree").GetValue(view);
+                Equal(tree.Nodes.Count, 3, "three proposals precede the partial batch");
+                Invoke(view, "ApplyAllComparisonAlignments");
+                string status = ((Label)Field(view, "status").GetValue(view)).Text;
+                Equal((int)keep(after.Names).Count, 2, "the batch continues after the protected worksheet fails · " + status);
+                Equal((string)keep(blocked.Range["B3"]).Value2, "Bravo", "the protected worksheet is untouched");
+                Equal((string)keep(allowedMatch.Range["B7"]).Value2, "Delta", "second insertion uses the shifted row coordinate");
+                Equal(status.Contains("Échecs · 1") && status.Contains("protégée"), true, "partial outcome includes the first failure");
+                Invoke(view, "UndoLastComparisonAlignment");
+                Equal((int)keep(after.Names).Count, 0, "one undo removes both successful insertions");
+                Equal((string)keep(allowedMatch.Range["B5"]).Value2, "Delta", "undo restores the original row positions");
+
+                keep(allowed.Range["B7:B8"]).ClearContents();
+                WriteRows(allowed, keep, "Alpha", "Bravo", "Charlie", "Delta", "Echo");
+                WriteRows(allowedMatch, keep, "Alpha", "Premier", "Bravo", "Charlie", "Second", "Delta", "Echo");
+                Invoke(view, "CompareSelection");
+                int styles = (int)keep(before.Styles).Count;
+                tree.SelectedNode = tree.Nodes[1];
+                bool refused = false;
+                try { Invoke(view, "ApplySelectedComparisonAlignment"); }
+                catch (InvalidOperationException error) { refused = error.Message.Contains("style d’alignement ne peut pas être créé"); }
+                Equal(refused, true, "Excel protection also blocks the first style creation on another sheet");
+                Equal((int)keep(before.Styles).Count, styles, "the blocked creation leaves no partial style");
+            }
+        }
+        finally { after.Close(false); before.Close(false); }
     }
 }

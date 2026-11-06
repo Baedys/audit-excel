@@ -1,12 +1,20 @@
 # Revue et validation
 
+## Alignement groupé — 7 novembre 2026
+
+Le CIL de `Model.Align` 252772 développe la sélection aux descendants, déduplique les propositions et les trie par position dans l’arbre. La boucle 372908 garde les réussites malgré une erreur COM ou métier et crée une seule entrée d’annulation. `ApplyDelta` 214412 décale les propositions du même axe dans la tâche modifiée. Lorsque plusieurs tâches partagent une feuille de référence, une insertion de ce côté invalide le modèle. Le callback 241452 traite cette invalidation à la fin du lot.
+
+Clair traite les propositions cochées ou affichées dans l’ordre du volet. Il décale les positions physiques après chaque insertion et recalcule les propositions lorsque la référence est partagée. Une proposition déjà résolue est écartée. Une nouvelle proposition reste visible pour le prochain lot. L’annulation dans le volet couvre toutes les insertions réussies d’une commande. Excel refuse de configurer un nouveau style d’alignement si une feuille du classeur protège son contenu. Clair vérifie cette condition avant de créer le style.
+
+Le témoin Excel masqué couvre le sous-ensemble coché, deux décalages successifs sur le même axe, le partage d’une référence, une feuille protégée, les insertions réussies après le refus et l’annulation du lot. Dans Excel x64, la commande native annule d’abord une modification ordinaire, puis les deux axes Clair en un seul geste. Les contrôles appellent la commande Excel via COM. La validation du clavier physique et d’Excel x86 reste ouverte.
+
 ## Appliquer et retirer un alignement — 7 novembre 2026
 
 Le CIL 213848 insère les axes entiers dans la feuille du côté le plus court. 214836 utilise un style nommé dont les six propriétés d’inclusion sont désactivées. La hauteur ou la largeur est lue sur le côté excédentaire et reprise lors de l’insertion. 218136 et 277676 distinguent le retrait d’axes marqués et l’annulation des plages retenues. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
 
 Clair applique la proposition sélectionnée après l’avoir recalculée sur les feuilles physiques retenues. Un repère masqué par axe complète le style `Clair Alignment`. Un nom couvrant plusieurs axes peut s’étendre quand un utilisateur insère un axe à l’intérieur. Le retrait exige une géométrie entière, le style attendu et une vacuité contrôlée par Excel sur tout l’axe. Le retrait conserve les axes occupés et ceux qui traversent le corps d’un tableau, d’un filtre ou d’un tableau croisé.
 
-Le témoin Excel masqué vérifie l’insertion, les références ajustées par Excel, les dimensions, l’annulation et le retrait après sauvegarde, réouverture et renommage. La comparaison de hauteur tient compte de l’arrondi de l’affectation Excel. Une formule renvoyant du texte vide en XFD bloque la suppression de la ligne. Un axe non marqué portant le style Clair reste intact. L’application de plusieurs propositions en une commande et le comportement sur d’autres installations Excel restent à comparer.
+Le témoin Excel masqué vérifie l’insertion, les références ajustées par Excel, les dimensions, l’annulation et le retrait après sauvegarde, réouverture et renommage. La comparaison de hauteur tient compte de l’arrondi de l’affectation Excel. Une formule renvoyant du texte vide en XFD bloque la suppression de la ligne. Un axe non marqué portant le style Clair reste intact.
 
 ## Détection d’alignement — 7 novembre 2026
 

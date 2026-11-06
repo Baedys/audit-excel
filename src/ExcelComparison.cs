@@ -103,6 +103,7 @@ namespace FormulaExplorer
                     if (!sameBook || !String.Equals(leftName, sheet, StringComparison.OrdinalIgnoreCase))
                         pairs.Add(SheetPair(left, leftName, right, sheet));
                 if (pairs.Count == 0) throw new InvalidOperationException("Sélectionnez une autre feuille à comparer.");
+                result.SharedAlignmentReference = pairs.Count > 1;
             }
             else
             {

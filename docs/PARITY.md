@@ -209,7 +209,7 @@ P01 et P02 progressent dans le volet. La référence physique est partagée entr
 
 P05 ajoute deux passes de regroupement, un arbre de blocs et sous-écarts, la sélection des rectangles sur les deux côtés et des fonds temporaires réversibles. Le scanner livré dans Arixcel et celui de Clair concordent sur 40 000 grilles synthétiques. Le surlignage des segments de texte dans les formules et l’arbre complet des tâches restent ouverts. [Validation](VALIDATION.md)
 
-P03 ajoute la phase de détection avant les écarts des feuilles et classeurs. Clair recherche les correspondances de colonnes puis de lignes et montre le côté excédentaire, la position et le nombre d’axes proposés. P04 couvre l’insertion de la proposition sélectionnée, la reprise des dimensions, le retrait des axes Clair après réouverture et l’annulation locale ou transmise à Excel. L’application groupée de propositions multiples reste ouverte. [Validation](VALIDATION.md)
+P03 ajoute la phase de détection avant les écarts des feuilles et classeurs. Clair recherche les correspondances de colonnes puis de lignes et montre le côté excédentaire, la position et le nombre d’axes proposés. P04 couvre l’insertion des propositions sélectionnées ou affichées, la reprise des dimensions, le retrait des axes Clair après réouverture et l’annulation du lot dans le volet ou depuis Excel. Le volet utilise des cases à cocher pour choisir un sous-ensemble. [Validation](VALIDATION.md)
 
 | ID | Exigence | État initial | Acceptation requise |
 | --- | --- | --- | --- |
