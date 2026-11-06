@@ -391,36 +391,54 @@ namespace FormulaExplorer
         }
         public List<Cell> SelectionCells(Book book)
         {
-            object selection = null, worksheet = null, workbook = null, areas = null;
+            var cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
+            foreach (Reference area in ReadSelectionRanges(book, false))
+                for (int row = area.FirstRow; row <= area.LastRow; row++)
+                    for (int column = area.FirstColumn; column <= area.LastColumn; column++)
+                    {
+                        Cell cell = book.Get(area.Sheet, Coordinates.Address(row, column));
+                        cells[cell.Key] = cell;
+                    }
+            return new List<Cell>(cells.Values);
+        }
+
+        internal List<Reference> ReadSelectionRanges(Book book, bool forTrace)
+        {
+            object selection = null, worksheet = null, workbook = null, areas = null, window = null, selectedSheets = null;
             try
             {
                 selection = ((dynamic)application).Selection;
-                try { worksheet = ((dynamic)selection).Worksheet; }
-                catch (Exception) { throw new InvalidOperationException("Sélectionnez une plage de cellules dans Excel."); }
+                if (!MapSelectionSupports(selection, MapSelectionRangeInterface))
+                    throw new InvalidOperationException("Sélectionnez une plage de cellules dans Excel.");
+                worksheet = ((dynamic)selection).Worksheet;
                 workbook = ((dynamic)worksheet).Parent;
                 if (!String.Equals((string)((dynamic)workbook).FullName, book.FullName, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Sélection dans un autre classeur : rechargez la capture.");
-                if (Convert.ToDouble(((dynamic)selection).CountLarge) > 250000) throw new InvalidOperationException("Sélection limitée à 250 000 cellules pour cette version.");
+                if (!forTrace && Convert.ToDouble(((dynamic)selection).CountLarge) > 250000)
+                    throw new InvalidOperationException("Sélection limitée à 250 000 cellules pour cette version.");
                 string sheet = (string)((dynamic)worksheet).Name;
-                var cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
+                var ranges = new List<Reference>();
                 areas = ((dynamic)selection).Areas;
                 for (int i = 1; i <= (int)((dynamic)areas).Count; i++)
                 {
-                    object area = null, rows = null, columns = null;
+                    object area = null;
                     try
                     {
-                        area = ((dynamic)areas).Item[i]; rows = ((dynamic)area).Rows; columns = ((dynamic)area).Columns;
-                        int firstRow = (int)((dynamic)area).Row, firstColumn = (int)((dynamic)area).Column;
-                        int height = (int)((dynamic)rows).Count, width = (int)((dynamic)columns).Count;
-                        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
-                        {
-                            Cell cell = book.Get(sheet, Coordinates.Address(firstRow + y, firstColumn + x)); cells[cell.Key] = cell;
-                        }
+                        area = ((dynamic)areas).Item[i];
+                        var rectangle = MapSelectionRectangle(area);
+                        ranges.Add(Reference.FromBounds(sheet, rectangle.Top, rectangle.Left, rectangle.Bottom - 1, rectangle.Right - 1));
                     }
-                    finally { Release(columns); Release(rows); Release(area); }
+                    finally { Release(area); }
                 }
-                return new List<Cell>(cells.Values);
+                if (forTrace && (ranges.Count > 1 || ranges.Any(range => !range.Single)))
+                {
+                    window = ((dynamic)application).ActiveWindow;
+                    selectedSheets = ((dynamic)window).SelectedSheets;
+                    if ((int)((dynamic)selectedSheets).Count > 1)
+                        throw new InvalidOperationException("Dégroupez les feuilles Excel avant de tracer cette sélection.");
+                }
+                return ranges;
             }
-            finally { Release(areas); Release(workbook); Release(worksheet); Release(selection); }
+            finally { Release(selectedSheets); Release(window); Release(areas); Release(workbook); Release(worksheet); Release(selection); }
         }
     }
 }

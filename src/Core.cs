@@ -26,6 +26,7 @@ namespace FormulaExplorer
         public readonly Dictionary<string, Cell> Cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> Sheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, int> sheetIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        internal readonly Dictionary<string, Reference> UsedRanges = new Dictionary<string, Reference>(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, string> Names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> RelativeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> Warnings = new List<string>();
@@ -97,6 +98,18 @@ namespace FormulaExplorer
         public string Sheet, Text;
         public int FirstRow, LastRow, FirstColumn, LastColumn;
         public bool Single { get { return FirstRow == LastRow && FirstColumn == LastColumn; } }
+        internal string Address
+        {
+            get
+            {
+                string first = Coordinates.Address(FirstRow, FirstColumn);
+                return Single ? first : first + ":" + Coordinates.Address(LastRow, LastColumn);
+            }
+        }
+        internal static Reference FromBounds(string sheet, int firstRow, int firstColumn, int lastRow, int lastColumn)
+        {
+            return new Reference { Sheet = sheet, FirstRow = firstRow, FirstColumn = firstColumn, LastRow = lastRow, LastColumn = lastColumn };
+        }
         public bool Contains(Cell c)
         {
             return String.Equals(Sheet, c.Sheet, StringComparison.OrdinalIgnoreCase) && c.Row >= FirstRow && c.Row <= LastRow && c.Column >= FirstColumn && c.Column <= LastColumn;
@@ -296,7 +309,7 @@ namespace FormulaExplorer
         }
     }
 
-    public sealed class DependencyEngine
+    public sealed partial class DependencyEngine
     {
         public readonly Book Book;
         readonly Dictionary<string, ParsedFormula> parsed = new Dictionary<string, ParsedFormula>(StringComparer.OrdinalIgnoreCase);

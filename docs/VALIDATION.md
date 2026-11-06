@@ -1,5 +1,18 @@
 # Revue et validation
 
+## Antécédents et dépendants de plusieurs cellules — 6 novembre 2026
+
+Comparaison avec Arixcel 9.0.9623.19616 sur deux copies au même SHA-256 de `ArixcelMultiTrace.xlsx`. Clair passe par les commandes du volet connectées à Excel. Les quatre listes et les compteurs concordent.
+
+| Direction et sélection | Résultat commun |
+| --- | --- |
+| Antécédents de `Audit!B2:B4` | Deux plages, `North!B2:B4` et `South!B2:B4`. `North!B3` est vide et appartient à la plage. |
+| Antécédents de `Audit!H2;H4` | Deux plages, `North!B2:B5` et `South!B2:B4`. Les formules référencent des colonnes entières. |
+| Antécédents de `Audit!J2:J3` | Une plage, `North!B5`. `Audit!J2` appartient déjà à la source. |
+| Dépendants de `North!B2;B4` | Huit blocs sur `Audit`, dans l'ordre `B2`, `D2:D3`, `E2:E3`, `H2`, `B3`, `D4`, `D5`, `D6`. Le regroupement affiche `Audit` avec le même total de huit. |
+
+Les **32 contrôles Excel** du tracé vérifient aussi les zones au-delà de la partie utilisée, la navigation au clavier, le tracé depuis un bloc, le retour à une sélection disjointe et la place de l'arbre dans le volet. Les **69 groupes sans Excel** passent. Le nouveau groupe vérifie l'union sans doublon, la géométrie d'une colonne entière, l'exclusion de la source et le regroupement selon les formules R1C1.
+
 ## Dépendances et flux 3D — 6 novembre 2026
 
 Arixcel 9.0.9623.19616 et Clair ont utilisé deux copies au même SHA-256 de `Arixcel3DReferences.xlsx`. Les témoins ci-dessous comparent des liens physiques. `Fev` est masquée.

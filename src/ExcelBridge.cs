@@ -152,7 +152,7 @@ namespace FormulaExplorer
                         if (selectedAreas == null)
                         {
                             usedObject = ws.UsedRange;
-                            CaptureRange(book, worksheet, usedObject, ref scanned);
+                            CaptureRange(book, worksheet, usedObject, ref scanned, true);
                         }
                         else
                         {
@@ -193,7 +193,7 @@ namespace FormulaExplorer
             finally { Release(names); Release(worksheets); }
         }
 
-        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned)
+        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned, bool recordUsedRange = false)
         {
             object rows = null, columns = null;
             dynamic used = usedObject; string sheet = (string)((dynamic)worksheet).Name;
@@ -204,6 +204,8 @@ namespace FormulaExplorer
                 scanned += (long)height * width;
                 if (scanned > 250000) throw new InvalidOperationException("Limite du prototype : 250 000 cellules dans les zones utilisées. Réduisez le classeur ou les zones formatées inutilisées.");
                 int startRow = (int)used.Row, startCol = (int)used.Column;
+                if (recordUsedRange) book.UsedRanges.Add(sheet,
+                    Reference.FromBounds(sheet, startRow, startCol, startRow + height - 1, startCol + width - 1));
                 object values = used.Value2, formulas;
                 try { formulas = used.Formula2; }
                 catch (COMException) { formulas = used.Formula; book.Warnings.Add(sheet + " : Formula2 indisponible, lecture via Formula."); }

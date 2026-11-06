@@ -15,11 +15,12 @@ namespace FormulaExplorer
         Cell root;
         ExcelBridge bridge;
         bool reverse, updatingExplorer;
-        readonly Stack<Cell> history = new Stack<Cell>();
+        readonly Stack<ExplorerHistory> history = new Stack<ExplorerHistory>();
         readonly Label title = new Label(), status = new Label(), detail = new Label();
         readonly TextBox formula = new TextBox(), warnings = new TextBox();
         readonly TreeView tree = new TreeView();
         readonly TabControl tabs = new TabControl();
+        readonly TableLayoutPanel dockedExplorerBody;
         readonly DataGridView map = Grid(), flow = Grid(), differences = Grid();
         readonly ComboBox sheets = new ComboBox();
         readonly CheckBox valuesOnly = new CheckBox();
@@ -74,7 +75,8 @@ namespace FormulaExplorer
             ConfigureButton(precedents, "Antécédents", delegate { reverse = false; ShowTree(); });
             ConfigureButton(dependents, "Dépendants", delegate { reverse = true; ShowTree(); });
             direction.Controls.Add(precedents); direction.Controls.Add(dependents);
-            direction.Controls.Add(ActionButton(IsDocked ? "Explorer le lien" : "Explorer ce nœud", delegate { if (SelectedCell() != null) SetRoot(SelectedCell(), true); }));
+            direction.Controls.Add(ActionButton(IsDocked ? "Explorer le lien" : "Explorer ce nœud", delegate { ExploreSelectedRelation(); }));
+            ConfigureRangeTrace(direction);
             PlaceCommandBar(explorerLayout, direction, 0);
             tree.Dock = DockStyle.Fill; tree.HideSelection = false; tree.BorderStyle = BorderStyle.None; tree.ItemHeight = IsDocked ? 22 : 28;
             tree.AccessibleName = "Relations de la cellule";
@@ -87,7 +89,11 @@ namespace FormulaExplorer
             formula.ScrollBars = IsDocked ? ScrollBars.Vertical : ScrollBars.Both; formula.WordWrap = false; formula.Font = new Font("Consolas", 11); formula.BackColor = Color.White;
             formulaLayout.Controls.Add(formula, 0, 1);
             InitializeExpressions(formulaLayout);
-            if (IsDocked) explorerLayout.Controls.Add(StackPaneControls(formulaLayout, tree, 68), 0, 1);
+            if (IsDocked)
+            {
+                dockedExplorerBody = StackPaneControls(formulaLayout, tree, 68);
+                explorerLayout.Controls.Add(dockedExplorerBody, 0, 1);
+            }
             else
             {
                 SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 530 };
@@ -95,7 +101,7 @@ namespace FormulaExplorer
                 explorerLayout.Controls.Add(split, 0, 1);
             }
             tree.BeforeExpand += delegate(object sender, TreeViewCancelEventArgs e) { ExpandNode(e.Node); };
-            tree.AfterSelect += delegate { if (!updatingExplorer) ShowDetails(SelectedCell()); };
+            tree.AfterSelect += delegate { if (!updatingExplorer) ShowRelationDetails(); };
             tree.NodeMouseDoubleClick += delegate { Safe(Navigate); };
 
             mapLayout = PageLayout(mapTab, 100);
@@ -180,7 +186,7 @@ namespace FormulaExplorer
             EventHandler wrap = delegate { label.MaximumSize = new Size(Math.Max(80, bar.ClientSize.Width - 8), 0); };
             bar.SizeChanged += wrap; wrap(null, EventArgs.Empty);
         }
-        static Control StackPaneControls(Control top, Control bottom, int topPercent)
+        static TableLayoutPanel StackPaneControls(Control top, Control bottom, int topPercent)
         {
             var body = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = Padding.Empty };
             body.RowStyles.Add(new RowStyle(SizeType.Percent, topPercent)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 100 - topPercent));
@@ -205,9 +211,18 @@ namespace FormulaExplorer
         {
             if (bridge == null) bridge = ExcelBridge.Connect();
             Book captured = bridge.CaptureActive(); Cell current = bridge.ActiveCell(captured);
-            SetBook(captured, current.Sheet, current.Address);
+            TraceLocation selection = null;
+            if (tabs.SelectedIndex == 0)
+            {
+                List<Reference> areas = bridge.ReadSelectionRanges(captured, true);
+                if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
+            }
+            SetCapturedBook(captured, current.Sheet, current.Address, selection);
         }
         void SetBook(Book captured, string sheet, string address)
+        { SetCapturedBook(captured, sheet, address, null); }
+
+        void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection)
         {
             DependencyEngine next = new DependencyEngine(captured);
             book = captured; engine = next; mapAnalysisOptions = mapPalette.AnalysisOptions;
@@ -217,18 +232,30 @@ namespace FormulaExplorer
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
             flow.Rows.Clear(); differences.DataSource = null;
-            SetRoot(book.Get(sheet, address), false);
+            SetExplorerRoot(book.Get(sheet, address), false, selection, null);
             string[] issues = engine.Warnings.Distinct().ToArray();
-            warnings.Text = "Analyse statique. Plages : cellules renseignées seulement ; références simples vides incluses. Rechargez après modification Excel.\r\n" +
+            warnings.Text = "Analyse statique. Rechargez après modification Excel.\r\n" +
                 (issues.Length == 0 ? "Aucune référence non résolue détectée. Les branches conditionnelles sont toutes incluses." : String.Join("\r\n", issues.Take(200)) + (issues.Length > 200 ? "\r\n… " + (issues.Length - 200) + " autres avertissements (rapport complet disponible)." : ""));
-            status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + issues.Length + " avertissements";
+            if (traceSource == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + issues.Length + " avertissements";
         }
         void SetRoot(Cell cell, bool remember)
+        { SetExplorerRoot(cell, remember, null, null); }
+
+        void SetExplorerRoot(Cell cell, bool remember, TraceLocation selection, bool? downstream)
         {
-            if (remember && root != null) history.Push(root);
-            root = cell; ResetFlowDisplay(); ShowTree();
+            if (remember && root != null)
+                history.Push(new ExplorerHistory { Cell = root, Source = traceSource, Reverse = reverse, Selected = SelectedTraceKey() });
+            root = cell; traceSource = selection;
+            if (downstream.HasValue) reverse = downstream.Value;
+            ResetFlowDisplay(); ShowTree();
         }
-        void Back() { if (history.Count > 0) { root = history.Pop(); ResetFlowDisplay(); ShowTree(); } }
+        void Back()
+        {
+            if (history.Count == 0) return;
+            ExplorerHistory previous = history.Pop();
+            root = previous.Cell; traceSource = previous.Source; reverse = previous.Reverse;
+            ResetFlowDisplay(); ShowTreeSelection(previous.Selected);
+        }
         void SelectExplorerTab(bool dependentsDirection)
         {
             reverse = dependentsDirection; updatingExplorer = true;
@@ -273,16 +300,32 @@ namespace FormulaExplorer
             return node;
         }
         void ShowTree()
+        { ShowTreeSelection(null); }
+
+        void ShowTreeSelection(string restore)
         {
             if (root == null) return;
             precedents.BackColor = reverse ? Color.White : Color.FromArgb(215, 237, 237); dependents.BackColor = reverse ? Color.FromArgb(215, 237, 237) : Color.White;
+            groupTraceSheets.Visible = traceSource != null;
+            if (dockedExplorerBody != null)
+            {
+                int detailHeight = traceSource == null ? 68 : 35;
+                dockedExplorerBody.RowStyles[0].Height = detailHeight;
+                dockedExplorerBody.RowStyles[1].Height = 100 - detailHeight;
+            }
             updatingExplorer = true; tree.BeginUpdate();
             try
             {
-                tree.Nodes.Clear(); TreeNode node = Node(root, null); tree.Nodes.Add(node); node.Expand(); tree.SelectedNode = node;
+                tree.Nodes.Clear();
+                TreeNode node, selection;
+                if (traceSource == null) node = selection = Node(root, null);
+                else node = RangeTraceTree(restore, out selection);
+                tree.Nodes.Add(node); node.Expand();
+                if (selection.Parent != null && selection.Parent != node) selection.Parent.Expand();
+                tree.SelectedNode = selection;
             }
             finally { tree.EndUpdate(); updatingExplorer = false; }
-            ShowDetails(root);
+            ShowRelationDetails();
         }
         void ExpandNode(TreeNode node)
         {
@@ -294,7 +337,13 @@ namespace FormulaExplorer
             foreach (Cell child in children.Take(500)) node.Nodes.Add(Node(child, node));
             if (children.Count > 500) node.Nodes.Add("Affichage limité à 500 relations directes.");
         }
-        Cell SelectedCell() { return tree.SelectedNode == null ? root : tree.SelectedNode.Tag as Cell; }
+        Cell SelectedCell()
+        {
+            if (tree.SelectedNode == null) return traceSource == null ? root : null;
+            TraceLocation selection = SelectedTraceLocation();
+            if (selection == null) return tree.SelectedNode.Tag as Cell;
+            return selection.Ranges.Count == 1 && selection.Ranges[0].Single ? book.Get(selection.Sheet, selection.ExcelAddress) : null;
+        }
         void ShowDetails(Cell cell)
         {
             if (cell == null) return;
@@ -314,6 +363,8 @@ namespace FormulaExplorer
         void Navigate()
         {
             if (bridge == null) { status.Text = "Démonstration : aucune connexion Excel."; return; }
+            TraceLocation selection = SelectedTraceLocation();
+            if (selection != null) { bridge.Navigate(book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress }); return; }
             Cell selected = SelectedCell(); if (selected != null) bridge.Navigate(book, selected);
         }
         static void CellColumns(DataGridView grid)

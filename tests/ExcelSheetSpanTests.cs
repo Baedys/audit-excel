@@ -63,13 +63,15 @@ public static class ExcelSheetSpanTests
         {
             application = Activator.CreateInstance(Type.GetTypeFromProgID("Excel.Application", true));
             dynamic app = application; app.Visible = false; app.DisplayAlerts = false;
+            bool events = app.EnableEvents; app.EnableEvents = false;
             workbook = keep(app.Workbooks).Add(-4167);
             dynamic sheets = keep(((dynamic)workbook).Worksheets), audit = keep(sheets.Item[1]); audit.Name = "Audit";
-            dynamic jan = keep(sheets.Add(Type.Missing, audit, 1, -4167)); jan.Name = "Jan";
-            dynamic feb = keep(sheets.Add(Type.Missing, jan, 1, -4167)); feb.Name = "Fev";
-            dynamic mar = keep(sheets.Add(Type.Missing, feb, 1, -4167)); mar.Name = "Mar";
-            dynamic first = keep(sheets.Add(Type.Missing, mar, 1, -4167)); first.Name = "North 1";
-            dynamic last = keep(sheets.Add(Type.Missing, first, 1, -4167)); last.Name = "North O'Brien";
+            keep(sheets.Add(Type.Missing, audit, 5, -4167));
+            dynamic jan = keep(sheets.Item[2]); jan.Name = "Jan";
+            dynamic feb = keep(sheets.Item[3]); feb.Name = "Fev";
+            dynamic mar = keep(sheets.Item[4]); mar.Name = "Mar";
+            dynamic first = keep(sheets.Item[5]); first.Name = "North 1";
+            dynamic last = keep(sheets.Item[6]); last.Name = "North O'Brien";
             dynamic allTabs = keep(((dynamic)workbook).Sheets);
             keep(allTabs.Add(Type.Missing, jan, 1, -4109)).Name = "Graphique";
             keep(jan.Range["B2:B3"]).Value2 = new object[,] { { 8d }, { 20d } };
@@ -84,8 +86,8 @@ public static class ExcelSheetSpanTests
                 "=SUM(Jan:Mar!$B$2,4)", "=COUNT(Jan:Mar!$B$2:$B$3)", "=MAX(Jan:Mar!$B$2,100)"
             };
             for (int i = 0; i < formulas.Length; i++) keep(audit.Range["B" + (i + 2)]).Formula2 = formulas[i];
-            audit.Activate(); keep(audit.Range["G1:G2"]).Select(); keep(audit.Range["G2"]).Activate();
-            bool events = app.EnableEvents, screen = app.ScreenUpdating;
+            audit.Select(true); keep(audit.Range["G1:G2"]).Select(); keep(audit.Range["G2"]).Activate();
+            app.EnableEvents = events; bool screen = app.ScreenUpdating;
             var bridge = new ExcelBridge(application); Book book = bridge.Capture(workbook);
             Equal(String.Join("|", book.SheetOrder), "Audit|Jan|Fev|Mar|North 1|North O'Brien", "3D fixture worksheet order");
             string[] cells = { "Jan!$B$2", "Fev!$B$2", "Mar!$B$2" }, numbers = { "8", "3", "3" };
@@ -148,8 +150,13 @@ public static class ExcelSheetSpanTests
                 Equal(((TextBox)Field(form, "formula")).SelectedText, "Jan:Mar!$B$2:$B$3", "sheet selects the complete source span");
                 Equal(((TextBox)Field(form, "expressionValue")).Text.EndsWith("\r\n40", StringComparison.Ordinal), true, "sheet preview shows its MAX");
 
-                dynamic april = keep(sheets.Add(Type.Missing, feb, 1, -4167)); april.Name = "Avr";
-                keep(april.Range["B2:B3"]).Value2 = new object[,] { { 1d }, { 50d } };
+                app.EnableEvents = false;
+                try
+                {
+                    dynamic april = keep(sheets.Add(Type.Missing, feb, 1, -4167)); april.Name = "Avr";
+                    keep(april.Range["B2:B3"]).Value2 = new object[,] { { 1d }, { 50d } };
+                }
+                finally { app.EnableEvents = events; }
                 var previous = (ExpressionNode)tree.SelectedNode.Tag;
                 Invoke(form, "RefreshExpressionAnnotations", true);
                 group = tree.Nodes[0].Nodes[0];
