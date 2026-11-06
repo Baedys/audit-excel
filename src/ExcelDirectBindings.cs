@@ -110,6 +110,38 @@ namespace FormulaExplorer
                 finally { Release(range); Release(sheets); }
             });
         }
+
+        internal void FollowRelationSelection(Book book, Cell target)
+        {
+            dynamic app = application;
+            object activeBook = null, activeSheet = null, activeCell = null;
+            try
+            {
+                DirectSnapshot snapshot;
+                if (!directSnapshots.TryGetValue(book, out snapshot)) return;
+                activeBook = app.ActiveWorkbook;
+                // The pane belongs to the active Excel window. Never activate
+                // another window to follow a stale or background pane.
+                if (activeBook == null || DirectSession.Identity(activeBook) != snapshot.Workbook.ToInt64()) return;
+                if (target == null)
+                {
+                    activeCell = app.ActiveCell;
+                    if (activeCell != null) ((dynamic)activeCell).Select();
+                    return;
+                }
+                AtDirectCell(book, target.Sheet, target.Address, delegate(object sheet, object range)
+                {
+                    if ((int)((dynamic)sheet).Visible != -1)
+                        throw new InvalidOperationException("Feuille masquée : affichez-la dans Excel avant de naviguer.");
+                    activeSheet = app.ActiveSheet;
+                    if (activeSheet == null || DirectSession.Identity(activeSheet) != DirectSession.Identity(sheet))
+                        ((dynamic)sheet).Activate();
+                    ((dynamic)range).Select();
+                    return true;
+                });
+            }
+            finally { Release(activeCell); Release(activeSheet); Release(activeBook); }
+        }
         public object DirectHighlightSessionId { get { return DirectColors; } }
         void PrepareDirectHighlightWorkbook(Book snapshot)
         {

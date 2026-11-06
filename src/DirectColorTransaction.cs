@@ -16,6 +16,11 @@ namespace FormulaExplorer
         void Restore(DirectColorProperty property, object snapshot);
     }
 
+    internal interface IDirectColorFormatTracking
+    {
+        bool TryReadFormat(DirectColorProperty property, out object snapshot);
+    }
+
     public sealed class DirectColorRepair
     {
         public DirectColorTarget Target { get; private set; }
@@ -93,8 +98,14 @@ namespace FormulaExplorer
                 DirectColorLayers next = state.Clone();
                 foreach (DirectColorAdoption entry in entries)
                 {
-                    if (!cells[entry.Target.CellKey].Read(entry.Target.Property).Equals(entry.TopColor)) continue;
+                    IDirectColorCell cell = cells[entry.Target.CellKey];
+                    if (!cell.Read(entry.Target.Property).Equals(entry.TopColor)) continue;
+                    var tracking = cell as IDirectColorFormatTracking;
+                    object currentFormat = null;
+                    if (tracking != null && !tracking.TryReadFormat(entry.Target.Property, out currentFormat)) continue;
                     next.EnsureBase(entry.Target.CellKey, entry.Target.Property, entry.BaseColor);
+                    next.ForgetBaseFormat(entry.Target);
+                    if (currentFormat != null) next.RecordWrittenFormat(entry.Target, currentFormat);
                     next.Apply(entry.LayerId, entry.OwnerId, new[] { entry.Target }, entry.TopColor);
                     accepted.Add(entry.Target);
                 }
@@ -130,13 +141,18 @@ namespace FormulaExplorer
                 change(next);
                 if (before.Targets.Any(t => !next.HasTarget(t)) || next.Targets.Any(t => !cells.ContainsKey(t.CellKey)))
                     throw new InvalidOperationException("La commande doit conserver les bases jusqu'à la fin de la transaction.");
-                var writes = next.Targets.Where(t => !before.HasTarget(t) || !next.GetVisible(t.CellKey, t.Property).Equals(before.GetVisible(t.CellKey, t.Property)))
+                var writes = next.Targets.Where(t => !before.HasTarget(t) || !next.GetVisible(t.CellKey, t.Property).Equals(before.GetVisible(t.CellKey, t.Property)) ||
+                        (next.VisibleBaseFormat(t) != null && before.VisibleBaseFormat(t) == null))
                     .OrderBy(t => t.CellKey, StringComparer.Ordinal).ThenBy(t => t.Property).ToList();
                 // Capture all rollback information before the first mutation.
                 foreach (DirectColorTarget target in writes)
                 {
                     IDirectColorCell cell = cells[target.CellKey]; cell.ValidateWrite();
-                    rollback.Add(new DirectColorRepair(target, cell.Capture(target.Property)));
+                    object format = cell.Capture(target.Property);
+                    rollback.Add(new DirectColorRepair(target, format));
+                    // Until the first actual write, even a same-RGB layer still
+                    // leaves the original format in Excel.
+                    if (before.HasTarget(target)) next.RememberBaseFormat(target, format);
                 }
                 int attempted = 0;
                 try
@@ -144,7 +160,18 @@ namespace FormulaExplorer
                     foreach (DirectColorTarget target in writes)
                     {
                         attempted++;
-                        cells[target.CellKey].Write(target.Property, next.GetVisible(target.CellKey, target.Property));
+                        IDirectColorCell cell = cells[target.CellKey];
+                        object original = next.VisibleBaseFormat(target);
+                        if (original != null) cell.Restore(target.Property, original);
+                        else cell.Write(target.Property, next.GetVisible(target.CellKey, target.Property));
+                        var tracking = cell as IDirectColorFormatTracking;
+                        if (tracking != null)
+                        {
+                            object writtenFormat;
+                            if (!tracking.TryReadFormat(target.Property, out writtenFormat))
+                                throw new InvalidOperationException("Format Excel illisible après l'écriture des couleurs.");
+                            next.RecordWrittenFormat(target, writtenFormat);
+                        }
                     }
                 }
                 catch (Exception failure)

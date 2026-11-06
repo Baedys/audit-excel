@@ -78,7 +78,7 @@ Le volet groupe les blocs par feuille sur demande. Quatre tracés concordent ave
 
 D03 couvre maintenant la sélection de plusieurs résultats, y compris depuis une cellule. Arixcel active le mode multiple dans `ExplorerForm.InitializeComponent` (RVA `198288`) et `DependentsForm.InitializeComponent` (RVA `206136`). `FormulaForm.OpenChildForm` (RVA `133832`) transmet seulement les nœuds associés à une plage et conserve la feuille racine. `MultiRoot` (RVA `366960`) replie les sources et développe les résultats, avec deux compteurs. `Model.AddRanges` (RVA `211560`) place en tête les plages de la feuille racine. Clair reprend cette structure dans le volet. Le retour rétablit les résultats choisis et le regroupement par feuille conserve la sélection.
 
-Le volet utilise **Entrée** ou **Voir cellule** pour sélectionner l'union sur la feuille du résultat courant. Le déplacement et la surbrillance automatique dans la grille observés dans le chemin `FormulaForm.SelectOnSheet` (RVA `134056`) restent à reproduire, ainsi que le tracé interclasseurs. [Validation](VALIDATION.md)
+Un clic ou une sélection au clavier dans le volet sélectionne automatiquement l'union sur la feuille du résultat courant. `FormulaForm.SelectOnSheet` (RVA `134056`) distingue les couleurs et la sélection Excel. Clair suit le résultat dans la fenêtre Excel active. Il conserve le masquage des feuilles. **Entrée** ou **Voir cellule** permet aussi la navigation explicite. Les coins de zones au clavier, le dévoilement temporaire, la surbrillance automatique dans la grille et le tracé interclasseurs restent ouverts. [Validation](VALIDATION.md)
 
 ## Sources et limites
 

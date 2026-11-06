@@ -86,9 +86,37 @@ public static class DirectColorTransactionTests
     public static int Run()
     {
         assertions = 0;
-        WritesAndRollback(); Prevalidation(); PendingRepair(); AbandonedReferences(); AbandonCleanupFailure(); HiddenAndTransparent(); CopiesAndDiscard(); Lifetime();
+        WritesAndRollback(); Prevalidation(); PendingRepair(); AbandonedReferences(); AbandonCleanupFailure(); HiddenAndTransparent(); RestoreOriginalFormat(); CopiesAndDiscard(); Lifetime();
         Console.WriteLine("PASS DirectColorTransaction: " + assertions + " assertions");
         return assertions;
+    }
+    static void RestoreOriginalFormat()
+    {
+        var trace = new Trace(); var transaction = new DirectColorTransaction();
+        FakeCell cell = Attach(transaction, "A", trace); cell.Fill = Red;
+        Apply(transaction, "same", "same", Red, AF);
+        Equal(trace.Writes, 0, "same-color layer leaves the original format intact");
+        Apply(transaction, "overlay", "overlay", Blue, AF);
+        Remove(transaction, "overlay");
+        Equal(cell.Fill, Red, "lower layer is visible again");
+        Equal(cell.FillMetadata, 9, "lower layer remains distinct from the original format");
+        cell.FailRestores = 1;
+        Throws<InvalidOperationException>(() => Remove(transaction, "same"), "failed original-format restoration rolls back");
+        Equal(cell.FillMetadata, 9, "failed removal keeps the previous format");
+        Equal(transaction.Snapshot.HasOwner("same"), true, "failed removal keeps its layer");
+        Remove(transaction, "same");
+        Equal(cell.Fill, Red, "original color restored even when the RGB already matches");
+        Equal(cell.FillMetadata, 7, "original format restored after the last layer");
+        transaction.Dispose();
+
+        trace = new Trace(); transaction = new DirectColorTransaction();
+        cell = Attach(transaction, "A", trace); cell.Fill = Red;
+        Apply(transaction, "bottom", "bottom", Blue, AF);
+        Apply(transaction, "same", "same", Red, AF);
+        transaction.Run(new DirectColorTarget[0], next => next.MakePermanentOwners(new[] { "same" }));
+        Equal(cell.FillMetadata, 9, "permanence of equal RGB does not revive the original format");
+        Equal(transaction.Snapshot.HasOwner("bottom"), false, "permanence discards lower layers");
+        transaction.Dispose();
     }
     static void WritesAndRollback()
     {

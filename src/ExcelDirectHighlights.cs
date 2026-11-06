@@ -221,7 +221,7 @@ namespace FormulaExplorer
             public bool HasLease, Valid = true;
             public DirectReference(ExcelDirectColorCell port) { Port = port; }
         }
-        sealed class DirectLease : IDirectColorCell
+        sealed class DirectLease : IDirectColorCell, IDirectColorFormatTracking
         {
             DirectSession session;
             readonly DirectReference reference;
@@ -229,7 +229,8 @@ namespace FormulaExplorer
             public void ValidateWrite() { reference.Port.ValidateWrite(); }
             public DirectColorValue Read(DirectColorProperty property) { return reference.Port.Read(property); }
             public object Capture(DirectColorProperty property) { return reference.Port.Capture(property); }
-            public void Write(DirectColorProperty property, DirectColorValue color) { reference.Port.Write(property, color); }
+            public void Write(DirectColorProperty property, DirectColorValue color) { reference.Port.WritePrepared(property, color); }
+            public bool TryReadFormat(DirectColorProperty property, out object snapshot) { return reference.Port.TryReadFormat(property, out snapshot); }
             public void Restore(DirectColorProperty property, object snapshot) { reference.Port.Restore(property, snapshot); }
             public void Dispose()
             {
@@ -335,9 +336,19 @@ namespace FormulaExplorer
                 DirectColorLayers snapshot = Transaction.Snapshot; var invalid = new List<DirectColorTarget>();
                 foreach (DirectColorTarget target in snapshot.Targets)
                 {
-                    DirectColorValue actual;
-                    if (!references[target.CellKey].Port.TryRead(target.Property, out actual) ||
-                        !actual.Equals(snapshot.GetVisible(target.CellKey, target.Property))) invalid.Add(target);
+                    ExcelDirectColorCell cell = references[target.CellKey].Port;
+                    object expected = snapshot.LastWrittenFormat(target);
+                    if (expected != null)
+                    {
+                        object actual;
+                        if (!cell.TryReadFormat(target.Property, out actual) || !cell.SameFormat(expected, actual)) invalid.Add(target);
+                    }
+                    else
+                    {
+                        DirectColorValue actual;
+                        if (!cell.TryRead(target.Property, out actual) || !actual.Equals(snapshot.GetVisible(target.CellKey, target.Property)))
+                            invalid.Add(target);
+                    }
                 }
                 if (invalid.Count != 0) Transaction.Discard(invalid);
             }

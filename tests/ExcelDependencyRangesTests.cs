@@ -81,6 +81,8 @@ public static class ExcelDependencyRangesTests
                 keyDown.Invoke(tree, new object[] { extend });
                 Equal(extend.Handled, true, "Ctrl+Shift+Down reaches the keyboard interval handler");
                 Equal(selectedRelations.Count, 2, "Shift takes precedence over Ctrl");
+                Equal((string)keep(app.ActiveSheet).Name, "South", "keyboard follows the current result in Excel");
+                Equal((string)keep(app.Selection).Address, "$B$2:$B$4", "keyboard selects only ranges on its current worksheet");
                 group.Checked = true;
                 Equal(selectedRelations.Count, 2, "grouping keeps both selected ranges");
                 Equal(tree.SelectedNode.Text, "'South'!B2:B4", "grouping keeps the current range");
@@ -109,6 +111,8 @@ public static class ExcelDependencyRangesTests
                 Equal(selectedRelations.Count, 2, "Shift selects the visible interval including its sheet header");
                 Invoke(form, "Navigate");
                 Equal((string)keep(app.ActiveSheet).Name, "South", "selected sheet header leaves Excel selection alone");
+                Invoke(form, "FollowRelationInExcel");
+                Equal((string)keep(app.Selection).Address, "$B$2", "following a heading falls back to Excel's active cell");
                 Invoke(form, "ExploreSelectedRelation", true);
                 Equal(tree.Nodes[0].Tag != null, true, "selected sheet header contributes no implicit child range");
                 Equal(tree.Nodes[0].Text, "'North'!B2:B4 · 8 plages", "one remaining physical source opens the single-range trace");
@@ -152,7 +156,7 @@ public static class ExcelDependencyRangesTests
                 Equal(tree.SelectedNode.Text, "'Audit'!D2:D3", "back restores the selected result");
                 var sheetResults = tree.Nodes[0].Nodes[0];
                 select(sheetResults.Nodes[3], Keys.Control);
-                Invoke(form, "Navigate");
+                Invoke(form, "FollowRelationInExcel");
                 Equal((string)keep(app.ActiveSheet).Name, "Audit", "same-sheet union activates its worksheet");
                 Equal((string)keep(app.Selection).Address, "$D$2:$D$3,$H$2", "navigation selects both disjoint blocks on the current sheet");
                 Equal(Invoke(form, "SelectedCell"), null, "multiple ranges cannot enter the single-cell editor");
@@ -186,6 +190,21 @@ public static class ExcelDependencyRangesTests
                 Invoke(form, "ExploreSelectedRelation", true);
                 Invoke(form, "Back");
                 Equal(((Cell)tree.SelectedNode.Tag).Location, "'AB'!C2", "path lookup preserves the sheet and address boundary");
+                ab.Visible = 0;
+                Invoke(form, "FollowRelationInExcel");
+                Equal((int)ab.Visible, 0, "automatic following preserves hidden worksheets");
+                Equal((string)keep(app.ActiveSheet).Name, "Audit", "following a hidden result keeps the visible worksheet active");
+                ab.Visible = -1;
+                object foreign = keep(app.Workbooks).Add(-4167);
+                try
+                {
+                    dynamic foreignSheet = keep(keep(((dynamic)foreign).Worksheets).Item[1]);
+                    keep(foreignSheet.Range["H8"]).Select();
+                    Invoke(form, "FollowRelationInExcel");
+                    Equal((string)keep(app.ActiveWorkbook).Name, (string)((dynamic)foreign).Name, "background pane never activates its old workbook");
+                    Equal((string)keep(app.Selection).Address, "$H$8", "background pane keeps the active workbook selection intact");
+                }
+                finally { ((dynamic)foreign).Close(false); }
                 Equal((bool)app.EnableEvents, originalEvents, "analysis preserves events");
                 Equal((bool)app.ScreenUpdating, screen, "analysis preserves screen updating");
             }

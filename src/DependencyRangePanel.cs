@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace FormulaExplorer
@@ -53,11 +54,17 @@ namespace FormulaExplorer
                 if (updatingExplorer || e.Action == TreeViewAction.ByMouse) return;
                 Keys modifiers = e.Action == TreeViewAction.ByKeyboard ? Control.ModifierKeys : Keys.None;
                 if ((modifiers & (Keys.Control | Keys.Shift)) == Keys.Control) RefreshRelationSelection();
-                else ApplyRelationSelection(e.Node, modifiers);
+                else
+                {
+                    ApplyRelationSelection(e.Node, modifiers);
+                    if (e.Action == TreeViewAction.ByKeyboard) FollowRelationInExcel();
+                }
             };
             tree.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
             {
-                if (IsRelationLabelClick(e)) ApplyRelationSelection(e.Node, Control.ModifierKeys);
+                if (!IsRelationLabelClick(e)) return;
+                ApplyRelationSelection(e.Node, Control.ModifierKeys);
+                FollowRelationInExcel();
             };
             tree.NodeMouseDoubleClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
             {
@@ -68,8 +75,12 @@ namespace FormulaExplorer
                 if (e.Shift && (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down))
                 {
                     TreeNode current = tree.SelectedNode;
-                    if (current != null)
-                        ApplyRelationSelection(e.KeyCode == Keys.Up ? current.PrevVisibleNode : current.NextVisibleNode, e.Modifiers);
+                    TreeNode next = current == null ? null : e.KeyCode == Keys.Up ? current.PrevVisibleNode : current.NextVisibleNode;
+                    if (next != null)
+                    {
+                        ApplyRelationSelection(next, e.Modifiers);
+                        FollowRelationInExcel();
+                    }
                 }
                 else if (e.KeyCode == Keys.Enter && selectedRelations.Count > 0) Safe(Navigate);
                 else if (e.Control && e.KeyCode == Keys.Q && selectedRelations.Count > 0)
@@ -215,6 +226,20 @@ namespace FormulaExplorer
             if (location == null) return null;
             return new TraceLocation(selection.Ranges.Where(range =>
                 String.Equals(range.Sheet, location.Sheet, StringComparison.OrdinalIgnoreCase)).ToArray());
+        }
+
+        void FollowRelationInExcel()
+        {
+            if (!IsDocked || bridge == null || book == null || tabs.SelectedIndex != 0) return;
+            TraceLocation selection = NavigableRelationSelection();
+            bool keepFocus = tree.Focused;
+            try
+            {
+                bridge.FollowRelationSelection(book, selection == null ? null : new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress });
+            }
+            catch (COMException) { status.Text = "Excel ne peut pas sélectionner cette plage pour le moment."; }
+            catch (InvalidOperationException error) { status.Text = error.Message; }
+            finally { if (keepFocus && !tree.Focused && tree.CanFocus) tree.Focus(); }
         }
 
         void ExploreSelectedRelation(bool? downstream = null)

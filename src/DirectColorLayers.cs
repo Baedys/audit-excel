@@ -69,8 +69,14 @@ namespace FormulaExplorer
         sealed class Stack
         {
             public DirectColorValue Base;
+            public bool OriginalBase = true;
+            public object BaseFormat, LastWrittenFormat;
             public List<DirectColorLayer> Layers = new List<DirectColorLayer>();
-            public Stack Copy() { return new Stack { Base = Base, Layers = new List<DirectColorLayer>(Layers) }; }
+            public Stack Copy()
+            {
+                return new Stack { Base = Base, OriginalBase = OriginalBase, BaseFormat = BaseFormat,
+                    LastWrittenFormat = LastWrittenFormat, Layers = new List<DirectColorLayer>(Layers) };
+            }
         }
         readonly Dictionary<DirectColorTarget, Stack> stacks = new Dictionary<DirectColorTarget, Stack>();
         readonly Dictionary<string, string> layerOwners = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -124,6 +130,24 @@ namespace FormulaExplorer
         }
         public DirectColorValue GetBase(string cellKey, DirectColorProperty property)
         { return GetStack(new DirectColorTarget(cellKey, property)).Base; }
+        internal void ForgetBaseFormat(DirectColorTarget target)
+        {
+            Stack stack = GetStack(target);
+            stack.OriginalBase = false;
+            stack.BaseFormat = null;
+        }
+        internal void RememberBaseFormat(DirectColorTarget target, object format)
+        {
+            Stack stack = GetStack(target);
+            if (stack.OriginalBase && stack.BaseFormat == null) stack.BaseFormat = format;
+        }
+        internal object VisibleBaseFormat(DirectColorTarget target)
+        {
+            Stack stack = GetStack(target);
+            return stack.Layers.All(layer => layer.Color.Kind == DirectColorKind.Transparent) ? stack.BaseFormat : null;
+        }
+        internal object LastWrittenFormat(DirectColorTarget target) { return GetStack(target).LastWrittenFormat; }
+        internal void RecordWrittenFormat(DirectColorTarget target, object format) { GetStack(target).LastWrittenFormat = format; }
         public DirectColorValue GetVisible(string cellKey, DirectColorProperty property)
         {
             Stack stack = GetStack(new DirectColorTarget(cellKey, property));
@@ -209,7 +233,11 @@ namespace FormulaExplorer
                         removed.Add(new DirectColorLayerRemoval(target, layer, DirectColorRemovalReason.Removed));
                     else retained.Add(layer);
                 }
-                if (permanent >= 0) stack.Base = stack.Layers[permanent].Color;
+                if (permanent >= 0)
+                {
+                    stack.Base = stack.Layers[permanent].Color;
+                    ForgetBaseFormat(target);
+                }
                 stack.Layers = retained;
             }
             return removed.AsReadOnly();

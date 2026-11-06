@@ -140,7 +140,20 @@ namespace FormulaExplorer
         }
         public object Capture(DirectColorProperty property)
         {
-            Property(property); ValidateWrite(); object format = null;
+            Property(property); ValidateWrite();
+            FormatState state = ReadFormat(property);
+            if (property == DirectColorProperty.Font) ValidateTextColor(state.Color);
+            return state;
+        }
+        internal bool TryReadFormat(DirectColorProperty property, out object snapshot)
+        {
+            Alive(); Property(property);
+            try { snapshot = ReadFormat(property); return true; }
+            catch (InvalidOperationException) { snapshot = null; return false; }
+        }
+        FormatState ReadFormat(DirectColorProperty property)
+        {
+            object format = null;
             try
             {
                 format = Format(property);
@@ -152,7 +165,6 @@ namespace FormulaExplorer
                         throw new InvalidOperationException("Les dégradés de remplissage ne sont pas pris en charge pour les couleurs directes.");
                     state.PatternColor = ReadState(format, true);
                 }
-                else ValidateTextColor(state.Color);
                 return state;
             }
             finally { Release(format); }
@@ -183,6 +195,10 @@ namespace FormulaExplorer
             if (color.Kind == DirectColorKind.Transparent) return;
             // Also enforce preflight for callers using this port without a transaction.
             Capture(property);
+            WritePrepared(property, color);
+        }
+        internal void WritePrepared(DirectColorProperty property, DirectColorValue color)
+        {
             object format = null;
             try
             {
@@ -191,6 +207,13 @@ namespace FormulaExplorer
                 else f.ColorIndex = color.Kind == DirectColorKind.Automatic ? -4105 : -4142;
             }
             finally { Release(format); }
+        }
+        internal bool SameFormat(object first, object second)
+        {
+            var before = (FormatState)first;
+            var after = (FormatState)second;
+            return before.Color.Same(after.Color) && (before.Property == DirectColorProperty.Font ||
+                (before.Pattern == after.Pattern && before.PatternColor.Same(after.PatternColor)));
         }
         static void RestoreState(object format, ColorState state, bool pattern)
         {

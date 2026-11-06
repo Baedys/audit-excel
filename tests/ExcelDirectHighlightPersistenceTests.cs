@@ -97,6 +97,16 @@ public static class ExcelDirectHighlightPersistenceTests
             Equal(Fill(cell), Red, "new flow removal reveals old temporary fill"); Equal(Font(cell), Blue, "new flow removal reveals old temporary font");
             DirectHighlightRestoreResult lateRestore = bridge.RestorePostponedDirectHighlightData(workbook);
             Equal(lateRestore.RestoredCount, 2, "old saved history still restorable"); Equal(Fill(cell), Base, "late old fill restores original"); Equal(Convert.ToInt32(Keep(cell.Font).ColorIndex), -4105, "late old font restores automatic");
+            ((dynamic)workbook).Close(false); workbook = null; workbook = Keep(app.Workbooks).Open(path);
+            sheet = Keep(Keep(((dynamic)workbook).Worksheets).Item[1]); cell = Keep(sheet.Range["B3"]);
+            bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Postpone);
+            dynamic postponedInterior = Keep(cell.Interior);
+            postponedInterior.Pattern = 9; postponedInterior.PatternColor = Green;
+            Equal(Fill(cell), Red, "manual edit after adoption preserves the saved top RGB");
+            Equal(bridge.PostponedDirectHighlightCount(workbook), 1, "same-RGB edit invalidates adopted fill only");
+            Equal(bridge.RestorePostponedDirectHighlightData(workbook).RestoredCount, 1, "only the unchanged adopted font is restored");
+            Equal((int)postponedInterior.Pattern, 9, "manual pattern survives postponed restoration");
+            Equal(Fill(cell), Red, "manual same-RGB fill survives postponed restoration");
             // Closing without saving preserves the earlier on-disk part.
             ((dynamic)workbook).Close(false); workbook = null; workbook = Keep(app.Workbooks).Open(path);
             sheet = Keep(Keep(((dynamic)workbook).Worksheets).Item[1]); cell = Keep(sheet.Range["B3"]);

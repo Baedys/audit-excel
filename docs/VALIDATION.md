@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Suivi de la sélection Excel et retrait des couleurs — 6 novembre 2026
+
+Le chemin de sélection d'Arixcel appelle `Range.Select` indépendamment du réglage de surbrillance. Les tests Clair vérifient dans Excel l'activation de la feuille du résultat courant avec Ctrl+Maj+Bas, l'union disjointe sur cette feuille, le repli d'un en-tête sur la cellule active et l'isolement d'un autre classeur actif. Les feuilles masquées restent masquées. Les tests appellent les gestionnaires du volet et ne mesurent pas le focus dans la fenêtre Office.
+
+Dans la session Excel ouverte, le retrait de la dernière couche de couleurs directes restaure les propriétés de fond et de police capturées à la première écriture. Les tests superposent deux propriétaires, retirent leurs couches et vérifient thème, nuances, motif et couleur résultante. Ils couvrent aussi une retouche manuelle du motif à RGB identique et une reprise après échec de restauration. La projection de sauvegarde utilise toujours les couleurs scalaires du journal existant.
+
 ## Sélection multiple dans l'arbre — 6 novembre 2026
 
 L'inspection statique d'Arixcel 9.0.9623.19616 établit les gestes Ctrl et Maj, l'exclusion des en-têtes du prochain tracé et la racine à deux catégories. Dans Clair, le test sur un classeur Excel jetable sélectionne deux plages sur `North` et `South` dans l'ordre inverse des onglets, vérifie les dix blocs dépendants sur la feuille racine `Audit`, puis revient à la sélection précédente. Il vérifie aussi Ctrl+Maj+Bas, l'union disjointe sur une seule feuille, la sélection d'un en-tête, la restauration après changement de regroupement et le retour dans un arbre de cellules.
