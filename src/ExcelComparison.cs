@@ -52,14 +52,14 @@ namespace FormulaExplorer
             }
         }
 
-        internal List<ComparisonRow> CompareSelection()
+        internal ComparisonResult CompareSelection()
         {
             if (comparisonBook == null) throw new InvalidOperationException("Définissez d’abord une référence Excel.");
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
             Book right = ActiveDirectHighlightBook();
             bool valuesOnly = ComparisonOptions.ValuesOnly, relative = ComparisonOptions.Relative, ignoreInputs = ComparisonOptions.IgnoreInputs;
             double tolerance = (double)ComparisonOptions.Tolerance;
-            var result = new List<ComparisonRow>();
+            var result = new ComparisonResult();
             if (ReferenceScope == ComparisonScope.Range)
             {
                 Reference source = ReadRetainedDependencyRange(left, comparisonRange);
@@ -83,7 +83,7 @@ namespace FormulaExplorer
                     String.Equals(source.Sheet, targets[0].Sheet, StringComparison.OrdinalIgnoreCase) && source.Address == targets[0].Address)
                     throw new InvalidOperationException("Sélectionnez une autre plage à comparer.");
                 foreach (Reference target in targets)
-                    LiveComparison.Compare(result, source, left.Cells.Values, target, ComparisonTileCells(target), valuesOnly, relative, ignoreInputs, tolerance);
+                    LiveComparison.Compare(result.Differences, source, left.Cells.Values, target, ComparisonTileCells(target), valuesOnly, relative, ignoreInputs, tolerance);
                 return result;
             }
 
@@ -109,24 +109,46 @@ namespace FormulaExplorer
                 {
                     string match = afterSheets.FirstOrDefault(name => String.Equals(sheet, name, StringComparison.OrdinalIgnoreCase));
                     if (match != null) pairs.Add(SheetPair(left, sheet, right, match));
-                    else result.Add(UnmatchedSheet(SheetLocation(left, sheet), null));
+                    else result.Differences.Add(UnmatchedSheet(SheetLocation(left, sheet), null));
                 }
                 foreach (string sheet in afterSheets.Except(beforeSheets, StringComparer.OrdinalIgnoreCase))
-                    result.Add(UnmatchedSheet(null, SheetLocation(right, sheet)));
+                    result.Differences.Add(UnmatchedSheet(null, SheetLocation(right, sheet)));
             }
             CaptureComparisonAreas(left, pairs.Select(pair => pair.Key));
             CaptureComparisonAreas(right, pairs.Select(pair => pair.Value));
             var leftCells = left.Cells.Values.ToLookup(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase);
             var rightCells = right.Cells.Values.ToLookup(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in pairs)
+            if (ComparisonOptions.CheckAlignment)
             {
-                Reference a = pair.Key, b = pair.Value;
-                int row = Math.Min(a.FirstRow, b.FirstRow), col = Math.Min(a.FirstColumn, b.FirstColumn);
-                int endRow = Math.Max(a.LastRow, b.LastRow), endCol = Math.Max(a.LastColumn, b.LastColumn);
-                LiveComparison.Compare(result, Reference.FromBounds(a.Sheet, row, col, endRow, endCol, left), leftCells[a.Sheet],
-                    Reference.FromBounds(b.Sheet, row, col, endRow, endCol, right), rightCells[b.Sheet],
-                    valuesOnly, relative, ignoreInputs, tolerance);
+                var leftBoundaries = new Dictionary<string, IReadOnlyList<Rectangle>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var pair in pairs)
+                {
+                    Reference a = pair.Key, b = pair.Value;
+                    int row = Math.Min(a.FirstRow, b.FirstRow), col = Math.Min(a.FirstColumn, b.FirstColumn);
+                    IReadOnlyList<Rectangle> boundaries;
+                    if (!leftBoundaries.TryGetValue(a.Sheet, out boundaries))
+                        leftBoundaries.Add(a.Sheet, boundaries = ComparisonAlignmentBoundaries(a.Workbook, a.Sheet));
+                    var first = Reference.FromBounds(a.Sheet, row, col, a.LastRow, a.LastColumn, left);
+                    var second = Reference.FromBounds(b.Sheet, row, col, b.LastRow, b.LastColumn, right);
+                    var gaps = new List<ComparisonAlignmentGap>();
+                    if (!ComparisonAlignment.Detect(first, leftCells[a.Sheet], boundaries,
+                        second, rightCells[b.Sheet], ComparisonAlignmentBoundaries(b.Workbook, b.Sheet), gaps))
+                        result.AlignmentLimited = true;
+                    foreach (ComparisonAlignmentGap gap in gaps) result.Alignment.Add(ComparisonAlignmentRow(first, second, gap));
+                }
             }
+            result.CompareSheets = rows =>
+            {
+                foreach (var pair in pairs)
+                {
+                    Reference a = pair.Key, b = pair.Value;
+                    int row = Math.Min(a.FirstRow, b.FirstRow), col = Math.Min(a.FirstColumn, b.FirstColumn);
+                    int endRow = Math.Max(a.LastRow, b.LastRow), endCol = Math.Max(a.LastColumn, b.LastColumn);
+                    LiveComparison.Compare(rows, Reference.FromBounds(a.Sheet, row, col, endRow, endCol, left), leftCells[a.Sheet],
+                        Reference.FromBounds(b.Sheet, row, col, endRow, endCol, right), rightCells[b.Sheet],
+                        valuesOnly, relative, ignoreInputs, tolerance);
+                }
+            };
             return result;
         }
 

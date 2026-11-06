@@ -170,6 +170,7 @@ public static class ExcelComparisonTests
 
                 ((dynamic)before).Activate(); left.Activate();
                 Field<ComboBox>(sourceView, "comparisonScope").SelectedIndex = 1;
+                Field<CheckBox>(sourceView, "checkComparisonAlignment").Checked = false;
                 Field<CheckBox>(sourceView, "compareRelative").Checked = false;
                 Invoke(sourceView, "SetComparisonReference");
                 left.Name = "Modèle";
@@ -279,6 +280,60 @@ public static class ExcelComparisonTests
                 var snapshot = Field<DataGridView>(targetView, "differences");
                 Equal(((IList)snapshot.DataSource).Count > 0, true, "the historical snapshot comparison still binds its grid");
                 Equal(tree.Nodes.Count, 0, "switching to snapshot results clears the live tree");
+
+                dynamic leftAlign = keep(keep(((dynamic)before).Worksheets).Add());
+                leftAlign.Name = "Décalages";
+                dynamic rightAlign = keep(keep(((dynamic)after).Worksheets).Add());
+                rightAlign.Name = "Décalages";
+                keep(leftAlign.Range["B2"]).Value2 = "Heading";
+                keep(leftAlign.Range["C2"]).Value2 = "Revenue";
+                keep(leftAlign.Range["D2"]).Value2 = "Profit";
+                keep(leftAlign.Range["B3"]).Value2 = "Alpha";
+                keep(leftAlign.Range["B4"]).Value2 = "Bravo";
+                keep(rightAlign.Range["B2"]).Value2 = "Heading";
+                keep(rightAlign.Range["C2"]).Value2 = "Extra column";
+                keep(rightAlign.Range["D2"]).Value2 = "Revenue";
+                keep(rightAlign.Range["E2"]).Value2 = "Profit";
+                keep(rightAlign.Range["B3"]).Value2 = "Extra line";
+                keep(rightAlign.Range["B4"]).Value2 = "Alpha";
+                keep(rightAlign.Range["B5"]).Value2 = "Bravo";
+                ((dynamic)before).Activate(); leftAlign.Activate();
+                Field<ComboBox>(sourceView, "comparisonScope").SelectedIndex = 1;
+                Field<CheckBox>(sourceView, "checkComparisonAlignment").Checked = true;
+                Invoke(sourceView, "SetComparisonReference");
+                ((dynamic)after).Activate(); rightAlign.Activate();
+                mode.SelectedIndex = 1;
+                values.Checked = false;
+                rows = compare();
+                Equal(rows.Count, 2, "worksheet comparison displays both axis proposals before cell differences");
+                Equal(Text(rows[0], "Avant"), "Insérer 1 colonne avant C", "column proposal appears first on the shorter side");
+                Equal(Text(rows[1], "Avant"), "Insérer 1 ligne avant 3", "row proposal precedes the next matching row");
+                Equal(Text(rows[0], "Comparateur").EndsWith("Décalages!C2:C5"), true, "column proposal retains the physical surplus range");
+                Equal((string)keep(leftAlign.Range["B3"]).Value2, "Alpha", "detection leaves the reference unchanged");
+                Equal((string)keep(rightAlign.Range["B3"]).Value2, "Extra line", "detection leaves the comparator unchanged");
+                Equal(Field<Button>(targetView, "skipComparisonAlignment").Enabled, true, "the alignment phase allows ordinary comparison");
+                object planned = Field<object>(targetView, "currentComparison");
+                Equal(Field<Delegate>(planned, "CompareSheets") != null, true, "cell differences are deferred until after alignment review");
+                Invoke(targetView, "NavigateComparison", rows[0], true);
+                Equal((string)keep(app.Selection).Address, "$C$2:$C$5", "navigation selects the actual surplus column segment");
+                Invoke(targetView, "ShowComparisonDifferences");
+                Equal(Leaves(groups()).Cast<object>().All(row => Text(row, "Écart") != "Alignement"), true, "ordinary differences open without alignment");
+                Equal(Field<Button>(targetView, "skipComparisonAlignment").Enabled, false, "ordinary comparison leaves the alignment phase");
+                Equal(Field<Delegate>(planned, "CompareSheets"), null, "continuing consumes the same comparison snapshot");
+                Field<CheckBox>(targetView, "checkComparisonAlignment").Checked = false;
+                Equal(compare().Cast<object>().All(row => Text(row, "Écart") != "Alignement"), true, "disabling detection keeps the ordinary comparison");
+
+                keep(rightAlign.Range["G10"]).Value2 = "Table key"; keep(rightAlign.Range["H10"]).Value2 = "Table value";
+                keep(rightAlign.Range["G11"]).Value2 = "Data one"; keep(rightAlign.Range["G12"]).Value2 = "Data two";
+                dynamic tables = keep(rightAlign.ListObjects);
+                keep(tables.Add(1, keep(rightAlign.Range["G10:H12"]), Type.Missing, 1));
+                keep(rightAlign.Range["J10"]).Value2 = "Filter key"; keep(rightAlign.Range["K10"]).Value2 = "Filter value";
+                keep(rightAlign.Range["J11"]).Value2 = "First value"; keep(rightAlign.Range["J13"]).Value2 = "Last value";
+                keep(rightAlign.Range["J10:K13"]).AutoFilter();
+                var descriptor = bridge.ActiveDirectHighlightBook();
+                var boundaries = (IEnumerable<Rectangle>)Invoke(bridge, "ComparisonAlignmentBoundaries", descriptor, "Décalages");
+                Equal(boundaries.Contains(new Rectangle(7, 11, 2, 2)), true, "Excel table body is excluded without its header");
+                Equal(boundaries.Contains(new Rectangle(10, 11, 2, 3)), true, "worksheet filter body is excluded without its header");
             }
             Console.WriteLine("EXCEL_COMPARISON_ASSERTIONS " + checks);
         }

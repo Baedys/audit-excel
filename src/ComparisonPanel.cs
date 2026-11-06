@@ -18,13 +18,17 @@ namespace FormulaExplorer
         readonly NumericUpDown tolerance = new NumericUpDown { DecimalPlaces = 6, Maximum = 1000000, Width = 92 };
         readonly Label referenceLabel = new Label { AutoSize = true };
         readonly CheckBox highlightComparison = new CheckBox { Text = "Surligner les écarts", Checked = true, AutoSize = true };
+        readonly CheckBox checkComparisonAlignment = new CheckBox { Text = "Détecter les décalages", Checked = true, AutoSize = true };
         readonly TreeView comparisonTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false };
         readonly TextBox comparisonDetails = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical };
         readonly string comparisonHighlightOwner = "compare-" + Guid.NewGuid().ToString("N");
         TableLayoutPanel comparisonResults;
         List<ComparisonRow> comparisonRows;
+        ComparisonResult currentComparison;
+        Button skipComparisonAlignment;
         bool comparisonRight = true, comparisonSwapped, loadingComparisonRows;
         string liveComparisonReportHeading;
+        string comparisonMode;
         bool readingComparisonOptions;
 
         void ConfigureComparison(TabPage tab)
@@ -45,6 +49,10 @@ namespace FormulaExplorer
             bar.Controls.Add(ignoreComparisonInputs);
             bar.Controls.Add(new Label { Text = "Tolérance", AutoSize = true, Padding = new Padding(2, 4, 0, 0) });
             bar.Controls.Add(tolerance); bar.SetFlowBreak(tolerance, true);
+            bar.Controls.Add(checkComparisonAlignment);
+            skipComparisonAlignment = ActionButton("Comparer sans aligner", ShowComparisonDifferences);
+            skipComparisonAlignment.Enabled = false;
+            bar.Controls.Add(skipComparisonAlignment); bar.SetFlowBreak(skipComparisonAlignment, true);
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
             bar.Controls.Add(target); bar.SetFlowBreak(target, true);
@@ -63,6 +71,7 @@ namespace FormulaExplorer
             compareRelative.CheckedChanged += delegate { ChangeComparisonOption(options => options.Relative = compareRelative.Checked); };
             ignoreComparisonInputs.CheckedChanged += delegate { ChangeComparisonOption(options => options.IgnoreInputs = ignoreComparisonInputs.Checked); };
             tolerance.ValueChanged += delegate { ChangeComparisonOption(options => options.Tolerance = tolerance.Value); };
+            checkComparisonAlignment.CheckedChanged += delegate { ChangeComparisonOption(options => options.CheckAlignment = checkComparisonAlignment.Checked); };
             tabs.SelectedIndexChanged += delegate
             {
                 if (tabs.SelectedTab == tab) { ShowComparisonReference(); UpdateComparisonSelection(); }
@@ -93,6 +102,7 @@ namespace FormulaExplorer
             bool live = SelectedComparisonScope != ComparisonScope.Snapshot;
             compareRelative.Enabled = ignoreComparisonInputs.Enabled = live && !valuesOnly.Checked;
             tolerance.Enabled = valuesOnly.Checked || !live;
+            checkComparisonAlignment.Enabled = live && SelectedComparisonScope != ComparisonScope.Range;
         }
 
         void ShowComparisonReference()
@@ -113,6 +123,7 @@ namespace FormulaExplorer
                     compareRelative.Checked = options.Relative;
                     ignoreComparisonInputs.Checked = options.IgnoreInputs;
                     tolerance.Value = options.Tolerance;
+                    checkComparisonAlignment.Checked = options.CheckAlignment;
                 }
                 finally { readingComparisonOptions = false; }
             }
@@ -132,6 +143,8 @@ namespace FormulaExplorer
             if (SelectedComparisonScope == ComparisonScope.Snapshot)
             {
                 if (book == null) LoadExcel();
+                currentComparison = null;
+                skipComparisonAlignment.Enabled = false;
                 ShowComparisonRows(null);
                 RememberSnapshot();
             }
@@ -140,6 +153,8 @@ namespace FormulaExplorer
                 if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
                 bridge.SetComparisonReference(SelectedComparisonScope);
                 differences.DataSource = null;
+                currentComparison = null;
+                skipComparisonAlignment.Enabled = false;
                 ShowComparisonRows(null);
                 ShowComparisonReference();
                 status.Text = "Référence Excel définie. Sélectionnez le comparateur.";
@@ -151,20 +166,41 @@ namespace FormulaExplorer
             if (SelectedComparisonScope == ComparisonScope.Snapshot)
             {
                 CompareSnapshot();
+                currentComparison = null;
+                skipComparisonAlignment.Enabled = false;
                 ShowComparisonRows(null);
                 return;
             }
             if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
             ShowComparisonReference();
-            var rows = bridge.CompareSelection();
+            ComparisonResult next = bridge.CompareSelection();
+            if (next.Alignment.Count == 0) next.ReadDifferences();
+            currentComparison = next;
             comparisonScope.SelectedIndex = (int)bridge.ReferenceScope;
-            string mode = valuesOnly.Checked ? "valeurs · tolérance " + tolerance.Value.ToString(CultureInfo.InvariantCulture) :
+            comparisonMode = valuesOnly.Checked ? "valeurs · tolérance " + tolerance.Value.ToString(CultureInfo.InvariantCulture) :
                 "formules " + (compareRelative.Checked ? "R1C1" : "A1") + (ignoreComparisonInputs.Checked ? " · entrées ignorées" : "");
-            liveComparisonReportHeading = referenceLabel.Text + Environment.NewLine + mode;
+            liveComparisonReportHeading = referenceLabel.Text + Environment.NewLine + comparisonMode;
             differences.DataSource = null;
-            status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts · " + mode;
+            if (currentComparison.Alignment.Count == 0) ShowComparisonDifferences();
+            else
+            {
+                skipComparisonAlignment.Enabled = true;
+                status.Text = currentComparison.Alignment.Count + " propositions d’alignement" + ComparisonAlignmentLimit();
+                ShowComparisonRows(currentComparison.Alignment);
+            }
+        }
+
+        void ShowComparisonDifferences()
+        {
+            if (currentComparison == null) return;
+            List<ComparisonRow> rows = currentComparison.ReadDifferences();
+            skipComparisonAlignment.Enabled = false;
+            status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts · " + comparisonMode + ComparisonAlignmentLimit();
             ShowComparisonRows(rows);
         }
+
+        string ComparisonAlignmentLimit()
+        { return currentComparison.AlignmentLimited ? " · limite de 2 000 écarts d’alignement atteinte sur un axe" : ""; }
 
         ComparisonRow SelectedComparisonRow()
         { return comparisonTree.SelectedNode == null ? null : comparisonTree.SelectedNode.Tag as ComparisonRow; }
@@ -209,7 +245,7 @@ namespace FormulaExplorer
             comparisonDetails.Text = row == null ? "" : String.Join(Environment.NewLine + Environment.NewLine,
                 comparisonSwapped ? new[] { SideDetail(row, true), SideDetail(row, false) } :
                     new[] { SideDetail(row, false), SideDetail(row, true) });
-            if (row == null || !highlightComparison.Checked || tabs.SelectedIndex != 3 || bridge == null)
+            if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 || bridge == null)
             {
                 RemoveTraceHighlightOwner(comparisonHighlightOwner);
                 return;

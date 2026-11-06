@@ -180,6 +180,7 @@ static class Tests
         Check("Combined highlight XML journal replacement", delegate { Console.WriteLine("COMBINED_XML_ASSERTIONS " + CombinedHighlightXmlStorageTests.Run()); });
         Check("Formula presentation spans across Excel styles", delegate { Console.WriteLine("FORMULA_PRESENTATION_ASSERTIONS " + ExcelFormulaStyleTests.RunMapping()); });
         Check("Sparse comparison block geometry", ExcelComparisonTests.RunGeometry);
+        Check("Comparison alignment and matching", ComparisonAlignmentTests.Run);
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);

@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Détection d’alignement — 7 novembre 2026
+
+Le CIL de `RowColumnString` 219896, 220436 et 220992 utilise jusqu’à trois textes utiles dans les cinquante premières cellules perpendiculaires à l’axe. La lecture s’arrête aux zones exclues. Le CIL 221308 normalise les références locales dans les formules. Le Common 78972 et 79736 cherche une plus longue sous-séquence avec une distance maximale de 2 000. Le CIL 376920 traite les colonnes avant les lignes, déplace certains repères sur des blancs ou des doublons et peut annuler deux décalages opposés. Un écart ajouté après la dernière ancre non vide reste dans la comparaison ordinaire. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Le comparateur Common et Clair donnent les mêmes correspondances et le même dépassement de seuil sur 20 000 paires synthétiques. Les témoins Clair vérifient les décalages initiaux et intermédiaires, les ajouts finaux, les doublons, les formules et les zones exclues. Dans Excel masqué, le volet présente les propositions avant les écarts et sélectionne la plage excédentaire. Le passage aux écarts utilise la même capture. Le témoin différentiel couvre la recherche des correspondances. La construction complète du modèle Arixcel et les commandes d’insertion, de retrait et d’annulation restent à couvrir.
+
 ## Blocs d’écarts et navigation — 6 novembre 2026
 
 Le CIL de `TaskItem` 378176 classe les cellules en différentes, égales ou neutres. Le scanner Common 75764 étend les rectangles en conservant leurs limites et peut traverser une zone neutre. La seconde passe de `BlockItem` 380076 subdivise chaque bloc selon la paire de formules R1C1 ou les valeurs des deux cellules d’ancrage avec tolérance. Les constantes variées d’un sous-écart affichent un marqueur. Chaque sous-rectangle compte pour un écart. Un bloc avec un seul sous-écart se replie sur cet écart. [Comparaison Arixcel](https://www.arixcel.com/explorer/functions/compare)

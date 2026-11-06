@@ -209,6 +209,8 @@ P01 et P02 progressent dans le volet. La référence physique est partagée entr
 
 P05 ajoute deux passes de regroupement, un arbre de blocs et sous-écarts, la sélection des rectangles sur les deux côtés et des fonds temporaires réversibles. Le scanner livré dans Arixcel et celui de Clair concordent sur 40 000 grilles synthétiques. Le surlignage des segments de texte dans les formules et l’arbre complet des tâches restent ouverts. [Validation](VALIDATION.md)
 
+P03 ajoute la phase de détection avant les écarts des feuilles et classeurs. Clair recherche les correspondances de colonnes puis de lignes et montre le côté excédentaire, la position et le nombre d’axes proposés. P04 couvre encore l’insertion physique, le marquage persistant, le retrait et l’annulation. [Validation](VALIDATION.md)
+
 | ID | Exigence | État initial | Acceptation requise |
 | --- | --- | --- | --- |
 | P01 | Référence et comparateurs aux trois échelles, plusieurs cibles. | Partiel : deux captures classeur par nom de feuille/adresse. | Feuille renommée, plages décalées, comparateurs multiples et sélection de coin supérieur gauche ; appariement explicite. |

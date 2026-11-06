@@ -10,8 +10,29 @@ namespace FormulaExplorer
     internal sealed class ComparisonSettings
     {
         internal bool ValuesOnly, IgnoreInputs;
+        internal bool CheckAlignment = true;
         internal bool Relative = true;
         internal decimal Tolerance = 0.000001M;
+    }
+
+    internal sealed class ComparisonResult
+    {
+        internal readonly List<ComparisonRow> Differences = new List<ComparisonRow>();
+        internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
+        internal bool AlignmentLimited;
+        internal Action<List<ComparisonRow>> CompareSheets;
+
+        internal List<ComparisonRow> ReadDifferences()
+        {
+            if (CompareSheets != null)
+            {
+                var paired = new List<ComparisonRow>();
+                CompareSheets(paired);
+                Differences.AddRange(paired);
+                CompareSheets = null;
+            }
+            return Differences;
+        }
     }
 
     internal sealed class ComparisonRow
@@ -23,6 +44,7 @@ namespace FormulaExplorer
         public string Après { get; internal set; }
         internal Reference Left, Right;
         internal List<ComparisonRow> Children;
+        internal ComparisonAlignmentGap Alignment;
 
         internal static string Label(Reference area)
         {
