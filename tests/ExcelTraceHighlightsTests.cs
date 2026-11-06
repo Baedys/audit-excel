@@ -97,6 +97,14 @@ public static class ExcelTraceHighlightsTests
             workbook = keep(app.Workbooks).Open(path);
             sheet = keep(keep(((dynamic)workbook).Worksheets).Item[1]);
             Equal(fill("J1048576"), Cyan, "saved column includes its final row");
+            dynamic gradient = keep(keep(sheet.Range["J:J"]).Interior);
+            gradient.Pattern = 4000;
+            DirectHighlightRestoreResult skipped = bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Restore);
+            Equal(skipped.ExcludedCount, 1048576L, "a uniform gradient excludes the entire saved block");
+            Equal((int)gradient.Pattern, 4000, "restoration keeps the manual gradient");
+            ((dynamic)workbook).Close(false); workbook = null;
+            workbook = keep(app.Workbooks).Open(path);
+            sheet = keep(keep(((dynamic)workbook).Worksheets).Item[1]);
             DirectHighlightRestoreResult restore = bridge.RestoreDirectHighlightData(workbook, DirectHighlightRestoreChoice.Restore);
             Equal(restore.RestoredCount, 1048576L, "reopen restores the complete rectangle");
             Equal(restore.RemainingCount, 0L, "reopen leaves no pending rectangle");

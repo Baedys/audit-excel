@@ -249,7 +249,7 @@ namespace FormulaExplorer
                     return;
                 }
                 Reference bounds = port.CurrentBounds;
-                if (bounds.Single)
+                if (bounds.Single || port.UniformUnsupportedFill())
                 {
                     invalid.Add(new DirectColorTarget(reference.Key, DirectColorProperty.Fill));
                     return;
@@ -262,6 +262,7 @@ namespace FormulaExplorer
             IEnumerable<DirectReference> UniformFillTargets(object sheet, Reference bounds, Dictionary<string, DirectReference> index, bool saved)
             {
                 ExcelDirectColorCell port = OpenFill(sheet, bounds);
+                bool unsupported = bounds.Single;
                 try
                 {
                     object format;
@@ -272,9 +273,10 @@ namespace FormulaExplorer
                         yield return result;
                         yield break;
                     }
+                    if (!unsupported) unsupported = port.UniformUnsupportedFill();
                 }
                 finally { if (port != null) port.Dispose(); }
-                if (bounds.Single)
+                if (unsupported)
                 {
                     if (saved) yield break;
                     throw new InvalidOperationException("Fond de cellule non pris en charge dans la trace : " + bounds.Sheet + "!" + bounds.Address + ".");

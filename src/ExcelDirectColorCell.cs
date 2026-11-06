@@ -53,6 +53,29 @@ namespace FormulaExplorer
         internal bool IsFillBlock { get { return fillBlock; } }
         internal bool IndependentFill { get { Alive(); return Object.Equals(((dynamic)range).MergeCells, false); } }
         internal Reference CurrentBounds { get { return Reference.Parse(CurrentSheetName, CurrentAddress); } }
+        internal bool UniformUnsupportedFill()
+        {
+            object interior = null, cells = null, first = null, merged = null;
+            try
+            {
+                interior = Format(DirectColorProperty.Fill);
+                object pattern = ((dynamic)interior).Pattern;
+                if (pattern != null && pattern != DBNull.Value)
+                {
+                    int kind = Convert.ToInt32(pattern);
+                    if (kind == 4000 || kind == 4001) return true;
+                }
+                if (IndependentFill) return false;
+                cells = ((dynamic)range).Cells; first = ((dynamic)cells).Item[1, 1];
+                if (!Object.Equals(((dynamic)first).MergeCells, true)) return false;
+                merged = ((dynamic)first).MergeArea;
+                Reference bounds = CurrentBounds;
+                Reference mergeBounds = Reference.Parse(bounds.Sheet, (string)((dynamic)merged).Address[false, false, 1, false]);
+                return mergeBounds != null && mergeBounds.FirstRow <= bounds.FirstRow && mergeBounds.LastRow >= bounds.LastRow &&
+                    mergeBounds.FirstColumn <= bounds.FirstColumn && mergeBounds.LastColumn >= bounds.LastColumn;
+            }
+            finally { Release(merged); Release(first); Release(cells); Release(interior); }
+        }
         internal ExcelDirectColorCell OpenFill(Reference bounds)
         {
             Alive();
