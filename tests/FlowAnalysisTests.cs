@@ -81,6 +81,46 @@ public static class FlowAnalysisTests
         result = FlowAnalysis.Analyze(new DependencyEngine(sparse), new[] { blankA1, blankA100, sum }, new[] { sum });
         Equal(result.Links.Count, 2);
 
+        var spans = new Book { Name = "Monthly.xlsx" };
+        spans.SetSheetIndex("Audit", 1); spans.SetSheetIndex("Zulu", 2);
+        spans.SetSheetIndex("April O'Brien", 4); spans.SetSheetIndex("Middle", 5); spans.SetSheetIndex("Outside", 6);
+        Cell spanStart = Demo.Add(spans, "Zulu", "B2", "8", null, "Nombre");
+        Cell spanMiddle = Demo.Add(spans, "April O'Brien", "B2", "3", null, "Nombre");
+        Cell spanEnd = Demo.Add(spans, "Middle", "B3", "9", null, "Nombre");
+        Cell spanOutside = Demo.Add(spans, "Outside", "B2", "42", null, "Nombre");
+        Cell spanBlank = spans.Get("April O'Brien", "B3");
+        Cell monthTotal = Demo.Add(spans, "Audit", "C1", "0", "=IF(FALSE,SUM('Zulu:Middle'!$B$2:$B$3),0)+Zulu!B2", "Nombre");
+        spans.Names["Months"] = "='Zulu:Middle'!$B$2";
+        Cell named = Demo.Add(spans, "Audit", "C2", "11", "=SUM(Months)", "Nombre");
+        var spanEngine = new DependencyEngine(spans);
+        Equal(String.Join("|", spanEngine.Parsed(monthTotal).References.Select(r => r.Sheet)), "Zulu|April O'Brien|Middle|Zulu");
+        Equal(String.Join("|", spanEngine.Precedents(monthTotal).Select(c => c.Key)), String.Join("|", new[] { spanStart.Key, spanMiddle.Key, spanEnd.Key }));
+        Equal(String.Join("|", spanEngine.Dependents(spanMiddle).Select(c => c.Address).OrderBy(address => address)), "C1|C2");
+        Equal(spanEngine.Dependents(spanBlank).Single(), monthTotal);
+        Equal(spanEngine.Dependents(spanOutside).Any(), false);
+        Equal(String.Join("|", spanEngine.Precedents(named).Select(c => c.Sheet)), "Zulu|April O'Brien|Middle");
+        result = FlowAnalysis.Analyze(spanEngine, new[] { monthTotal, spanStart, spanMiddle, spanEnd, spanOutside, spanBlank }, new[] { monthTotal });
+        Members(result, FlowCategory.OutsidePrecedents, spanStart, spanMiddle, spanEnd, spanBlank);
+        Members(result, FlowCategory.InsideInflows, monthTotal);
+        Equal(result.InflowLinks.Count, 4); Equal(result.Incomplete, false);
+        result = FlowAnalysis.Analyze(spanEngine, new[] { monthTotal, spanMiddle, spanOutside }, new[] { spanMiddle });
+        Equal(result.OutflowLinks.Single().Precedent, spanMiddle);
+        Members(result, FlowCategory.OutsideDependents, monthTotal);
+
+        ParsedFormula qualified = FormulaParser.Parse("=SUM('[Monthly.xlsx]Zulu:Middle'!$B:$C)", "Audit", spans);
+        Equal(qualified.References.Count, 3);
+        Equal(qualified.References[1].FirstRow, 1); Equal(qualified.References[1].LastRow, Coordinates.MaxRow);
+        ParsedFormula rowSpan = FormulaParser.Parse("=SUM(Zulu:Middle!$2:$3)", "Audit", spans);
+        Equal(rowSpan.References[2].FirstColumn, 1); Equal(rowSpan.References[2].LastColumn, Coordinates.MaxColumn);
+        ParsedFormula quoted = FormulaParser.Parse("=SUM('April O''Brien:Middle'!B2)", "Audit", spans);
+        Equal(String.Join("|", quoted.References.Select(r => r.Sheet)), "April O'Brien|Middle");
+        ParsedFormula unresolved = FormulaParser.Parse("=SUM('[Another.xlsx]Zulu:Middle'!B2)+SUM(Middle:Zulu!B2)+SUM(Zulu:Absent!B2)+C3", "Audit", spans);
+        Equal(unresolved.References.Single().Sheet, "Audit"); Equal(unresolved.Warnings.Count, 3);
+        Equal(FormulaParser.Parse("=LEN(\"Zulu:Middle!B2\")", "Audit", spans).References.Count, 0);
+        var unordered = new Book(); unordered.Sheets.UnionWith(new[] { "Zulu", "Middle" });
+        ParsedFormula unverified = FormulaParser.Parse("=SUM(Zulu:Middle!B2)", "Zulu", unordered);
+        Equal(unverified.References.Count, 0); Equal(unverified.Warnings.Count, 1);
+
         var uncertain = new Book();
         Cell indirect = Demo.Add(uncertain, "S", "A1", "0", "=INDIRECT(\"B1\")", "Nombre");
         uncertain.Warnings.Add("Capture partielle");

@@ -16,11 +16,8 @@ namespace FormulaExplorer
                 string[] order;
                 if (!orders.TryGetValue(span.Workbook, out order))
                     orders.Add(span.Workbook, order = ReadWorksheetOrder(ownerSheet, span.Workbook));
-                int first = Array.FindIndex(order, name => String.Equals(name, span.First, StringComparison.OrdinalIgnoreCase));
-                int last = Array.FindIndex(order, name => String.Equals(name, span.Last, StringComparison.OrdinalIgnoreCase));
-                string[] names = first < 0 || last < first ? new string[0] : order.Skip(first).Take(last - first + 1).ToArray();
                 string book = span.Workbook.Length == 0 ? "" : "[" + span.Workbook + "]";
-                string[] formulas = names.Select(name => "'" + (book + name).Replace("'", "''") + "'!" + span.Address).ToArray();
+                string[] formulas = span.WorksheetsBetween(order).Select(name => "'" + (book + name).Replace("'", "''") + "'!" + span.Address).ToArray();
                 if (span.Parts.Select(part => part.Text).SequenceEqual(formulas, StringComparer.Ordinal)) continue;
                 var old = span.Parts.ToDictionary(part => part.Text, StringComparer.Ordinal);
                 span.Parts = formulas.Select(text =>

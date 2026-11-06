@@ -50,6 +50,12 @@ namespace FormulaExplorer
             if (index < 1) throw new ArgumentOutOfRangeException("index", "Worksheet indices are one-based.");
             Sheets.Add(sheet); sheetIndexes[sheet] = index;
         }
+        internal IList<string> CapturedWorksheetOrder()
+        {
+            if (!Sheets.All(sheetIndexes.ContainsKey) || Sheets.Select(sheet => sheetIndexes[sheet]).Distinct().Count() != Sheets.Count)
+                return new string[0];
+            return SheetOrder;
+        }
         public static string Key(string sheet, string address) { return sheet + "\0" + address.ToUpperInvariant(); }
         public void Add(Cell cell) { Sheets.Add(cell.Sheet); Cells[cell.Key] = cell; }
         public Cell Get(string sheet, string address)
@@ -132,16 +138,21 @@ namespace FormulaExplorer
         static bool NameChar(char c) { return Char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '\\'; }
         static int SkipSpace(string s, int i) { while (i < s.Length && Char.IsWhiteSpace(s[i])) i++; return i; }
         public static ParsedFormula Parse(string formula, string sheet, Book book)
+        { return Parse(formula, sheet, book, null); }
+
+        internal static ParsedFormula Parse(string formula, string sheet, Book book, IList<string> worksheetOrder)
         {
             ParsedFormula result = new ParsedFormula();
-            ParseInto(formula ?? "", sheet, book, result, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0);
+            ParseInto(formula ?? "", sheet, book, result, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, ref worksheetOrder);
             return result;
         }
-        static void ParseInto(string s, string sheet, Book book, ParsedFormula result, HashSet<string> names, int depth)
+        static void ParseInto(string s, string sheet, Book book, ParsedFormula result, HashSet<string> names, int depth,
+            ref IList<string> worksheetOrder)
         {
             if (depth > 16) { result.Warnings.Add("Imbrication des noms limitée à 16 niveaux."); return; }
             int lastReferenceEnd = -1;
             Reference previousReference = null;
+            bool hasSheetQualifier = s.IndexOf('!') >= 0;
             for (int i = 0; i < s.Length;)
             {
                 char ch = s[i];
@@ -149,6 +160,24 @@ namespace FormulaExplorer
                 {
                     i++;
                     while (i < s.Length) { if (s[i++] != '"') continue; if (i < s.Length && s[i] == '"') { i++; continue; } break; }
+                    continue;
+                }
+                int spanEnd = i;
+                SheetSpanReference span = hasSheetQualifier ? SheetSpanReference.Read(s, i, out spanEnd) : null;
+                if (span != null)
+                {
+                    string token = s.Substring(i, spanEnd - i);
+                    if (span.HasPath || (span.Workbook.Length != 0 && !String.Equals(span.Workbook, book.Name, StringComparison.OrdinalIgnoreCase)))
+                        result.Warnings.Add("Référence 3D vers un autre classeur non résolue : " + token);
+                    else
+                    {
+                        if (worksheetOrder == null) worksheetOrder = book.CapturedWorksheetOrder();
+                        string[] sheets = span.WorksheetsBetween(worksheetOrder).ToArray();
+                        if (sheets.Length == 0) result.Warnings.Add("Référence 3D sans intervalle de feuilles établi : " + token);
+                        else foreach (string sourceSheet in sheets) result.References.Add(Reference.Parse(sourceSheet, span.Address));
+                    }
+                    // A 3D reference does not participate in the single-sheet intersection operator.
+                    lastReferenceEnd = -1; previousReference = null; i = spanEnd;
                     continue;
                 }
                 if (ch == '[')
@@ -256,7 +285,7 @@ namespace FormulaExplorer
                     if (book.RelativeNames.Contains(key)) { result.Warnings.Add("Nom relatif non résolu : " + name.Value); continue; }
                     if ((lastReferenceEnd >= 0 && begin > lastReferenceEnd && s.Substring(lastReferenceEnd, begin - lastReferenceEnd).Trim().Length == 0) || (i < s.Length && Char.IsWhiteSpace(s[i]) && next < s.Length && (Char.IsLetter(s[next]) || s[next] == '$' || s[next] == '\''))) result.Warnings.Add("Intersection avec nom défini : dépendances possiblement trop larges.");
                     if (!names.Add(key)) { result.Warnings.Add("Nom circulaire : " + name.Value); continue; }
-                    ParseInto(definition, targetSheet, book, result, names, depth + 1); names.Remove(key);
+                    ParseInto(definition, targetSheet, book, result, names, depth + 1, ref worksheetOrder); names.Remove(key);
                     continue;
                 }
                 Match number = NumberPattern.Match(s, i);
@@ -275,8 +304,9 @@ namespace FormulaExplorer
         public DependencyEngine(Book book)
         {
             Book = book;
+            IList<string> order = book.CapturedWorksheetOrder();
             foreach (string sheet in book.Sheets) sheets[sheet] = new List<Cell>();
-            foreach (Cell cell in book.Cells.Values) { sheets[cell.Sheet].Add(cell); if (cell.IsFormula) parsed[cell.Key] = FormulaParser.Parse(cell.Formula, cell.Sheet, book); }
+            foreach (Cell cell in book.Cells.Values) { sheets[cell.Sheet].Add(cell); if (cell.IsFormula) parsed[cell.Key] = FormulaParser.Parse(cell.Formula, cell.Sheet, book, order); }
         }
         public ParsedFormula Parsed(Cell cell) { ParsedFormula p; return parsed.TryGetValue(cell.Key, out p) ? p : new ParsedFormula(); }
         public IEnumerable<Cell> Precedents(Cell cell)

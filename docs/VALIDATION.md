@@ -1,5 +1,18 @@
 # Revue et validation
 
+## Dépendances et flux 3D — 6 novembre 2026
+
+Arixcel 9.0.9623.19616 et Clair ont utilisé deux copies au même SHA-256 de `Arixcel3DReferences.xlsx`. Les témoins ci-dessous comparent des liens physiques. `Fev` est masquée.
+
+| Commande Arixcel | Résultat natif et comparaison Clair |
+| --- | --- |
+| Dépendants de `Mar!B2` | Neuf cellules sur `Audit` dans les deux outils. `B2`, `B3`, `B4`, `B6`, `B7`, `B8`, `B9`, `B10`, `B11`. `B10` retient la constante `100` dans son `MAX`. |
+| Dépendants de `Mar!B3` | `Audit!B4` et `Audit!B11` dans les deux outils. |
+| Antécédents de `Audit!B2:B4` | Arixcel affiche `Jan!B2:B3`, `Fev!B2:B3` et `Mar!B2:B3`. L'union des antécédents de chacune des trois cellules dans Clair donne les six mêmes cellules. |
+| Flux du classeur, zone centrale `Audit` | Cinq blocs d'antécédents externes et un bloc de cellules alimentées, identiques. Les plages externes sont `Jan!B2:B3`, `Fev!B2:B3`, `Mar!B2:B3`, `'North 1'!D2` et `'North O''Brien'!D2`. Le bloc interne est `Audit!B2:B11`. |
+
+Les **87 assertions de Flux** incluent une branche conditionnelle inactive, un nom défini, une cellule vide explicitement incluse dans le périmètre, un lien hors périmètre et des bornes non résolues. Les **96 contrôles Excel** des références 3D couvrent aussi les commandes Antécédents et Dépendants du volet. Les **68 groupes sans Excel** passent. Le graphe couvre le classeur capturé. Dans le volet, la racine reste une cellule à la fois. [Preuves du flux](FLOW-EVIDENCE.md)
+
 ## Références 3D dans le volet Formule — 6 novembre 2026
 
 Arixcel 9.0.9623.19616 et Clair ont ouvert deux copies de `Arixcel3DReferences.xlsx` au même SHA-256. Les valeurs, les repères et les emplacements relevés concordent sur ces cinq formules. `Fev` est masquée dans le classeur témoin.

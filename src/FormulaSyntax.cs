@@ -25,6 +25,19 @@ namespace FormulaExplorer
         SheetSpanReference(string first, string last, string address, string workbook, bool hasPath)
         { First = first; Last = last; Address = address; Workbook = workbook; HasPath = hasPath; }
 
+        internal IEnumerable<string> WorksheetsBetween(IList<string> order)
+        {
+            int first = -1;
+            for (int i = 0; i < order.Count; i++)
+            {
+                if (first < 0 && String.Equals(order[i], First, StringComparison.OrdinalIgnoreCase)) first = i;
+                if (!String.Equals(order[i], Last, StringComparison.OrdinalIgnoreCase)) continue;
+                if (first >= 0)
+                    for (int sheet = first; sheet <= i; sheet++) yield return order[sheet];
+                yield break;
+            }
+        }
+
         internal static SheetSpanReference Read(string source, int start, out int end)
         {
             end = start;

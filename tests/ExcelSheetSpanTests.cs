@@ -104,6 +104,18 @@ public static class ExcelSheetSpanTests
             Equal((bool)app.EnableEvents, events, "events restored");
             Equal((bool)app.ScreenUpdating, screen, "screen updating restored");
 
+            var engine = new DependencyEngine(book);
+            Equal(String.Join("|", engine.Dependents(book.Get("Mar", "B2")).Select(c => c.Address).OrderBy(a => a, StringComparer.Ordinal)),
+                "B10|B2|B3|B4|B6|B7|B8|B9", "physical B2 dependents include the MAX that retains 100");
+            Equal(String.Join("|", engine.Dependents(book.Get("Mar", "B3")).Select(c => c.Address).OrderBy(a => a)), "B4|B9", "B3 is reached only by two-cell spans");
+            Equal(String.Join("|", engine.Precedents(book.Get("Audit", "B4")).Select(c => c.Sheet + "!" + c.Address)),
+                "Jan!B2|Jan!B3|Fev!B2|Fev!B3|Mar!B2|Mar!B3", "MAX keeps all physical precedents in worksheet order");
+            var flow = FlowAnalysis.Analyze(engine, book.Cells.Values, book.Cells.Values.Where(c => c.Sheet == "Audit"));
+            Equal(String.Join("|", FlowBlocks.Build(flow).Where(b => b.Category == FlowCategory.OutsidePrecedents).Select(b => b.Sheet + "!" + b.Address)),
+                "Jan!B2:B3|Fev!B2:B3|Mar!B2:B3|North 1!D2|North O'Brien!D2", "3D flow includes all five outside blocks");
+            Equal(FlowBlocks.Build(flow).Single(b => b.Category == FlowCategory.InsideInflows).Address, "B2:B10", "formulas form one inflow block");
+            Equal(flow.Incomplete, false, "resolved 3D references leave no warnings");
+
             Cell maximum = book.Get("Audit", "B4");
             ExpressionNode maximumRoot = FormulaSyntax.Parse(maximum.Formula);
             ISet<ExpressionNode> choices = bridge.EvaluateBranches(book, maximum, maximumRoot);
@@ -116,8 +128,16 @@ public static class ExcelSheetSpanTests
                 host.Controls.Add(form);
                 var tabs = (TabControl)Field(form, "tabs");
                 var tree = (TreeView)Field(form, "expressions");
-                Equal(tabs.Handle != IntPtr.Zero && tree.Handle != IntPtr.Zero, true, "docked tree initialized");
+                var relations = (TreeView)Field(form, "tree");
+                Equal(tabs.Handle != IntPtr.Zero && tree.Handle != IntPtr.Zero && relations.Handle != IntPtr.Zero, true, "docked trees initialized");
                 tabs.SelectedIndex = 0;
+                mar.Activate(); keep(mar.Range["B3"]).Select();
+                Invoke(form, "ExecuteDockedRibbonCommand", "dependents");
+                Equal(String.Join("|", relations.Nodes[0].Nodes.Cast<TreeNode>().Select(n => ((Cell)n.Tag).Address).OrderBy(a => a)),
+                    "B4|B9", "docked Dependents command displays the two 3D consumers");
+                audit.Activate(); keep(audit.Range["B4"]).Select();
+                Invoke(form, "ExecuteDockedRibbonCommand", "precedents");
+                Equal(relations.Nodes[0].Nodes.Count, 6, "docked Precedents command displays the six physical cells");
                 Invoke(form, "SetBook", book, "Audit", "B4");
                 TreeNode function = tree.Nodes[0], group = function.Nodes[0];
                 Equal(function.Text.StartsWith("'Mar'!$B$3 ← MAX", StringComparison.Ordinal), true, "target shown on MAX");
