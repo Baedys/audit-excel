@@ -18,12 +18,19 @@ namespace FormulaExplorer
     public sealed class FormulaChange
     {
         internal Book Workbook;
-        internal string Sheet, Address, DisplaySheet, BeforeFormula, AfterFormula, BeforeFormat, AfterFormat;
-        internal object BeforeValue, Target;
-        internal bool WasFormula;
+        internal string Sheet, Address, DisplaySheet, BeforeFormat, AfterFormat;
+        internal FormulaCellContent Before, After;
+        internal LegacyArrayContent BeforeArray, AfterArray;
+        internal object Target;
         public bool Undone { get; internal set; }
         public string Location { get { return "'" + (DisplaySheet ?? Sheet).Replace("'", "''") + "'!" + Address; } }
         internal void ReleaseTarget() { ExcelBridge.Release(Target); Target = null; }
+    }
+
+    sealed class FormulaCellContent
+    {
+        internal string Formula, TextPrefix;
+        internal object Value;
     }
 
     public sealed partial class ExcelBridge
@@ -42,7 +49,7 @@ namespace FormulaExplorer
             catch (COMException) { return OfficeCall(range, "Formula", BindingFlags.GetProperty); }
             catch (MissingMethodException) { return OfficeCall(range, "Formula", BindingFlags.GetProperty); }
         }
-        static void WriteFormula(object range, string text)
+        static void WriteFormula(object range, string text, bool forceFormula = true)
         {
             // Detect property availability separately: an invalid formula must never
             // be retried through a different formula dialect.
@@ -57,7 +64,7 @@ namespace FormulaExplorer
                 app = ((dynamic)range).Application; autoCorrect = ((dynamic)app).AutoCorrect;
                 autoFill = ((dynamic)autoCorrect).AutoFillFormulasInLists; captured = true;
                 ((dynamic)autoCorrect).AutoFillFormulasInLists = false;
-                bool textFormat = String.Equals(FormulaNumberFormat(range), "@", StringComparison.Ordinal);
+                bool textFormat = forceFormula && String.Equals(FormulaNumberFormat(range), "@", StringComparison.Ordinal);
                 if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "General");
                 try { OfficeCall(range, modern ? "Formula2" : "Formula", BindingFlags.SetProperty, text); }
                 finally { if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "@"); }
@@ -375,40 +382,97 @@ namespace FormulaExplorer
         public FormulaChange EditFormula(Book book, Cell cell, string formulaText)
         {
             if (String.IsNullOrWhiteSpace(formulaText) || !formulaText.StartsWith("=", StringComparison.Ordinal)) throw new ArgumentException("La formule doit commencer par = (noms de fonctions anglais).");
+            return EditCellContent(book, cell, formulaText, true);
+        }
+
+        internal object RetainDisplayedFormulaArray(Book book, Cell cell, object target)
+        { return AtDirectSheet(book, cell.Sheet, worksheet => RetainEditableLegacyArray(worksheet, target)); }
+
+        internal bool SelectionIsWithinLegacyArray(Book book, Cell cell, IReadOnlyList<Reference> selection)
+        {
             return AtDirectCell(book, cell.Sheet, cell.Address, delegate(object worksheet, object range)
             {
-                RequireEditable(range); RequireCurrentFormula(range, cell);
-                dynamic target = range;
-                object currentValue = target.Value2;
-                string currentKind = currentValue == null ? "Vide" : currentValue is ErrorWrapper || currentValue is Int32 ? "Erreur" : currentValue is bool ? "Booléen" : currentValue is string ? "Texte" : "Nombre";
-                if (!cell.IsFormula && ((bool)target.HasFormula || currentKind != cell.Kind || !String.Equals(Scalar(currentValue), String.IsNullOrEmpty(cell.Value) && cell.Kind == "Vide" ? "(vide)" : cell.Kind == "Booléen" ? cell.Value.ToUpperInvariant() : cell.Value, StringComparison.Ordinal)))
-                    throw new InvalidOperationException("Cellule modifiée dans Excel : rechargez avant de l'éditer.");
-                // Keep the physical workbook ticket without retaining all the captured cells in the undo stack.
-                var lifetime = new Book { FullName = book.FullName };
-                directSnapshots.Add(lifetime, RequireDependencySnapshot(book));
-                FormulaChange change = new FormulaChange { Workbook = lifetime, Sheet = cell.Sheet, Address = cell.Address,
-                    BeforeFormula = Convert.ToString(ReadFormula(range), FormulaCulture), BeforeValue = currentValue, WasFormula = (bool)target.HasFormula, BeforeFormat = FormulaNumberFormat(range) };
-                change.Target = RangeAt(worksheet, cell.Address);
+                if (!IsLegacyArrayMember(range) || (bool)((dynamic)worksheet).ProtectContents || IsLegacyDataTable(ReadLegacyArrayFormula(range)))
+                    return false;
+                object block = null;
                 try
                 {
-                    WriteFormula(range, formulaText);
-                    if (!(bool)target.HasFormula) throw new InvalidOperationException("Excel n’a pas accepté le texte comme formule.");
-                    change.AfterFormula = Convert.ToString(ReadFormula(range), FormulaCulture);
-                    change.AfterFormat = FormulaNumberFormat(range);
+                    block = ((dynamic)range).CurrentArray;
+                    Reference bounds = block == null ? null : Reference.Parse(cell.Sheet, (string)((dynamic)block).Address);
+                    return bounds != null && selection.All(area => String.Equals(area.Sheet, bounds.Sheet, StringComparison.OrdinalIgnoreCase) &&
+                        bounds.FirstRow <= area.FirstRow && bounds.LastRow >= area.LastRow &&
+                        bounds.FirstColumn <= area.FirstColumn && bounds.LastColumn >= area.LastColumn);
                 }
-                catch (Exception writeError)
-                {
-                    change.ReleaseTarget();
-                    try { RestoreFormulaContent(range, change, change.BeforeFormat); }
-                    catch (Exception rollbackError)
-                    {
-                        throw new InvalidOperationException("Restauration après échec de l’écriture impossible. " +
-                            writeError.Message + " · " + rollbackError.Message, new AggregateException(writeError, rollbackError));
-                    }
-                    throw;
-                }
-                return change;
+                finally { Release(block); }
             });
+        }
+
+        internal FormulaChange EditDisplayedCell(Book book, Cell cell, object target, object array, string text)
+        { return EditCellContent(book, cell, text, false, target, array); }
+
+        FormulaChange EditCellContent(Book book, Cell cell, string text, bool requireFormula, object retained = null, object retainedArray = null)
+        {
+            Func<object, object, FormulaChange> edit = delegate(object worksheet, object range)
+            {
+                bool isArray = !requireFormula && (bool)((dynamic)range).HasArray;
+                if (!requireFormula && isArray != (retainedArray != null)) throw new InvalidOperationException("La plage matricielle a changé dans Excel.");
+                object array = isArray ? RetainEditableLegacyArray(worksheet, range) : null;
+                try
+                {
+                    if (isArray && !String.Equals((string)((dynamic)array).Address, (string)((dynamic)retainedArray).Address, StringComparison.Ordinal))
+                        throw new InvalidOperationException("La plage matricielle a changé dans Excel.");
+                    if (!isArray) RequireEditable(range);
+                    RequireCurrentFormula(range, cell);
+                    object target = array ?? range;
+                    FormulaCellContent current = isArray ? null : ReadFormulaContent(target);
+                    if (!cell.IsFormula && (current == null || !MatchesCapturedConstant(cell, current)))
+                        throw new InvalidOperationException("Cellule modifiée dans Excel : rechargez avant de l'éditer.");
+                    LegacyArrayContent currentArray = isArray ? ReadLegacyArrayContent(target) : null;
+                    if (isArray && (currentArray == null || currentArray.Formula == null)) throw new InvalidOperationException("La plage matricielle a changé dans Excel.");
+
+                    // Keep the physical workbook ticket without retaining all the captured cells in the undo stack.
+                    var lifetime = new Book { FullName = book.FullName };
+                    directSnapshots.Add(lifetime, RequireDependencySnapshot(book));
+                    string address = ((string)((dynamic)target).Address).Replace("$", "");
+                    FormulaChange change = new FormulaChange { Workbook = lifetime, Sheet = cell.Sheet, Address = address,
+                        DisplaySheet = (string)((dynamic)worksheet).Name, BeforeArray = currentArray,
+                        Before = current, BeforeFormat = isArray ? null : FormulaNumberFormat(target), Target = RangeAt(worksheet, address) };
+                    try
+                    {
+                        if (isArray)
+                        {
+                            WriteLegacyArrayText(target, text);
+                            change.AfterArray = ReadLegacyArrayContent(target);
+                            if (change.AfterArray == null) throw new InvalidOperationException("Excel n’a pas restitué la plage matricielle attendue.");
+                            if (change.AfterArray.Formula != null && !CanWriteLegacyArrayFormula(change.AfterArray.Formula))
+                                throw new InvalidOperationException("La formule matricielle normalisée par Excel dépasse 255 caractères.");
+                        }
+                        else
+                        {
+                            if (text.Length == 0) ((dynamic)target).ClearContents();
+                            else WriteFormula(target, text, requireFormula);
+                            change.After = ReadFormulaContent(target);
+                            if (requireFormula && change.After.Formula == null) throw new InvalidOperationException("Excel n’a pas accepté le texte comme formule.");
+                            change.AfterFormat = FormulaNumberFormat(target);
+                        }
+                    }
+                    catch (Exception writeError)
+                    {
+                        change.ReleaseTarget();
+                        try { RestoreEditContent(target, change, true, change.BeforeFormat); }
+                        catch (Exception rollbackError)
+                        {
+                            throw new InvalidOperationException("Restauration après échec de l’écriture impossible. " +
+                                writeError.Message + " · " + rollbackError.Message, new AggregateException(writeError, rollbackError));
+                        }
+                        throw;
+                    }
+                    return change;
+                }
+                finally { Release(array); }
+            };
+            return retained == null ? AtDirectCell(book, cell.Sheet, cell.Address, edit) :
+                AtDirectSheet(book, cell.Sheet, worksheet => edit(worksheet, retained));
         }
         public void UndoFormula(FormulaChange change)
         {
@@ -416,22 +480,25 @@ namespace FormulaExplorer
             AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
             {
                 object range = change.Target;
-                RequireEditable(range);
-                if (!(bool)((dynamic)range).HasFormula || !String.Equals(Convert.ToString(ReadFormula(range), FormulaCulture), change.AfterFormula, StringComparison.Ordinal))
+                bool isArray = change.BeforeArray != null;
+                if (isArray) RequireEditableLegacyArray(worksheet, range);
+                else RequireEditable(range);
+                bool same = isArray ? SameLegacyArrayContent(ReadLegacyArrayContent(range), change.AfterArray) :
+                    SameFormulaContent(ReadFormulaContent(range), change.After);
+                if (!same)
                     throw new InvalidOperationException("Cellule modifiée depuis l'édition : annulation refusée pour préserver votre modification.");
                 string sheet = (string)((dynamic)worksheet).Name;
                 string address = ((string)((dynamic)range).Address).Replace("$", "");
-                string format = FormulaNumberFormat(range);
+                string format = isArray ? null : FormulaNumberFormat(range);
                 try
                 {
-                    RestoreFormulaContent(range, change, String.Equals(format, change.AfterFormat, StringComparison.Ordinal) ? change.BeforeFormat : format);
+                    RestoreEditContent(range, change, true, String.Equals(format, change.AfterFormat, StringComparison.Ordinal) ? change.BeforeFormat : format);
                 }
                 catch (Exception undoError)
                 {
                     try
                     {
-                        WriteFormulaIfDifferent(range, change.AfterFormula);
-                        RestoreFormulaNumberFormat(range, format);
+                        RestoreEditContent(range, change, false, format);
                     }
                     catch (Exception rollbackError)
                     {
@@ -446,6 +513,20 @@ namespace FormulaExplorer
             });
         }
 
+        static bool MatchesCapturedConstant(Cell cell, FormulaCellContent current)
+        {
+            object value = current.Value;
+            string kind = value == null ? "Vide" : value is ErrorWrapper || value is int ? "Erreur" : value is bool ? "Booléen" : value is string ? "Texte" : "Nombre";
+            string captured = cell.Kind == "Vide" ? "(vide)" : cell.Kind == "Booléen" ? cell.Value.ToUpperInvariant() : cell.Value;
+            return current.Formula == null && kind == cell.Kind && String.Equals(Scalar(value), captured, StringComparison.Ordinal);
+        }
+
+        static void RestoreEditContent(object range, FormulaChange change, bool original, string format)
+        {
+            if (change.BeforeArray != null) RestoreLegacyArrayContent(range, original ? change.BeforeArray : change.AfterArray);
+            else RestoreFormulaContent(range, original ? change.Before : change.After, format);
+        }
+
         static string FormulaNumberFormat(object range)
         { return (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty); }
 
@@ -455,23 +536,49 @@ namespace FormulaExplorer
                 OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, format);
         }
 
-        static void WriteFormulaIfDifferent(object range, string formula)
+        static FormulaCellContent ReadFormulaContent(object range)
         {
-            if (!(bool)((dynamic)range).HasFormula || !String.Equals(Convert.ToString(ReadFormula(range), FormulaCulture), formula, StringComparison.Ordinal))
-                WriteFormula(range, formula);
+            dynamic cell = range;
+            if ((bool)cell.HasFormula) return new FormulaCellContent { Formula = Convert.ToString(ReadFormula(range), FormulaCulture) };
+            object value = cell.Value2;
+            return new FormulaCellContent { Value = value, TextPrefix = value is string ? Convert.ToString((object)cell.PrefixCharacter, FormulaCulture) : null };
         }
 
-        static void RestoreFormulaContent(object range, FormulaChange change, string format)
+        static object ComparableFormulaValue(object value)
         {
-            dynamic target = range;
-            bool hasFormula = (bool)target.HasFormula;
-            if (change.WasFormula) WriteFormulaIfDifferent(range, change.BeforeFormula);
-            else if (hasFormula || !Object.Equals((object)target.Value2, change.BeforeValue))
+            var error = value as ErrorWrapper;
+            return error == null ? value : error.ErrorCode;
+        }
+
+        static bool SameFormulaContent(FormulaCellContent current, FormulaCellContent expected)
+        {
+            return String.Equals(current.Formula, expected.Formula, StringComparison.Ordinal) &&
+                String.Equals(current.TextPrefix, expected.TextPrefix, StringComparison.Ordinal) &&
+                Object.Equals(ComparableFormulaValue(current.Value), ComparableFormulaValue(expected.Value));
+        }
+
+        static void RestoreFormulaContent(object range, FormulaCellContent content, string format)
+        {
+            if (!SameFormulaContent(ReadFormulaContent(range), content))
             {
-                if (change.BeforeValue is string) target.Value2 = "'" + (string)change.BeforeValue;
-                else target.Value2 = change.BeforeValue;
+                if (content.Formula != null) WriteFormula(range, content.Formula);
+                else if (content.Value == null) ((dynamic)range).ClearContents();
+                else if (content.Value is string)
+                {
+                    if (content.TextPrefix == "'") ((dynamic)range).Value2 = "'" + (string)content.Value;
+                    else
+                    {
+                        RestoreFormulaNumberFormat(range, "@");
+                        ((dynamic)range).Value2 = (string)content.Value;
+                    }
+                }
+                else if (ComparableFormulaValue(content.Value) is int)
+                    OfficeCall(range, "Value2", BindingFlags.SetProperty, new ErrorWrapper((int)ComparableFormulaValue(content.Value)));
+                else ((dynamic)range).Value2 = content.Value;
             }
             RestoreFormulaNumberFormat(range, format);
+            if (!SameFormulaContent(ReadFormulaContent(range), content))
+                throw new InvalidOperationException("Excel n’a pas restitué le contenu initial à l’identique.");
         }
         public Book Refresh(Book book, Cell cell)
         {

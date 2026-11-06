@@ -228,7 +228,9 @@ namespace FormulaExplorer
                 if (tabs.SelectedIndex == 0)
                 {
                     List<Reference> areas = bridge.ReadSelectionRanges(captured, true);
-                    if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
+                    if ((areas.Count > 1 || areas.Any(area => !area.Single)) &&
+                        (reverse || !current.IsFormula || !bridge.SelectionIsWithinLegacyArray(captured, current, areas)))
+                        selection = new TraceLocation(areas);
                     if (IsDocked)
                     {
                         launch = bridge.CaptureExplorerLaunch(window);
@@ -449,14 +451,15 @@ namespace FormulaExplorer
             if (IsDocked)
             {
                 detail.Text = TraceCellLabel(cell) + " · " + cell.Value + "\n" + cell.Kind + " · " + parsed.References.Count + " référence(s)" + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
-                formula.Text = cell.IsFormula ? cell.Formula : "(constante)";
             }
             else
             {
                 detail.Text = TraceCellLabel(cell) + "\nValeur : " + cell.Value + " · " + (cell.IsFormula ? "Formule → " : "") + cell.Kind + "\nFonctions : " + String.Join(", ", parsed.Functions.Distinct()) + "\nRéférences : " + parsed.References.Count + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
-                formula.Text = (cell.IsFormula ? cell.Formula : "(constante)") + "\r\n\r\n" + String.Join("\r\n", parsed.Warnings);
             }
+            ShowFormulaEditSource(cell);
             ShowExpression(cell);
+            if (!IsDocked && parsed.Warnings.Count != 0)
+                expressionValue.AppendText("\r\n" + String.Join("\r\n", parsed.Warnings));
         }
         void Navigate()
         {

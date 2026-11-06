@@ -53,7 +53,8 @@ namespace FormulaExplorer
             };
             formula.SelectionChanged += delegate
             {
-                if (formula.Focused) SelectExpressionAtCaret(Control.ModifierKeys);
+                if (formula.Focused && !updatingFormulaDisplay && String.Equals(formula.Text, formulaDisplayText, StringComparison.Ordinal))
+                    SelectExpressionAtCaret(Control.ModifierKeys);
             };
             formula.KeyDown += delegate(object sender, KeyEventArgs e) { HandleExplorerNavigationKey(expressions, e); };
         }
@@ -124,8 +125,8 @@ namespace FormulaExplorer
             if (expression != null && expression.SheetSpanOrigin != null) expression = expression.SheetSpanOrigin;
             ExpressionNode first = group == null ? expression : group.Range;
             ExpressionNode last = group == null ? expression : group.Criterion;
-            start = FormulaDisplayOffset(expressionOwner.Formula, first.Start);
-            end = FormulaDisplayOffset(expressionOwner.Formula, last.Start + last.Length);
+            start = formulaDisplayPrefix + FormulaDisplayOffset(expressionOwner.Formula, first.Start);
+            end = formulaDisplayPrefix + FormulaDisplayOffset(expressionOwner.Formula, last.Start + last.Length);
             return start < end && end <= formula.TextLength;
         }
 
@@ -156,7 +157,7 @@ namespace FormulaExplorer
                     formula.ScrollToCaret();
                 }
             }
-            finally { stylingFormula = false; }
+            finally { formula.ClearUndo(); stylingFormula = false; }
         }
 
         TreeNode FindExpressionAtCaret(TreeNode node, int caret)
@@ -180,7 +181,7 @@ namespace FormulaExplorer
             if (stylingFormula || selectingFromFormula || buildingExpressions || syntaxRoot == null || formula.SelectionLength != 0 || expressions.Nodes.Count == 0) return;
             string source = expressionOwner.Formula;
             int caret = formula.SelectionStart;
-            if (caret > FormulaDisplayOffset(source, source.Length) || !formula.Text.StartsWith(source.Replace("\r\n", "\n"), StringComparison.Ordinal)) return;
+            if (caret < formulaDisplayPrefix || caret > formulaDisplayPrefix + FormulaDisplayOffset(source, source.Length)) return;
             TreeNode rootNode = expressions.Nodes[0];
             TreeNode node = FindExpressionAtCaret(rootNode, caret);
             selectingFromFormula = true;

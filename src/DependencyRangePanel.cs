@@ -457,7 +457,7 @@ namespace FormulaExplorer
             else if (!selection.SeparateSources) detail.Text = selection.Location(book);
             else detail.Text = TraceRangeCount(selection.Ranges.Count) + " sélectionnées · " +
                 selection.Ranges.Select(range => traceEngine.SheetOf(range)).Distinct().Count() + " feuille(s)";
-            formula.Clear();
+            ShowFormulaEditSource(null);
             ShowExpression(new Cell());
         }
     }

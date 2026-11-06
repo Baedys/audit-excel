@@ -33,7 +33,15 @@ public static class ExcelFormulaEditingPanelTests
     static void Key(Control control, Keys key)
     {
         Message input = Message.Create(control.Handle, 0x0100, new IntPtr((int)key), IntPtr.Zero);
-        Equal(control.PreProcessMessage(ref input), true, key + " handled from " + control.GetType().Name);
+        bool handled = control.PreProcessMessage(ref input);
+        string diagnostic = "";
+        if (!handled && control.FindForm() is MainForm)
+        {
+            var pane = (MainForm)control.FindForm();
+            diagnostic = " · visible=" + control.Visible + " · editor=" + Field<RichTextBox>(pane, "formulaEditor").Visible +
+                " · tab=" + Field<TabControl>(pane, "tabs").SelectedIndex + " · " + Field<Label>(pane, "status").Text;
+        }
+        Equal(handled, true, key + " handled from " + control.GetType().Name + diagnostic);
     }
 
     static void Chord(MainForm pane, Control control, Keys key)
@@ -174,6 +182,108 @@ public static class ExcelFormulaEditingPanelTests
                 Equal(tree.SelectedNode, Relation(tree, "C2"), "undo preserves relation selection");
                 Equal(active(), "$J$9", "undo preserves selection");
 
+                formula.Select(6, 1);
+                SendMessage(formula.Handle, 0x0102, new IntPtr('3'), null);
+                Equal(editor.Visible, true, "typing into formula opens the editor");
+                Equal(editor.Text, "=SUM(D3,E2)", "typing replaces the display selection");
+                Equal(editor.SelectionStart, 7, "typing carries the resulting caret into the editor");
+                Chord(pane, editor, Keys.Control | Keys.Z);
+                Equal(editor.Visible, false, "Ctrl+Z at the first direct draft cancels");
+                Equal(formula.Text, "=SUM(D2,E2)", "direct cancel restores displayed text");
+
+                formula.Select(formula.TextLength, 0);
+                Chord(pane, formula, Keys.Alt | Keys.Enter);
+                Equal(editor.Text, "=SUM(D2,E2)\n", "Alt+Enter starts editing from the formula field");
+                Key(editor, Keys.Escape);
+                formula.Select(formula.TextLength, 0);
+                SendMessage(formula.Handle, 0x00C2, new IntPtr(1), "+2");
+                Equal(editor.Text, "=SUM(D2,E2)+2", "replacement enters edit with the direct text");
+                SendMessage(editor.Handle, 0x00C2, new IntPtr(1), "0");
+                Chord(pane, editor, Keys.Control | Keys.Z);
+                Equal(editor.Text, "=SUM(D2,E2)+2", "further typing undoes to the direct draft");
+                Key(editor, Keys.Enter);
+                Equal((string)c2.Formula2, "=SUM(D2,E2)+2", "the first direct modification can be applied");
+                Chord(pane, expressions, Keys.Control | Keys.Z);
+
+                formula.SelectAll();
+                SendMessage(formula.Handle, 0x0303, IntPtr.Zero, null);
+                Equal(editor.Visible && editor.Text.Length == 0, true, "clearing the selection opens an empty draft");
+                Key(editor, Keys.Enter);
+                Equal((object)c2.Value2, null, "empty draft clears the cell");
+                Equal(formula.Text, "", "empty cells have an empty editable field");
+                Equal(root(), "B2", "clear preserves the trace root");
+
+                SendMessage(formula.Handle, 0x00C2, new IntPtr(1), "12.5");
+                Key(editor, Keys.Enter);
+                Equal((double)c2.Value2, 12.5d, "Excel parses a numeric constant");
+                Equal((bool)c2.HasFormula, false, "number is a constant");
+                Equal(formula.Text, "12.5", "numeric constant is editable in the formula field");
+                c2.Value2 = "'12.5";
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((string)c2.Value2, "12.5", "undo preserves a conflicting text constant");
+                Equal(undo.Count, 2, "conflict keeps the undo entries");
+                c2.Value2 = 12.5d;
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((object)c2.Value2, null, "undo numeric constant restores the empty cell");
+
+                Key(formula, Keys.F2);
+                editor.Text = "'=7";
+                Key(editor, Keys.Enter);
+                Equal((string)c2.Value2, "=7", "Excel apostrophe stores formula-like literal text");
+                Equal((bool)c2.HasFormula, false, "escaped text remains a constant");
+                Equal(!editor.Visible && formula.Visible, true, "literal commit returns to display · " + status.Text);
+                Key(formula, Keys.F2);
+                editor.Text = "TRUE";
+                Key(editor, Keys.Enter);
+                Equal((bool)c2.Value2, true, "Excel parses a Boolean constant");
+                Equal(formula.Text, "TRUE", "Boolean display follows invariant Excel input");
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((string)c2.Value2, "=7", "undo Boolean restores formula-like literal text");
+                Equal((bool)c2.HasFormula, false, "restored literal remains a constant");
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((object)c2.Value2, null, "undo text restores the empty cell");
+
+                Key(formula, Keys.F2);
+                editor.Text = "'";
+                Key(editor, Keys.Enter);
+                Equal((string)c2.Value2, "", "apostrophe alone stores empty text instead of a blank");
+                Equal((string)c2.PrefixCharacter, "'", "empty text retains its apostrophe prefix");
+                Key(formula, Keys.F2);
+                editor.Text = "#N/A";
+                Key(editor, Keys.Enter);
+                object errorValue = c2.Value2;
+                Equal(errorValue is int || errorValue is ErrorWrapper, true, "Excel stores a typed error constant");
+                Key(formula, Keys.F2);
+                editor.Text = "FALSE";
+                Key(editor, Keys.Enter);
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((object)c2.Value2, errorValue, "undo restores the error as an Excel error");
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((string)c2.Value2, "", "undo restores empty text");
+                Equal((string)c2.PrefixCharacter, "'", "undo restores the apostrophe prefix");
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((object)c2.Value2, null, "undo the apostrophe restores a true blank");
+
+                NumberFormat(c2, "@");
+                Key(formula, Keys.F2);
+                editor.Text = "=1+2";
+                Key(editor, Keys.Enter);
+                Equal((bool)c2.HasFormula, false, "native cell input respects Text number format");
+                string rawPrefix = (string)c2.PrefixCharacter;
+                Key(formula, Keys.F2);
+                editor.Text = "'second";
+                Key(editor, Keys.Enter);
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((string)c2.Value2, "=1+2", "undo restores raw text");
+                Equal((string)c2.PrefixCharacter, rawPrefix, "undo restores the prefix Excel gave the raw text");
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                NumberFormat(c2, "General");
+
+                Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal((string)c2.Formula2, "=SUM(D2,E2)", "undo clear restores the original formula");
+                Equal(undo.Count, 0, "all content changes can be undone in order");
+                Equal(active(), "$J$9", "direct and value edits preserve the selection");
+
                 Key(expressions, Keys.F2);
                 editor.Text = "=DATE(2026,1,1)";
                 keep(spare.Range["A250001"]).Value2 = 1d;
@@ -192,6 +302,172 @@ public static class ExcelFormulaEditingPanelTests
                 Equal(root(), "A1", "history still reaches the parent trace");
             }
             Console.WriteLine("FORMULA_EDITING_PANEL_ASSERTIONS " + checks);
+        }
+        finally
+        {
+            if (workbook != null) try { ((dynamic)workbook).Close(false); } catch { }
+            if (application != null) try { ((dynamic)application).Quit(); } catch { }
+            for (int index = objects.Count - 1; index >= 0; index--) ExcelBridge.Release(objects[index]);
+            ExcelBridge.Release(workbook); ExcelBridge.Release(application);
+        }
+    }
+
+    public static void RunArrays()
+    {
+        checks = 0;
+        object application = null, workbook = null;
+        var objects = new List<object>();
+        Func<object, dynamic> keep = value => { objects.Add(value); return value; };
+        try
+        {
+            application = Activator.CreateInstance(Type.GetTypeFromProgID("Excel.Application", true));
+            dynamic app = application;
+            app.Visible = false; app.DisplayAlerts = false;
+            workbook = keep(app.Workbooks).Add(-4167);
+            dynamic sheet = keep(keep(((dynamic)workbook).Worksheets).Item[1]);
+            sheet.Name = "Audit";
+            dynamic block = keep(sheet.Range["D3:E4"]), corner = keep(sheet.Range["D3"]), inside = keep(sheet.Range["E4"]), anchor = keep(sheet.Range["J9"]);
+            const string original = "=ROW(A1:A2)+COLUMN(A1:B1)";
+            const string replacement = "=ROW(A1:A2)*10+COLUMN(A1:B1)";
+            block.FormulaArray = original;
+            NumberFormat(corner, "General"); NumberFormat(inside, "0.000");
+            inside.Select();
+            int hwnd = (int)keep(app.ActiveWindow).Hwnd;
+            var bridge = new ExcelBridge(application);
+            Equal((string)keep(app.Selection).Address, "$E$4", "array interior is a single-cell Excel selection");
+            Equal(bridge.CaptureActive().Get("Audit", "E4").Formula, original, "array interior is a formula in the snapshot");
+            using (var host = new Panel())
+            using (var pane = (MainForm)typeof(MainForm).GetConstructor(Members, null,
+                new[] { typeof(ExcelBridge), typeof(bool), typeof(int) }, null).Invoke(new object[] { bridge, true, hwnd }))
+            {
+                host.Controls.Add(pane); pane.Show();
+                Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
+                var formula = Field<RichTextBox>(pane, "formula");
+                var editor = Field<RichTextBox>(pane, "formulaEditor");
+                var undo = Field<Stack<FormulaChange>>(pane, "formulaChanges");
+                var status = Field<Label>(pane, "status");
+                Func<string> active = () => (string)keep(app.ActiveCell).Address;
+                Action<string> apply = draft => { Key(formula, Keys.F2); editor.Text = draft; Key(editor, Keys.Enter); };
+                Action undoEdit = () => Chord(pane, formula, Keys.Control | Keys.Z);
+                Equal(formula.Text, "{" + original + "}", "CSE shows the array delimiters · " + status.Text +
+                    " · source " + Field<Cell>(pane, "root").Location + " · details " + Field<Label>(pane, "detail").Text);
+                Equal(formula.ReadOnly, false, "unprotected CSE is editable");
+                keep(sheet.Range["D3:F4"]).Select(); inside.Activate();
+                Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
+                Equal(formula.Text, "", "selection extending past the matrix keeps range tracing");
+                block.Select(); inside.Activate();
+                Equal((string)keep(app.Selection).Address, "$D$3:$E$4", "the grid can select the whole matrix");
+                Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
+                Equal(formula.Text, "{" + original + "}", "a selection inside the matrix opens a single formula");
+                anchor.Select();
+                formula.Select(2, 3);
+                Key(formula, Keys.F2);
+                Equal(editor.Text, original, "F2 removes the displayed braces");
+                Equal(editor.SelectionStart, 1, "F2 translates the caret past the opening brace");
+                Equal(editor.SelectionLength, 3, "F2 preserves the selection inside a CSE formula");
+                editor.Text = replacement;
+                Key(editor, Keys.Enter);
+                Equal(editor.Visible, false, "array edit closes after applying · " + status.Text);
+                Equal((string)corner.Formula2, replacement, "editing the interior writes the whole matrix");
+                Equal((string)keep(inside.CurrentArray).Address, "$D$3:$E$4", "matrix extent remains intact");
+                Equal((double)corner.Value2, 11d, "matrix first result is recalculated");
+                Equal((double)inside.Value2, 22d, "matrix last result is recalculated");
+                Equal(NumberFormat(corner), "General", "matrix edit preserves general format");
+                Equal(NumberFormat(inside), "0.000", "matrix edit preserves the other format");
+                Equal(active(), "$J$9", "matrix edit preserves Excel selection");
+                undoEdit();
+                Equal((string)inside.Formula2, original, "Ctrl+Z restores the original matrix formula");
+
+                apply("");
+                Equal((object)corner.Value2, null, "blank draft clears first matrix cell");
+                Equal((object)inside.Value2, null, "blank draft clears last matrix cell");
+                Equal((bool)inside.HasArray, false, "cleared block no longer has an array formula");
+                corner.Value2 = 99d;
+                undoEdit();
+                Equal((double)corner.Value2, 99d, "undo rejects a conflict anywhere in the block");
+                Equal(undo.Count, 1, "matrix conflict preserves undo action");
+                corner.ClearContents();
+                undoEdit();
+                Equal((string)inside.Formula2, original, "undo clear recreates the complete matrix");
+
+                apply("'");
+                Equal((string)corner.Value2, "", "apostrophe writes empty text to the whole matrix");
+                Equal((string)inside.Value2, "", "last matrix cell contains empty text");
+                Equal((bool)inside.HasArray, false, "literal assignment removes array status");
+                undoEdit();
+                Equal((string)inside.Formula2, original, "undo typed text recreates the matrix");
+
+                apply("123");
+                Equal((double)corner.Value2, 123d, "number is written to first matrix cell");
+                Equal((double)inside.Value2, 123d, "number is written to last matrix cell");
+                undoEdit();
+                Equal((string)inside.Formula2, original, "undo numeric literal recreates the matrix");
+
+                apply("=" + new string('1', 255));
+                Equal(editor.Visible, true, "too long CSE draft stays open");
+                Equal(status.Text.Contains("255"), true, "too long CSE reports the direct setter limit");
+                Equal((string)inside.Formula2, original, "too long CSE leaves the matrix intact");
+                Key(editor, Keys.Escape);
+                Equal(undo.Count, 0, "rejected matrix draft creates no undo");
+                Equal(active(), "$J$9", "matrix undo preserves Excel selection");
+
+                NumberFormat(block, "@");
+                apply("=11");
+                Equal((bool)inside.HasFormula, false, "a CSE edit respects the Text format as Excel does");
+                Equal((string)inside.Value2, "=11", "Text-formatted block stores the typed string");
+                undoEdit();
+                Equal((string)inside.Formula2, original, "undo recreates a CSE even when its format is Text");
+                Equal(NumberFormat(block), "@", "recreating a CSE preserves Text format");
+                NumberFormat(block, "General"); NumberFormat(inside, "0.000");
+
+                Key(formula, Keys.F2);
+                editor.Text = "=10";
+                block.ClearContents();
+                dynamic expanded = keep(sheet.Range["D3:E5"]);
+                expanded.FormulaArray = original;
+                Key(editor, Keys.Enter);
+                Equal(editor.Visible, true, "changing the CSE extent while drafting prevents application");
+                Equal((string)keep(inside.CurrentArray).Address, "$D$3:$E$5", "the new matrix extent stays intact");
+                Equal((string)inside.Formula2, original, "the new matrix formula stays intact");
+                Key(editor, Keys.Escape);
+                expanded.ClearContents();
+                block.FormulaArray = original;
+
+                sheet.Protect("clair");
+                inside.Select();
+                Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
+                Equal(formula.ReadOnly, true, "CSE on a protected sheet is read-only");
+                Key(formula, Keys.F2);
+                Equal(editor.Visible, false, "F2 refuses a protected matrix");
+                sheet.Unprotect("clair");
+
+                dynamic input = keep(sheet.Range["B2"]), table = keep(sheet.Range["F3:G5"]), result = keep(sheet.Range["G4"]);
+                input.Value2 = 5d;
+                keep(sheet.Range["G3"]).Formula2 = "=B2*2";
+                keep(sheet.Range["F4"]).Value2 = 2d; keep(sheet.Range["F5"]).Value2 = 3d;
+                table.Table(Type.Missing, input);
+                Equal((bool)result.HasArray, true, "data table also reports HasArray");
+                result.Select();
+                Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
+                Equal(formula.ReadOnly, true, "data table is read-only");
+                Key(formula, Keys.F2);
+                Equal(editor.Visible, false, "F2 refuses the data table");
+
+                dynamic spare = keep(keep(((dynamic)workbook).Worksheets).Add(Type.Missing, sheet));
+                keep(spare.Range["A1"]).Value2 = 1d;
+                sheet.Activate(); inside.Select();
+                Invoke(pane, "ExecuteDockedRibbonCommand", "precedents");
+                Key(formula, Keys.F2);
+                editor.Text = "";
+                keep(spare.Range["A250001"]).Value2 = 1d;
+                Key(editor, Keys.Enter);
+                Equal(editor.Visible, true, "failed recapture keeps the array clear draft open");
+                Equal((string)inside.Formula2, original, "failed recapture recreates the cleared CSE");
+                Equal((string)keep(inside.CurrentArray).Address, "$D$3:$E$4", "rollback restores the complete matrix extent");
+                Equal(undo.Count, 0, "failed array recapture does not add undo");
+                Key(editor, Keys.Escape);
+            }
+            Console.WriteLine("LEGACY_ARRAY_EDITING_ASSERTIONS " + checks);
         }
         finally
         {

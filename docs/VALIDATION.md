@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Saisie directe, constantes et matrices CSE — 6 novembre 2026
+
+Le CIL distingue le texte affiché avant l’édition et le premier brouillon après une mutation. Les témoins WinForms exercent le remplacement d’une sélection, une frappe, la suppression, Alt+Entrée et Ctrl+Z. Excel masqué confirme l’interprétation des nombres, booléens, erreurs et textes, la différence entre un blanc et un texte vide, et la restauration du préfixe apostrophe. Le contrôle de conflit distingue un nombre d’un texte identique à l’affichage.
+
+Les témoins CSE partent d’une cellule intérieure ou d’une sélection du bloc. Ils vérifient la formule canonique, l’étendue, les formats mixtes, les constantes répétées, l’effacement, la recréation après annulation et le rollback après recapture impossible. Une modification externe de la géométrie ou du contenu bloque l’opération. Les feuilles protégées et les tables de simulation refusent l’édition. Clair utilise la limite vérifiée du setter `FormulaArray` sans pilotage clavier. La saisie reste en A1 anglais. Les formules CSE plus longues, la frappe physique et la composition IME restent à vérifier ou à prendre en charge. [Range.FormulaArray](https://learn.microsoft.com/en-us/office/vba/api/excel.range.formulaarray)
+
 ## Éditer une formule dans le volet — 6 novembre 2026
 
 L’analyse CIL d’Arixcel suit `StartEditing`, `AcceptEditing` et le callback d’annulation. F2 reprend le curseur de la formule entière, y compris depuis une sous-expression. Entrée valide et reconstruit depuis la source du tracé. Un échec de reconstruction déclenche une restauration. Ctrl+Z porte d’abord sur la saisie, puis sur une écriture au niveau de l’explorateur.
