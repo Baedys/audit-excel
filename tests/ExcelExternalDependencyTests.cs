@@ -25,6 +25,21 @@ public static class ExcelExternalDependencyTests
 
     static T Field<T>(object obj, string name) { return (T)obj.GetType().GetField(name, Members).GetValue(obj); }
 
+    static IEnumerable<TreeNode> Nodes(TreeNodeCollection nodes)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            yield return node;
+            foreach (TreeNode child in Nodes(node.Nodes)) yield return child;
+        }
+    }
+
+    static TreeNode FormulaReference(TreeView tree, string workbook)
+    {
+        return Nodes(tree.Nodes).Single(node => node.Tag is ExpressionNode && ((ExpressionNode)node.Tag).Kind == "Reference" &&
+            ((ExpressionNode)node.Tag).Text.IndexOf(workbook, StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
     public static void Run()
     {
         checks = 0;
@@ -33,7 +48,7 @@ public static class ExcelExternalDependencyTests
         string path = Path.Combine(temp, "Link Data.xlsx");
         string otherPath = Path.Combine(temp, "Link Data2.xlsx");
         string primaryPath = Path.Combine(temp, "Link Audit.xlsx");
-        object application = null, primary = null, peer = null, other = null;
+        object application = null, primary = null, peer = null, other = null, reopened = null, reopenedOther = null;
         var objects = new List<object>();
         Func<object, dynamic> keep = value => { objects.Add(value); return value; };
         try
@@ -65,8 +80,11 @@ public static class ExcelExternalDependencyTests
             remote.Activate();
             keep(remote.Range["D2"]).Formula2 = "=A2*2";
             keep(remote.Range["D5"]).Formula2 = "='[Link Audit.xlsx]Data'!B2+1";
+            keep(keep(((dynamic)peer).Names).Add("AuditAmount", "=Data!$A$4"));
             ((dynamic)peer).Save();
-            local.Activate(); app.CalculateFull();
+            local.Activate();
+            keep(local.Range["B7"]).Formula2 = "='Link Data.xlsx'!AuditAmount+1";
+            app.CalculateFull();
             Equal(keep(local.Range["A2"]).Value2, 1d, "local fixture value");
             Equal(keep(remote.Range["A2"]).Value2, 10d, "first peer fixture value");
             Equal(keep(third.Range["A2"]).Value2, 500d, "second peer fixture value");
@@ -138,16 +156,91 @@ public static class ExcelExternalDependencyTests
                 Equal(status.Text.Contains("résolution partielle"), true, "range count marks incomplete resolution");
                 keep(local.Range["B2"]).Select(); command("precedents");
                 Equal(status.Text.Contains("Recherche partielle"), true, "single-cell trace marks incomplete resolution");
+
+                ((dynamic)other).Close(false);
+                command("precedents");
+                var expressionTree = Field<TreeView>(form, "expressions");
+                var formulaText = Field<TextBox>(form, "formula");
+                var value = Field<TextBox>(form, "expressionValue");
+                Equal(expressionTree.Handle != IntPtr.Zero, true, "expression tree handle created");
+                TreeNode declined = FormulaReference(expressionTree, "Link Data2.xlsx");
+                int caret = ((ExpressionNode)declined.Tag).Start + 2;
+                formulaText.Select(caret, 0);
+                Invoke(form, "SelectLinkedReferenceAtCaret");
+                Equal(expressionTree.SelectedNode, declined, "formula caret selects the closed link");
+                Equal(formulaText.SelectionStart, caret, "formula caret is preserved");
+                Equal(Field<string>(form, "pendingWorkbookPath"), otherPath, "exact closed path offered from formula text");
+                Equal(value.Text.Contains(otherPath), true, "consent shows the full path");
+                Equal((int)books.Count, 1, "offering a workbook does not open it");
+                Invoke(form, "IgnoreLinkedWorkbook");
+                expressionTree.SelectedNode = expressionTree.Nodes[0];
+                expressionTree.SelectedNode = declined;
+                Equal(Field<string>(form, "pendingWorkbookPath"), null, "declined path is remembered in this pane");
+                Equal((int)books.Count, 1, "declining leaves both linked files closed");
+
+                Book current = Field<Book>(form, "book");
+                Invoke(form, "SetRoot", current.Get("Data", "B7"), true);
+                expressionTree.SelectedNode = FormulaReference(expressionTree, "AuditAmount");
+                Equal(Field<string>(form, "pendingWorkbookPath"), path, "a workbook-scoped name offers its closed file");
+                string linkedFormula = (string)keep(local.Range["B7"]).Formula2;
+                keep(local.Range["B7"]).Formula2 = "=42";
+                Invoke(form, "OpenLinkedWorkbook");
+                Equal((int)books.Count, 1, "editing the source formula invalidates pending consent");
+                Equal(value.Text.Contains("Formule modifiée dans Excel"), true, "the pane explains the stale formula");
+                keep(local.Range["B7"]).Formula2 = linkedFormula;
+                Equal(Invoke(form, "OfferSelectedWorkbook"), true, "stale consent did not mark the linked path as answered");
+                Invoke(form, "OpenLinkedWorkbook");
+                Equal((int)books.Count, 2, "accepting opens exactly one linked workbook");
+                reopened = books.Item["Link Data.xlsx"];
+                Equal((string)keep(app.ActiveWorkbook).Name, "Link Audit.xlsx", "opening keeps the original window active");
+                Equal((string)keep(app.Selection).Address, "$B$2", "opening preserves the worksheet selection");
+                Equal(((Cell)tree.Nodes[0].Tag).Address, "B7", "reloading keeps the traced formula root");
+                Equal(((ExpressionNode)expressionTree.SelectedNode.Tag).Text.Contains("AuditAmount"), true, "reloading keeps the selected expression");
+                Equal(Field<string>(form, "pendingWorkbookPath"), null, "open workbook no longer offers to open");
+                Equal(tree.Nodes[0].Nodes[0].Text, "'[Link Data.xlsx]Data'!A4   30", "new snapshot resolves the workbook-scoped name");
+                Equal(warnings.Text.Contains("Link Data2.xlsx"), true, "remaining closed link is still reported");
+                Invoke(form, "NavigateSelectedExpression");
+                Equal((string)keep(app.ActiveWorkbook).Name, "Link Data.xlsx", "named reference navigates to the opened workbook");
+                Equal((string)keep(app.Selection).Address, "$A$4", "named reference navigates to its range");
+                local.Activate();
+                Invoke(form, "Back");
+                Equal(((Cell)tree.Nodes[0].Tag).Address, "B2", "history survives opening a linked workbook");
+                expressionTree.SelectedNode = FormulaReference(expressionTree, "Link Data2.xlsx");
+                Equal(Field<string>(form, "pendingWorkbookPath"), null, "decline survives model refresh");
+
+                dynamic grouped = keep(keep(((dynamic)primary).Worksheets).Add(Type.Missing, local)); grouped.Name = "Group";
+                Book groupedCapture = bridge.Capture(primary);
+                dynamic window = keep(((dynamic)primary).NewWindow());
+                window.Activate(); local.Select(true);
+                keep(app.Union(keep(local.Range["A1:A2"]), keep(local.Range["C3:C4"]))).Select();
+                keep(local.Range["C4"]).Activate(); grouped.Select(false); local.Activate();
+                int hwnd = (int)keep(app.ActiveWindow).Hwnd;
+                Equal((int)keep(window.SelectedSheets).Count, 2, "second window fixture has grouped sheets");
+                bool screen = app.ScreenUpdating;
+                try
+                {
+                    app.ScreenUpdating = false;
+                    Invoke(bridge, "OpenDependencyWorkbook", groupedCapture, otherPath);
+                    reopenedOther = books.Item["Link Data2.xlsx"];
+                    Equal((int)keep(app.ActiveWindow).Hwnd, hwnd, "opening keeps the exact second window");
+                    Equal((int)keep(window.SelectedSheets).Count, 2, "opening restores grouped sheets");
+                    Equal((string)keep(app.Selection).Address, "$A$1:$A$2,$C$3:$C$4", "opening restores multiple areas");
+                    Equal((string)keep(app.ActiveCell).Address, "$C$4", "opening restores the active cell within the union");
+                    Equal((bool)app.ScreenUpdating, false, "opening restores the original screen-updating flag");
+                }
+                finally { app.ScreenUpdating = screen; }
             }
         }
         finally
         {
-            foreach (object workbook in new[] { other, peer, primary })
+            foreach (object workbook in new[] { reopenedOther, reopened, other, peer, primary })
                 if (workbook != null) try { ((dynamic)workbook).Close(false); } catch { }
             if (application != null) try { ((dynamic)application).Quit(); } catch { }
             for (int i = objects.Count - 1; i >= 0; i--) ExcelBridge.Release(objects[i]);
-            ExcelBridge.Release(other); ExcelBridge.Release(peer); ExcelBridge.Release(primary); ExcelBridge.Release(application);
-            File.Delete(primaryPath); File.Delete(otherPath); File.Delete(path); Directory.Delete(temp);
+            ExcelBridge.Release(reopenedOther); ExcelBridge.Release(reopened); ExcelBridge.Release(other); ExcelBridge.Release(peer); ExcelBridge.Release(primary); ExcelBridge.Release(application);
+            foreach (string fixture in new[] { primaryPath, otherPath, path })
+                try { File.Delete(fixture); } catch (IOException) { }
+            try { Directory.Delete(temp); } catch (IOException) { }
         }
         Console.WriteLine("EXCEL_EXTERNAL_DEPENDENCY_ASSERTIONS " + checks);
     }

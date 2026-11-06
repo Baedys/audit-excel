@@ -151,7 +151,7 @@ namespace FormulaExplorer
             return null;
         }
 
-        static bool FindPath(ExpressionNode node, ExpressionNode target, List<ExpressionNode> path)
+        internal static bool FindPath(ExpressionNode node, ExpressionNode target, List<ExpressionNode> path)
         {
             var parents = new Dictionary<ExpressionNode, ExpressionNode>();
             var pending = new Stack<ExpressionNode>();

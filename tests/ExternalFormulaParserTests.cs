@@ -7,7 +7,7 @@ using FormulaExplorer;
 public static class ExternalFormulaParserTests
 {
     static readonly MethodInfo ParseTrace = typeof(FormulaParser).GetMethod("Parse", BindingFlags.NonPublic | BindingFlags.Static,
-        null, new[] { typeof(string), typeof(string), typeof(Book), typeof(IList<string>), typeof(Func<string, string, Book>) }, null);
+        null, new[] { typeof(string), typeof(string), typeof(Book), typeof(IList<string>), typeof(Func<Book, string, string, Book>) }, null);
     static readonly FieldInfo ReferenceWorkbook = typeof(Reference).GetField("Workbook", BindingFlags.NonPublic | BindingFlags.Instance);
 
     static Book Workbook(string name, params string[] sheets)
@@ -31,12 +31,14 @@ public static class ExternalFormulaParserTests
         Book source = Workbook("Source.xlsx", "Data", "O'Brien", "Jan", "Middle", "Dec");
         Book other = Workbook("Other.xlsx", "Data");
         var seen = new List<Tuple<string, string>>();
-        Func<string, string, Book> resolve = (path, name) =>
+        Func<Book, string, string, Book> resolve = (context, path, name) =>
         {
             seen.Add(Tuple.Create(path, name));
             if (path == "" && name == source.Name) return source;
             if (path == "" && name == other.Name) return other;
+            if (path == "" && name == owner.Name) return owner;
             if (path == @"C:\Team's files\" && name == "Source O'Brien.xlsx") return source;
+            if (Object.ReferenceEquals(context, source) && path == @"..\Data\" && name == other.Name) return other;
             return null;
         };
         Func<string, ParsedFormula> parse = formula => (ParsedFormula)ParseTrace.Invoke(null, new object[] { formula, "Data", owner, null, resolve });
@@ -85,5 +87,49 @@ public static class ExternalFormulaParserTests
         parsed = FormulaParser.Parse("=[Source.xlsx]Data!A1+B2", "Data", owner);
         Equal(parsed.References.Single().FirstRow, 2, "default parser remains local");
         Equal(parsed.Warnings.Count, 1, "default external warning remains");
+
+        source.Names["Budget"] = "=Data!$B$7";
+        source.Names[Book.Key("Data", "Budget")] = "=$C$8";
+        parsed = parse("=Source.xlsx!Budget");
+        Equal(parsed.References.Single().FirstRow, 7, "open workbook-only name is global");
+        Equal(ReferenceWorkbook.GetValue(parsed.References.Single()), source, "external name's local reference stays in definition book");
+        Equal(parse("=[Source.xlsx]Data!Budget").References.Single().FirstColumn, 3, "sheet-scoped external name shadows the global one");
+        Equal(parse("='[Source.xlsx]'!Budget").References.Single().FirstColumn, 2, "bracketed workbook-only name");
+        parsed = parse(@"='C:\Team''s files\Source O''Brien.xlsx'!Budget");
+        Equal(parsed.References.Single().FirstRow, 7, "closed-form workbook-only path to open workbook resolves name");
+        Equal(seen.Last(), Tuple.Create(@"C:\Team's files\", "Source O'Brien.xlsx"), "workbook-only qualifier decodes apostrophes");
+
+        owner.Names["MissingName"] = "=Data!$Z$1";
+        Equal(parse("=Source.xlsx!MissingName").References.Count, 0, "external missing name never falls back to local name");
+        Equal(parse(@"='C:\Missing\Source.xlsx'!MissingName").References.Count, 0, "external closed name never falls back to local name");
+        source.Names["RelativeBudget"] = "=Data!B2";
+        source.RelativeNames.Add("RelativeBudget");
+        parsed = parse("=Source.xlsx!RelativeBudget");
+        Equal(parsed.References.Count, 0, "external relative name is unresolved");
+        Equal(parsed.Warnings.Any(warning => warning.Contains("relatif")), true, "relative name warning");
+
+        owner.Sheets.Add("Other.xlsx");
+        owner.Names[Book.Key("Other.xlsx", "Budget")] = "=$D$11";
+        other.Names["Budget"] = "=Data!$Z$1";
+        parsed = parse("=Other.xlsx!Budget");
+        Equal(parsed.References.Single().Sheet, "Other.xlsx", "same-named local sheet takes precedence over the open book");
+        Equal(ReferenceWorkbook.GetValue(parsed.References.Single()), null, "same-named local sheet remains local");
+        Equal(FormulaParser.Parse("=Source.xlsx!Budget", "Data", owner).References.Count, 0, "default parser never resolves an external name");
+
+        owner.Names["Shared"] = "=Source.xlsx!Shared";
+        source.Names["Shared"] = "=Data!$G$7";
+        Equal(parse("=Shared").References.Single().FirstColumn, 7, "same name in distinct workbooks is not a cycle");
+        owner.Names["Loop"] = "=Source.xlsx!Loop";
+        source.Names["Loop"] = "=Audit.xlsx!Loop";
+        parsed = parse("=Loop");
+        Equal(parsed.References.Count, 0, "cross-workbook name cycle stops");
+        Equal(parsed.Warnings.Any(warning => warning.Contains("circulaire")), true, "cross-workbook cycle warning");
+
+        source.Names["ToRoot"] = "=[Audit.xlsx]Data!$H$7";
+        parsed = parse("=Source.xlsx!ToRoot");
+        Equal(ReferenceWorkbook.GetValue(parsed.References.Single()), null, "definition link back to the original book remains implicit");
+        source.Names["ToThirdBook"] = @"='..\Data\Other.xlsx'!Budget";
+        parsed = parse("=Source.xlsx!ToThirdBook");
+        Equal(ReferenceWorkbook.GetValue(parsed.References.Single()), other, "relative path resolves from the definition's workbook");
     }
 }

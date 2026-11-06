@@ -24,7 +24,7 @@ namespace FormulaExplorer
     {
         public string Name = "", FullName = "";
         public DateTime Captured = DateTime.Now;
-        internal readonly string TraceId = Guid.NewGuid().ToString("N");
+        internal string TraceId = Guid.NewGuid().ToString("N");
         public readonly Dictionary<string, Cell> Cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> Sheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, int> sheetIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -151,7 +151,7 @@ namespace FormulaExplorer
         internal static readonly Regex AddressPattern = new Regex(@"\G(?:\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?::\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9][0-9]{0,6}:\$?[1-9][0-9]{0,6})(?![!\p{L}\p{N}_.\\])");
         static readonly Regex NamePattern = new Regex(@"\G[\p{L}_\\][\p{L}\p{N}_.\\]*");
         static readonly Regex NumberPattern = new Regex(@"\G(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?");
-        static readonly Regex ExternalQualifier = new Regex(@"\G(?:\[(?<book>[^\[\]]+)\](?<sheet>[\p{L}\p{N}_.\\]+(?::[\p{L}\p{N}_.\\]+)?)|'(?<quoted>(?:[^']|'')+)')!");
+        static readonly Regex ExternalQualifier = new Regex(@"\G(?:\[(?<book>[^\[\]]+)\](?<sheet>[\p{L}\p{N}_.\\]+(?::[\p{L}\p{N}_.\\]+)?)?|'(?<quoted>(?:[^']|'')+)')!");
         static readonly Regex LocalQualifier = new Regex(@"\G(?<sheet>'(?:[^']|'')+'|[\p{L}_\\][\p{L}\p{N}_.\\]*)!");
         static readonly Regex RangeEndpoint = new Regex(@"\G(?:\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}|\$?[A-Za-z]{1,3}|\$?[1-9][0-9]{0,6})(?![!\p{L}\p{N}_.\\])");
         static bool NameChar(char c) { return Char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '\\'; }
@@ -160,20 +160,20 @@ namespace FormulaExplorer
         { return Parse(formula, sheet, book, null); }
 
         internal static ParsedFormula Parse(string formula, string sheet, Book book, IList<string> worksheetOrder,
-            Func<string, string, Book> resolveWorkbook = null)
+            Func<Book, string, string, Book> resolveWorkbook = null)
         {
             ParsedFormula result = new ParsedFormula();
-            ParseInto(formula ?? "", sheet, book, result, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, ref worksheetOrder, resolveWorkbook);
+            ParseInto(formula ?? "", sheet, book, book, result, new Dictionary<Book, HashSet<string>>(), 0, ref worksheetOrder, resolveWorkbook);
             return result;
         }
-        sealed class ExternalSheet
+        internal sealed class ExternalSheet
         {
             internal readonly string Path, Workbook, Sheet;
             internal readonly int AddressStart;
             internal ExternalSheet(string path, string workbook, string sheet, int addressStart)
             { Path = path; Workbook = workbook; Sheet = sheet; AddressStart = addressStart; }
         }
-        static ExternalSheet ReadExternalSheet(string source, int start)
+        internal static ExternalSheet ReadExternalSheet(string source, int start)
         {
             if (start >= source.Length || (source[start] != '[' && source[start] != '\'')) return null;
             Match qualifier = ExternalQualifier.Match(source, start);
@@ -183,12 +183,15 @@ namespace FormulaExplorer
             string quoted = qualifier.Groups["quoted"].Value.Replace("''", "'");
             int close = quoted.LastIndexOf(']');
             int open = close < 0 ? -1 : quoted.LastIndexOf('[', close);
-            if (open < 0 || close == open + 1 || close == quoted.Length - 1) return null;
-            return new ExternalSheet(quoted.Substring(0, open), quoted.Substring(open + 1, close - open - 1),
-                quoted.Substring(close + 1), start + qualifier.Length);
+            if (open >= 0 && close > open + 1)
+                return new ExternalSheet(quoted.Substring(0, open), quoted.Substring(open + 1, close - open - 1),
+                    quoted.Substring(close + 1), start + qualifier.Length);
+            int separator = Math.Max(quoted.LastIndexOf('/'), quoted.LastIndexOf('\\'));
+            return separator >= 0 && separator + 1 < quoted.Length ? new ExternalSheet(quoted.Substring(0, separator + 1),
+                quoted.Substring(separator + 1), "", start + qualifier.Length) : null;
         }
         static bool ReadRepeatedExternalRange(string source, int addressStart, ExternalSheet external, Book owner,
-            Book targetBook, string targetSheet, Func<string, string, Book> resolveWorkbook,
+            Book targetBook, string targetSheet, Func<Book, string, string, Book> resolveWorkbook,
             ref string address, ref int end, out bool sameTarget)
         {
             sameTarget = true;
@@ -204,7 +207,7 @@ namespace FormulaExplorer
             {
                 endpointStart = second.AddressStart;
                 endSheet = second.Sheet;
-                endBook = resolveWorkbook(second.Path, second.Workbook);
+                endBook = resolveWorkbook(owner, second.Path, second.Workbook);
             }
             else
             {
@@ -241,14 +244,15 @@ namespace FormulaExplorer
             if (reference != null) result.References.Add(reference);
             previous = reference; previousEnd = end;
         }
-        static void ParseInto(string s, string sheet, Book book, ParsedFormula result, HashSet<string> names, int depth,
-            ref IList<string> worksheetOrder, Func<string, string, Book> resolveWorkbook)
+        static void ParseInto(string s, string sheet, Book book, Book origin, ParsedFormula result, Dictionary<Book, HashSet<string>> names,
+            int depth, ref IList<string> worksheetOrder, Func<Book, string, string, Book> resolveWorkbook)
         {
             if (depth > 16) { result.Warnings.Add("Imbrication des noms limitée à 16 niveaux."); return; }
             int lastReferenceEnd = -1;
             Reference previousReference = null;
             bool hasSheetQualifier = s.IndexOf('!') >= 0;
-            bool hasExternalQualifier = resolveWorkbook != null && hasSheetQualifier && s.IndexOf('[') >= 0;
+            bool canResolveExternal = resolveWorkbook != null && hasSheetQualifier;
+            bool hasExternalQualifier = canResolveExternal && s.IndexOfAny(new[] { '[', '\'' }) >= 0;
             for (int i = 0; i < s.Length;)
             {
                 char ch = s[i];
@@ -264,7 +268,7 @@ namespace FormulaExplorer
                 if (span != null)
                 {
                     string token = s.Substring(i, spanEnd - i);
-                    Book spanBook = external == null ? book : resolveWorkbook(external.Path, external.Workbook);
+                    Book spanBook = external == null ? book : resolveWorkbook(book, external.Path, external.Workbook);
                     if (spanBook == null || (external == null && (span.HasPath ||
                         (span.Workbook.Length != 0 && !String.Equals(span.Workbook, book.Name, StringComparison.OrdinalIgnoreCase)))))
                         result.Warnings.Add("Référence 3D vers un autre classeur non résolue : " + token);
@@ -277,7 +281,7 @@ namespace FormulaExplorer
                         else foreach (string sourceSheet in sheets)
                         {
                             Reference source = Reference.Parse(sourceSheet, span.Address);
-                            if (!local) source.Workbook = spanBook;
+                            if (!Object.ReferenceEquals(spanBook, origin)) source.Workbook = spanBook;
                             result.References.Add(source);
                         }
                     }
@@ -294,7 +298,7 @@ namespace FormulaExplorer
                     result.Warnings.Add("Référence externe ou structurée non résolue : " + s.Substring(start, i - start));
                     continue;
                 }
-                Book targetBook = external == null ? book : resolveWorkbook(external.Path, external.Workbook);
+                Book targetBook = external == null ? book : resolveWorkbook(book, external.Path, external.Workbook);
                 string targetSheet = external == null ? sheet : external.Sheet;
                 int begin = i, addressStart = external == null ? i : external.AddressStart;
                 bool qualified = external != null;
@@ -323,6 +327,16 @@ namespace FormulaExplorer
                             if (next.Success && end + 1 + next.Length < s.Length && s[end + 1 + next.Length] == '!') end += 1 + next.Length;
                         }
                         if (end < s.Length && s[end] == '!') { targetSheet = s.Substring(i, end - i); addressStart = end + 1; qualified = true; }
+                    }
+                }
+                if (canResolveExternal && qualified && external == null && !book.Sheets.Contains(targetSheet))
+                {
+                    Book linked = resolveWorkbook(book, "", targetSheet);
+                    if (linked != null)
+                    {
+                        external = new ExternalSheet("", targetSheet, "", addressStart);
+                        targetBook = linked;
+                        targetSheet = "";
                     }
                 }
                 Match address = AddressPattern.Match(s, addressStart);
@@ -354,14 +368,15 @@ namespace FormulaExplorer
                     if (targetBook == null) result.Warnings.Add("Référence externe non résolue : " + s.Substring(begin, i - begin));
                     else if (!sameTarget) result.Warnings.Add("Plage entre feuilles ou classeurs non résolue : " + s.Substring(begin, i - begin));
                     else if (reference == null) result.Warnings.Add("Adresse hors limites : " + addressText);
+                    else if (external != null && targetSheet.Length == 0) result.Warnings.Add("Référence externe sans feuille : " + s.Substring(begin, i - begin));
                     else if (!targetBook.Sheets.Contains(targetSheet)) result.Warnings.Add("Feuille absente : " + targetSheet);
                     else
                     {
-                        if (!Object.ReferenceEquals(targetBook, book)) reference.Workbook = targetBook;
+                        if (!Object.ReferenceEquals(targetBook, origin)) reference.Workbook = targetBook;
                         resolved = reference;
                     }
                     if (resolved != null || external != null || repeated)
-                        AppendDirectReference(s, begin, i, book, result, resolved, ref previousReference, ref lastReferenceEnd);
+                        AppendDirectReference(s, begin, i, origin, result, resolved, ref previousReference, ref lastReferenceEnd);
                     if (i < s.Length && s[i] == '#') { result.Warnings.Add("Plage déversée : seule la cellule d'origine est résolue."); i++; }
                     continue;
                 }
@@ -370,25 +385,44 @@ namespace FormulaExplorer
                 if (name.Success)
                 {
                     i += name.Length;
-                    if (external != null) { result.Warnings.Add("Nom externe non résolu : " + s.Substring(begin, i - begin)); continue; }
                     int next = SkipSpace(s, i);
                     if (next < s.Length && s[next] == '(')
                     {
+                        if (external != null) { result.Warnings.Add("Nom externe non résolu : " + s.Substring(begin, i - begin)); continue; }
                         string function = name.Value.ToUpperInvariant().Replace("_XLFN.", "").Replace("_XLWS.", "");
                         result.Functions.Add(function);
                         if (new[] { "INDIRECT", "OFFSET", "LET", "LAMBDA" }.Contains(function)) result.Warnings.Add(function + " : dépendances dynamiques ou noms locaux incomplets.");
                         continue;
                     }
                     if (next < s.Length && s[next] == '[') { result.Warnings.Add("Table structurée non résolue : " + name.Value); i = next; continue; }
-                    if (name.Value.Equals("TRUE", StringComparison.OrdinalIgnoreCase) || name.Value.Equals("FALSE", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (qualified && (targetSheet.IndexOfAny(new[] { '[', ']', ':' }) >= 0 || !book.Sheets.Contains(targetSheet))) { result.Warnings.Add("Nom qualifié externe ou feuille absente : " + s.Substring(begin, i - begin)); continue; }
-                    string definition, key = Book.Key(targetSheet, name.Value);
-                    if (!book.Names.TryGetValue(key, out definition)) { key = name.Value; book.Names.TryGetValue(key, out definition); }
-                    if (definition == null) { result.Warnings.Add("Nom non résolu : " + name.Value); continue; }
-                    if (book.RelativeNames.Contains(key)) { result.Warnings.Add("Nom relatif non résolu : " + name.Value); continue; }
+                    if (external == null && (name.Value.Equals("TRUE", StringComparison.OrdinalIgnoreCase) || name.Value.Equals("FALSE", StringComparison.OrdinalIgnoreCase))) continue;
+                    if (targetBook == null) { result.Warnings.Add("Nom externe non résolu : " + s.Substring(begin, i - begin)); continue; }
+                    if (qualified && !String.IsNullOrEmpty(targetSheet) && (targetSheet.IndexOfAny(new[] { '[', ']', ':' }) >= 0 || !targetBook.Sheets.Contains(targetSheet)))
+                    { result.Warnings.Add("Nom qualifié externe ou feuille absente : " + s.Substring(begin, i - begin)); continue; }
+                    string definition;
+                    string key = String.IsNullOrEmpty(targetSheet) ? name.Value : Book.Key(targetSheet, name.Value);
+                    if (!targetBook.Names.TryGetValue(key, out definition) && key != name.Value)
+                    {
+                        key = name.Value;
+                        targetBook.Names.TryGetValue(key, out definition);
+                    }
+                    if (definition == null)
+                    {
+                        result.Warnings.Add(external == null ? "Nom non résolu : " + name.Value : "Nom externe non résolu : " + s.Substring(begin, i - begin));
+                        continue;
+                    }
+                    if (targetBook.RelativeNames.Contains(key))
+                    { result.Warnings.Add("Nom relatif non résolu : " + (external == null ? name.Value : s.Substring(begin, i - begin))); continue; }
                     if ((lastReferenceEnd >= 0 && begin > lastReferenceEnd && s.Substring(lastReferenceEnd, begin - lastReferenceEnd).Trim().Length == 0) || (i < s.Length && Char.IsWhiteSpace(s[i]) && next < s.Length && (Char.IsLetter(s[next]) || s[next] == '$' || s[next] == '\''))) result.Warnings.Add("Intersection avec nom défini : dépendances possiblement trop larges.");
-                    if (!names.Add(key)) { result.Warnings.Add("Nom circulaire : " + name.Value); continue; }
-                    ParseInto(definition, targetSheet, book, result, names, depth + 1, ref worksheetOrder, resolveWorkbook); names.Remove(key);
+                    HashSet<string> activeNames;
+                    if (!names.TryGetValue(targetBook, out activeNames))
+                        names.Add(targetBook, activeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                    if (!activeNames.Add(key)) { result.Warnings.Add("Nom circulaire : " + name.Value); continue; }
+                    bool sameBook = Object.ReferenceEquals(targetBook, book);
+                    IList<string> nameOrder = sameBook ? worksheetOrder : null;
+                    ParseInto(definition, targetSheet, targetBook, origin, result, names, depth + 1, ref nameOrder, resolveWorkbook);
+                    if (sameBook) worksheetOrder = nameOrder;
+                    activeNames.Remove(key);
                     continue;
                 }
                 Match number = NumberPattern.Match(s, i);
@@ -415,8 +449,7 @@ namespace FormulaExplorer
             foreach (Book captured in workbooks)
             {
                 IList<string> order = captured.CapturedWorksheetOrder();
-                Func<string, string, Book> resolve = !traceWorkbooks ? (Func<string, string, Book>)null :
-                    (path, name) => ResolveWorkbook(captured, path, name);
+                Func<Book, string, string, Book> resolve = !traceWorkbooks ? (Func<Book, string, string, Book>)null : ResolveWorkbook;
                 foreach (string sheet in captured.Sheets) sheets[new WorkbookSheet(captured, sheet)] = new List<Cell>();
                 foreach (Cell cell in captured.Cells.Values)
                 {
@@ -428,7 +461,9 @@ namespace FormulaExplorer
                 }
             }
         }
-        Book ResolveWorkbook(Book source, string path, string name)
+        internal IEnumerable<Book> TraceWorkbooks { get { return workbooks; } }
+
+        internal Book ResolveWorkbook(Book source, string path, string name)
         {
             Book[] matches = workbooks.Where(candidate => WorkbookLink.Matches(source, candidate, path, name)).Take(2).ToArray();
             return matches.Length == 1 ? matches[0] : null;

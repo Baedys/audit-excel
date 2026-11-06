@@ -25,8 +25,9 @@ namespace FormulaExplorer
 
         void InitializeExpressions(TableLayoutPanel parent)
         {
-            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
             panel.RowStyles.Add(BarRow(72)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); panel.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 43 : 76));
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var actions = CommandBar(); actions.Margin = Padding.Empty;
             actions.Controls.Add(ActionButton("Évaluer", EvaluateSelectedExpression));
             actions.Controls.Add(ActionButton(IsDocked ? "Modifier" : "Modifier (F2)", EditSelectedFormula));
@@ -69,6 +70,7 @@ namespace FormulaExplorer
             expressions.AfterSelect += delegate
             {
                 if (buildingExpressions) return;
+                if (OfferSelectedWorkbook()) { HighlightExpression(expressions.SelectedNode); return; }
                 if (!HighlightExpression(expressions.SelectedNode)) return;
                 if (bridge != null && evaluateOnSelect.Checked) EvaluateExpressionInline();
                 else expressionValue.Text = bridge == null ? "Démonstration : connectez Excel pour calculer les sous-expressions." : "Sélectionnez Évaluer pour calculer cette expression dans Excel.";
@@ -76,6 +78,7 @@ namespace FormulaExplorer
             panel.Controls.Add(expressions, 0, 1);
             expressionValue.Dock = DockStyle.Fill; expressionValue.ReadOnly = true; expressionValue.Multiline = true; expressionValue.ScrollBars = ScrollBars.Both; expressionValue.WordWrap = false;
             expressionValue.Font = new Font("Consolas", 10); panel.Controls.Add(expressionValue, 0, 2); parent.Controls.Add(panel, 0, 2);
+            InitializeExternalWorkbookOffer(panel);
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e)
             {
@@ -257,6 +260,7 @@ namespace FormulaExplorer
         }
         void ShowExpression(Cell cell)
         {
+            SetWorkbookOffer(null);
             expressionOwner = cell; syntaxRoot = null; buildingExpressions = true;
             expressionTargets.Clear();
             criterionResults.Clear();
@@ -271,6 +275,7 @@ namespace FormulaExplorer
                 string warning = RefreshExpressionAnnotations(tabs.SelectedIndex == 0 && evaluateOnSelect.Checked);
                 expressionValue.ForeColor = SystemColors.WindowText;
                 expressionValue.Text = "Valeur capturée : " + cell.Value + "\r\n" + (warning ?? "Sélectionnez un élément pour examiner sa valeur.");
+                OfferSelectedWorkbook();
             }
             catch (FormatException ex) { expressionValue.Text = "Décomposition incomplète : " + ex.Message; }
             finally { buildingExpressions = false; expressions.EndUpdate(); }
@@ -283,6 +288,7 @@ namespace FormulaExplorer
         void EvaluateSelectedExpression()
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour évaluer les expressions.");
+            if (OfferSelectedWorkbook()) return;
             CriterionGroup criterion = SelectedCriterion();
             if (criterion != null)
             {
@@ -310,7 +316,8 @@ namespace FormulaExplorer
             var node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             return bridge != null && expressionOwner != null && syntaxRoot != null &&
                 (SelectedCriterion() != null || (node != null &&
-                (ExcelBridge.SupportsExpressionTarget(node) || ExcelBridge.FindFilterWithMask(syntaxRoot, node) != null)));
+                (pendingWorkbookPath != null || ExcelBridge.SupportsDirectExpressionTarget(node) ||
+                ExcelBridge.SupportsExpressionTarget(node) || ExcelBridge.FindFilterWithMask(syntaxRoot, node) != null)));
         }
         void NavigateSelectedExpression()
         {
@@ -318,6 +325,7 @@ namespace FormulaExplorer
             TreeNode selected = expressions.SelectedNode;
             try
             {
+                if (OfferSelectedWorkbook()) return;
                 CriterionGroup criterion = SelectedCriterion();
                 if (criterion != null)
                 {

@@ -40,6 +40,27 @@ namespace FormulaExplorer
         static bool IsSingleArgumentSum(ExpressionNode node)
         { return node.Children.Count == 1 && FormulaSyntax.FunctionName(node) == "SUM"; }
 
+        internal static bool SupportsDirectExpressionTarget(ExpressionNode node)
+        {
+            while (IsSingleArgumentSum(node)) node = node.Children[0];
+            return IsQualifiedReference(node);
+        }
+
+        static bool IsQualifiedReference(ExpressionNode node)
+        {
+            if (node.Kind == "Reference") return node.Text.IndexOf('!') >= 0;
+            return (node.Kind == "Range" || node.Kind == "Spill") && node.Children.Any(IsQualifiedReference);
+        }
+
+        internal void RequireCurrentDependencyFormula(Book book, Cell owner)
+        {
+            AtDirectCell(book, owner.Sheet, owner.Address, delegate(object sheet, object range)
+            {
+                RequireCurrentFormula(range, owner);
+                return true;
+            });
+        }
+
         internal ExpressionValue EvaluateExpressionNode(Book book, Cell owner, ExpressionNode root, ExpressionNode node)
         {
             if (node.SheetSpan != null || node.SheetSpanOrigin != null) return EvaluateSheetSpanNode(book, owner, root, node);
@@ -133,6 +154,8 @@ namespace FormulaExplorer
                     ? ReadBranchWitness(sheet, owner, root, node, ReadExpressionTarget, (ExpressionTarget)null, evaluateOnApplication: true)
                     : null;
             while (IsSingleArgumentSum(node)) node = node.Children[0];
+            if (IsQualifiedReference(node))
+                return ReadBranchWitness(sheet, owner, root, node, ReadExpressionTarget, (ExpressionTarget)null, evaluateOnApplication: true);
             string function = FormulaSyntax.FunctionName(node);
             if (SupportsCriteriaTarget(function)) return ResolveCriteriaTarget(sheet, owner, root, node, function);
             switch (function)

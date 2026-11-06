@@ -233,31 +233,39 @@ namespace FormulaExplorer
 
         void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection, IReadOnlyList<Book> peers = null)
         {
-            DependencyEngine next = new DependencyEngine(captured);
             ClearTraceHighlightOwners();
-            book = captured; engine = next; mapAnalysisOptions = mapPalette.AnalysisOptions;
+            UpdateCapturedBook(captured, sheet, address, peers);
+            history.Clear();
+            if (selection == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + traceWarningCount + " avertissements";
+            SetExplorerRoot(capturedRoot, false, selection, null);
+        }
+
+        void UpdateCapturedBook(Book captured, string sheet, string address, IReadOnlyList<Book> peers)
+        {
+            var next = new DependencyEngine(captured);
+            var nextTrace = peers == null ? next : new DependencyEngine(captured, peers);
+            var nextMapOptions = mapPalette.AnalysisOptions;
+            var nextMap = FormulaMap.Analyze(captured, nextMapOptions);
+            book = captured; engine = next; mapAnalysisOptions = nextMapOptions;
             capturedRoot = book.Get(sheet, address);
             hasTracePeers = peers != null;
-            traceEngine = hasTracePeers ? new DependencyEngine(book, peers) : engine;
-            mapAnalysis = FormulaMap.Analyze(captured, mapAnalysisOptions); history.Clear();
+            traceEngine = nextTrace;
+            mapAnalysis = nextMap;
             highlightTraceCells.Enabled = bridge != null;
             title.Text = IsDocked ? book.Name : "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
             sheets.Items.Clear(); foreach (string item in book.Sheets.OrderBy(s => s)) sheets.Items.Add(item);
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
             flow.Rows.Clear(); differences.DataSource = null;
-            string[] issues = TraceWarnings();
-            if (selection == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + issues.Length + " avertissements";
-            SetExplorerRoot(capturedRoot, false, selection, null);
+            TraceWarnings();
         }
 
-        string[] TraceWarnings()
+        void TraceWarnings()
         {
             string[] issues = traceEngine.Warnings.Distinct().ToArray();
             traceWarningCount = issues.Length;
             warnings.Text = "Analyse statique. Rechargez après modification Excel.\r\n" +
                 (issues.Length == 0 ? "Aucune référence non résolue détectée. Les branches conditionnelles sont toutes incluses." : String.Join("\r\n", issues.Take(200)) + (issues.Length > 200 ? "\r\n… " + (issues.Length - 200) + " autres avertissements (rapport complet disponible)." : ""));
-            return issues;
         }
 
         bool EnsureTracePeers()

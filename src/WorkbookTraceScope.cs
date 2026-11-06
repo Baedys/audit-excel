@@ -27,29 +27,41 @@ namespace FormulaExplorer
 
     internal static class WorkbookLink
     {
+        internal static FormulaParser.ExternalSheet ReadExpression(ExpressionNode node)
+        {
+            switch (node.Kind)
+            {
+                case "Reference": case "Range": case "Spill": case "3D reference":
+                    return FormulaParser.ReadExternalSheet(node.Text, 0);
+                default: return null;
+            }
+        }
+
+        internal static string OpenPath(Book owner, string path, string name)
+        {
+            if (String.IsNullOrEmpty(path)) return null;
+            string linked = path + name;
+            string absolute = ExcelBridge.NormalizeDependencyWorkbookPath(linked);
+            if (absolute != null) return absolute;
+            try
+            {
+                if (Path.IsPathRooted(linked) || linked.IndexOf(':') >= 0) return null;
+                string source = ExcelBridge.NormalizeDependencyWorkbookPath(owner.FullName);
+                if (source == null) return null;
+                Uri uri, relative;
+                if (Uri.TryCreate(source, UriKind.Absolute, out uri) && !uri.IsFile)
+                    return Uri.TryCreate(uri, linked, out relative) ? ExcelBridge.NormalizeDependencyWorkbookPath(relative.AbsoluteUri) : null;
+                return ExcelBridge.NormalizeDependencyWorkbookPath(Path.Combine(Path.GetDirectoryName(source), linked));
+            }
+            catch (ArgumentException) { return null; }
+        }
+
         internal static bool Matches(Book source, Book candidate, string path, string name)
         {
             if (!String.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase)) return false;
             if (String.IsNullOrEmpty(path)) return true;
-            string linked = path + name;
-            Uri address, candidateAddress;
-            if (Uri.TryCreate(linked, UriKind.Absolute, out address) && !address.IsFile)
-                return Uri.TryCreate(candidate.FullName, UriKind.Absolute, out candidateAddress) &&
-                    String.Equals(address.AbsoluteUri, candidateAddress.AbsoluteUri, StringComparison.OrdinalIgnoreCase);
-            if (address != null && address.IsFile) linked = address.LocalPath;
-            try
-            {
-                if (!Path.IsPathRooted(candidate.FullName)) return false;
-                if (!Path.IsPathRooted(linked))
-                {
-                    if (!Path.IsPathRooted(source.FullName)) return false;
-                    linked = Path.Combine(Path.GetDirectoryName(source.FullName), linked);
-                }
-                return String.Equals(Path.GetFullPath(linked), Path.GetFullPath(candidate.FullName), StringComparison.OrdinalIgnoreCase);
-            }
-            catch (ArgumentException) { return false; }
-            catch (NotSupportedException) { return false; }
-            catch (PathTooLongException) { return false; }
+            string linked = OpenPath(source, path, name);
+            return linked != null && ExcelBridge.MatchesDependencyWorkbookPath(linked, candidate.FullName);
         }
     }
 }

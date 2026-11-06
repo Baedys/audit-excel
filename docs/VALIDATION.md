@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Ouverture des classeurs liés et noms externes — 6 novembre 2026
+
+Le témoin Excel ferme deux sources. Un curseur dans la référence montre le chemin complet et permet de le refuser. Une référence à un nom global propose l'autre source. Après ouverture, le volet retrouve la formule, son nœud sélectionné et le retour vers l'ancienne racine. Excel garde sa fenêtre et sa sélection. **Entrée** depuis le nom global sélectionne sa plage physique dans le classeur rouvert. Une modification de la formule entre la proposition et la confirmation invalide la demande.
+
+Le parseur couvre les noms absolus de classeur et de feuille, les homonymes, les cycles entre classeurs et les chemins relatifs dans la définition d'un nom. Les déclencheurs, le refus mémorisé et le rafraîchissement d'Arixcel sont établis par le CIL. Le témoin local utilise des fichiers `.xlsx`. L'ouverture via URL, l'authentification et les fichiers protégés restent à comparer. [Workbooks.Open](https://learn.microsoft.com/en-us/office/vba/api/excel.workbooks.open) · [AutomationSecurity](https://learn.microsoft.com/en-us/office/vba/api/excel.application.automationsecurity)
+
 ## Dépendances entre classeurs ouverts — 6 novembre 2026
 
 Le témoin Excel utilise trois classeurs aux noms proches, chacun avec une feuille `Data`. Il vérifie des antécédents à la même adresse dans les trois classeurs, l'évaluation d'une formule externe dans sa propre feuille, un dépendant dans un classeur pair, des rectangles homonymes et leur surlignage, la navigation explicite et le retour dans l'arbre. Fermer un pair garde le surlignage de la source. La capture suivante signale le fichier fermé et conserve les résultats des classeurs ouverts.
