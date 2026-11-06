@@ -105,7 +105,19 @@ namespace FormulaExplorer
         {
             return FormulaBranches.Chosen(root,
                 operand => ReadBranchWitness(sheet, range, root, operand, ReadBranchValue, Type.Missing),
-                function => UsesFallback(sheet, range, root, function));
+                function => UsesFallback(sheet, range, root, function),
+                (function, argument, first) => ReadExtremumArgument(sheet, range, root, function, argument, first));
+        }
+
+        static object ReadExtremumArgument(object sheet, object range, ExpressionNode root, ExpressionNode function, int argument, int first)
+        {
+            ExpressionNode child = function.Children[argument];
+            object value = ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing);
+            if (!Object.ReferenceEquals(value, multipleBranchCells)) return value;
+            // Arixcel evaluates a multi-cell reference as a separate argument to the parent function.
+            string prefix = String.Concat(function.Children.Take(first).Select(option => option.Text + ","));
+            string expression = FormulaSyntax.FunctionName(function) + "(" + prefix + child.Text + ")";
+            return ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing, expression, evaluateOnApplication: true);
         }
 
         static T ReadBranchWitness<T>(object sheet, object range, ExpressionNode root, ExpressionNode operand,

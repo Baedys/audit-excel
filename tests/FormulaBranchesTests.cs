@@ -79,6 +79,19 @@ public static class FormulaBranchesTests
         Choice("=IFNA(A1,B1)", "A1", divide);
         Choice("=IFNA(A1,B1)", "A1", "#N/A");
 
+        Choice("=MIN(A1,B1,C1)", "B1", 5d, 8d, 5d);
+        Choice("=MAX(A1,B1,C1)", "A1", 7d, "7");
+        Choice("=MINA(A1,B1)", "B1", 1d, true, 1d);
+        Choice("=MAXA(A1,B1)", null, 1d, true, false);
+        Choice("=MAX(A1,B1,C1)", "B1", na, "#N/A", new ErrorWrapper(2042));
+        Choice("=MIN(A1,B1)", null, new ErrorWrapper(2015));
+        Choice("=MIN({1,2},B1)", null, 1d, new double[,] { { 1, 2 } }, 5d);
+        Choice("=MIN({1},B1)", "{1}", 1d, new double[,] { { 1 } });
+        Choice("=MIN(A1)", null);
+        Choice("=SUBTOTAL(4,A1)", "A1", 4d, 9d, 9d);
+        Choice("=AGGREGATE(5,6,A1)", "A1", 5d, 3d, 3d);
+        Choice("=AGGREGATE(14,6,A1,2)", null, 14d);
+
         const string nested = "=IF(IF(A1,B1,C1),IF(D1,E1,F1),IF(G1,H1,I1))";
         var root = FormulaSyntax.Parse(nested); var reads = new List<string>();
         var selected = FormulaBranches.Chosen(root, node => { reads.Add(node.Text); return node.Text != "D1"; });

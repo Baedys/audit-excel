@@ -10,7 +10,7 @@ namespace FormulaExplorer
         internal static bool Supports(ExpressionNode node)
         {
             string function = FormulaSyntax.FunctionName(node);
-            return Supports(function) || function == "FILTER" || function == "XLOOKUP";
+            return Supports(function) || function == "FILTER" || function == "XLOOKUP" || ExtremumFirstArgument(function) >= 0;
         }
 
         static bool Supports(string function)
@@ -27,7 +27,8 @@ namespace FormulaExplorer
         public static ISet<ExpressionNode> Chosen(ExpressionNode root, Func<ExpressionNode, object> read)
         { return Chosen(root, read, null); }
 
-        internal static ISet<ExpressionNode> Chosen(ExpressionNode root, Func<ExpressionNode, object> read, Func<ExpressionNode, bool> usesFallback)
+        internal static ISet<ExpressionNode> Chosen(ExpressionNode root, Func<ExpressionNode, object> read,
+            Func<ExpressionNode, bool> usesFallback, Func<ExpressionNode, int, int, object> readExtremumArgument = null)
         {
             if (root == null) throw new ArgumentNullException("root");
             if (read == null) throw new ArgumentNullException("read");
@@ -39,6 +40,7 @@ namespace FormulaExplorer
                 ExpressionNode node = pending.Pop();
                 string function = FormulaSyntax.FunctionName(node);
                 HashSet<int> tested = null; int choice = -1;
+                int firstExtremumArgument = ExtremumFirstArgument(function);
                 if (Supports(function))
                 {
                     tested = new HashSet<int>();
@@ -49,6 +51,8 @@ namespace FormulaExplorer
                         return child.Kind == "Missing argument" || IsLambda(child) ? Type.Missing : UnwrapSingleValue(read(child));
                     });
                 }
+                else if (firstExtremumArgument >= 0)
+                    choice = ChooseExtremum(node, firstExtremumArgument, read, readExtremumArgument);
                 else if (usesFallback != null)
                 {
                     int fallback = function == "FILTER" ? 2 : function == "XLOOKUP" ? 3 : -1;
@@ -59,6 +63,41 @@ namespace FormulaExplorer
                     if (choice < 0 || i == choice || (tested != null && tested.Contains(i))) pending.Push(node.Children[i]);
             }
             return chosen;
+        }
+
+        static int ExtremumFirstArgument(string function)
+        {
+            switch (function)
+            {
+                case "MIN": case "MAX": case "MINA": case "MAXA": return 0;
+                case "SUBTOTAL": return 1;
+                case "AGGREGATE": return 2;
+                default: return -1;
+            }
+        }
+
+        static int ChooseExtremum(ExpressionNode node, int first, Func<ExpressionNode, object> read,
+            Func<ExpressionNode, int, int, object> readArgument)
+        {
+            if (node.Children.Count < 2 || node.Children.Count <= first) return -1;
+            if (first != 0)
+            {
+                double? mode = IndexValue(UnwrapSingleValue(read(node.Children[0])));
+                if (mode != 4 && mode != 5) return -1;
+            }
+            object value = UnwrapSingleValue(read(node));
+            int? error = ErrorCode(value);
+            if (value == null || error == 2015 || error == 2023 || error == 2029) return -1;
+            FormulaCriterion criterion = FormulaCriterion.Create(value, CultureInfo.CurrentCulture, false);
+            if (criterion == null) return -1;
+            for (int i = first; i < node.Children.Count; i++)
+            {
+                ExpressionNode child = node.Children[i];
+                if (child.Kind == "Missing argument" || IsLambda(child)) continue;
+                object argument = readArgument == null ? read(child) : readArgument(node, i, first);
+                if (criterion.Matches(UnwrapSingleValue(argument))) return i;
+            }
+            return -1;
         }
 
         static bool IsLambda(ExpressionNode node)

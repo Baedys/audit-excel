@@ -19,6 +19,14 @@ public static class ExcelFormulaBranchesTests
         var chosen = bridge.EvaluateBranches(book, owner, FormulaSyntax.Parse(owner.Formula));
         Equal(String.Join("|", chosen.OrderBy(node => node.Start).Select(node => node.Text)), String.Join("|", expected), address + " " + owner.Formula);
     }
+    static void ExtremumChoice(ExcelBridge bridge, Book book, string address, int? expected)
+    {
+        Cell owner = book.Get("Choices", address);
+        ExpressionNode root = FormulaSyntax.Parse(owner.Formula);
+        var chosen = bridge.EvaluateBranches(book, owner, root);
+        Equal(chosen.Count, expected.HasValue ? 1 : 0, address + " choice count");
+        if (expected.HasValue) Equal(chosen.Contains(root.Children[expected.Value]), true, address + " chosen argument index");
+    }
     public static int Run()
     {
         checks = 0;
@@ -52,6 +60,8 @@ public static class ExcelFormulaBranchesTests
             keep(sheet.Range["K6"]).Formula2 = "=\"alpha\"";
             keep(sheet.Range["K7"]).Formula2 = "=\"beta\"";
             keep(sheet.Range["K8"]).Formula2 = "=\"gamma\"";
+            keep(sheet.Range["K9"]).Value2 = true;
+            keep(sheet.Range["K10"]).Formula2 = "=\"30\"";
             var fallbacks = new[] {
                 Tuple.Create("=FILTER($J$2:$J$4,$J$2:$J$4>100,151)", "151"),
                 Tuple.Create("=FILTER($J$2:$J$4,$J$2:$J$4>15,152)", (string)null),
@@ -81,6 +91,19 @@ public static class ExcelFormulaBranchesTests
                 Tuple.Create("=XLOOKUP(77,$J$2:$J$4,$J$2:$J$4)", (string)null)
             };
             for (int i = 0; i < fallbacks.Length; i++) keep(sheet.Range["B" + (30 + 4 * i)]).Formula2 = fallbacks[i].Item1;
+            string[] extrema = {
+                "=MIN($J$2:$J$4,5,5+0)", "=MAX($J$2:$J$4,$J$4,25)", "=MINA(TRUE,1,4)", "=MINA($K$6,0,1)",
+                "=MAX($J$4,30,25)", "=MAX($J$2:$J$4,25)", "=MAX(NA(),17,NA())", "=MIN(1/0,5)",
+                "=AGGREGATE(4,6,$J$2:$J$4,$J$4)", "=SUBTOTAL(5,$J$2:$J$4,$J$2)",
+                "=AGGREGATE(14,6,$J$2:$J$4,2)", "=MIN({5},7)", "=MAX(4,3,4)",
+                "=MAX($K$10,$J$4,25)", "=MIN(ROUND(0.34,0),0)", "=MIN(VALUE(\"abc\"),7)",
+                "=MIN($J$2:$J$4)", "=MIN({5,9},7)", "=SUBTOTAL(105,$J$2:$J$4,$J$2)",
+                "=AGGREGATE(4,6,$J$2:$J$4)", "=SUBTOTAL(4,$J$2:$J$4)", "=MAXA($K$9,0)"
+            };
+            int?[] selectedArguments = { 1, 0, 1, 1, 0, 0, 0, 0, 2, 1, null, 0, 0, 0, 0, null, null, null, null, 2, 1, null };
+            for (int i = 0; i < extrema.Length; i++) keep(sheet.Range["B" + (200 + i)]).Formula2 = extrema[i];
+            keep(sheet.Range["B230"]).Formula2 = "=MIN(1,IF(TRUE,2,3),4)";
+            keep(sheet.Range["B231"]).Formula2 = "=LET(k,4,AGGREGATE(k,6,$J$2:$J$4,$J$4))";
             sheet.Activate();
             keep(sheet.Range["G1:G2"]).Select(); keep(sheet.Range["G2"]).Activate();
             var bridge = new ExcelBridge(application); Book book = bridge.Capture(workbook);
@@ -92,6 +115,9 @@ public static class ExcelFormulaBranchesTests
             Choice(bridge, book, "B13"); Choice(bridge, book, "B14", "141");
             for (int i = 0; i < fallbacks.Length; i++)
                 Choice(bridge, book, "B" + (30 + 4 * i), fallbacks[i].Item2 == null ? new string[0] : new[] { fallbacks[i].Item2 });
+            for (int i = 0; i < extrema.Length; i++) ExtremumChoice(bridge, book, "B" + (200 + i), selectedArguments[i]);
+            Choice(bridge, book, "B230", "1");
+            Choice(bridge, book, "B231", "$J$2:$J$4");
             Equal((string)keep(app.Selection).Address, "$G$1:$G$2", "selection restored");
             Equal((string)keep(app.ActiveCell).Address, "$G$2", "active cell restored");
             Equal((bool)app.EnableEvents, events, "events restored");
@@ -141,6 +167,12 @@ public static class ExcelFormulaBranchesTests
                 catch (TargetInvocationException error) { stale = error.InnerException is InvalidOperationException; }
                 Equal(stale, true, "changed owner formula is detected");
                 Equal(root.Nodes[2].NodeFont, null, "failed evaluation clears the old marker");
+                toggle.Checked = true;
+                typeof(MainForm).GetMethod("SetBook", members).Invoke(form, new object[] { book, "Choices", "B201" });
+                root = tree.Nodes[0];
+                Equal(root.Text.StartsWith("$J$4 ← MAX", StringComparison.Ordinal), true, "extremum cell location displayed separately");
+                Equal(root.Nodes[0].NodeFont != null && root.Nodes[0].NodeFont.Bold, true, "winning range argument is bold");
+                Equal(root.Nodes[1].NodeFont, null, "later tied reference stays regular");
             }
         }
         finally

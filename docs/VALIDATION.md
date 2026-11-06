@@ -1,5 +1,24 @@
 # Revue et validation
 
+## Argument retenu pour un extrémum — 6 novembre 2026
+
+Le gras d'Arixcel 9.0.9623.19616 et celui calculé par Clair concordent sur dix formules de `ArixcelExtremumChoices.xlsx`. Les copies ouvertes dans Excel ont le même SHA-256. La comparaison identifie chaque argument par sa position, même lorsque deux arguments ont le même texte.
+
+| Cellule | Formule ou cas | Argument en gras |
+| --- | --- | --- |
+| `B2` | `MIN` avec `5` et `5+0` à égalité | `5` |
+| `B3` | `MAX` avec une plage puis sa cellule maximale | `$G$2:$G$4` |
+| `B4` | `MINA(TRUE,1,4)` | `1` |
+| `B8` | `MAX(NA(),17,NA())` | Premier `NA()` |
+| `B10` | `AGGREGATE` mode 4 | `$G$2:$G$4` |
+| `B11` | `SUBTOTAL` mode 5 | `$G$2:$G$4` |
+| `B12` | `AGGREGATE` mode 14 | Aucun |
+| `B13` | `MIN({5},7)` | `{5}` |
+| `B14` | `MIN(1,IF(TRUE,2,3),4)` | `1`. Le `IF` reste consultable avec ses arguments en texte normal. |
+| `B16` | `MAX` avec une cellule contenant le texte `30` avant le nombre `30` | `$H$3` |
+
+Les **106 contrôles Excel** des branches incluent le gras et l'adresse dans le volet, le contexte `LET`, les modes 4 et 5 et les tableaux de plusieurs éléments. Les modules des cibles (**97 contrôles**) et des critères (**167**) passent séparément sur le même binaire. Les **68 groupes sans Excel** passent, dont **164 assertions** sur les choix et **31** nouvelles sur les extrémums. La comparaison ci-dessus porte sur les repères de l'arbre. L'aperçu de plage conserve ses valeurs brutes. La sélection d'une feuille dans une référence 3D reste à valider.
+
 ## Groupes de filtres et cellules d'extrémum — 6 novembre 2026
 
 Arixcel 9.0.9623.19616 et Clair ont ouvert deux copies de `ArixcelCriteriaGroups.xlsx` au même SHA-256. Les sept adresses et les deux emplacements vides ci-dessous concordent. Les adresses sont présentées dans la notation d'Arixcel.

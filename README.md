@@ -83,6 +83,8 @@ Pour `INDEX`, `OFFSET`, `INDIRECT` et les recherches prises en charge, l'arbre a
 
 Pour `SUMIF`, `COUNTIF`, `AVERAGEIF` et leurs variantes à plusieurs critères, le volet affiche les zones retenues. Les groupes **Filtre** montrent les cellules de chaque critère et gardent la plage et le critère consultables. `FILTER` distingue la plage renvoyée de la source d'un masque issu d'une comparaison directe. `MIN`, `MAX`, `MINA`, `MAXA`, `MINIFS`, `MAXIFS`, `SMALL`, `LARGE` et certains modes de `SUBTOTAL` et `AGGREGATE` peuvent pointer vers la cellule du résultat. L'aperçu de la formule affiche la valeur calculée par Excel. [Validation](docs/VALIDATION.md)
 
+`MIN`, `MAX`, `MINA`, `MAXA`, ainsi que `SUBTOTAL` et `AGGREGATE` en modes 4 et 5, mettent en gras le premier argument qui correspond au résultat. Une plage peut être en gras pendant que la fonction affiche l'adresse de la cellule correspondante. [Validation des arguments retenus](docs/VALIDATION.md)
+
 Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 
 Pour comparer : chargez le premier état, ouvrez **Comparaison**, puis **Mémoriser référence**. Modifiez le classeur ou activez un autre classeur dans Excel, puis cliquez sur **Comparer classeur Excel actif**. Les cellules sont appariées par nom de feuille et adresse. En mode formules, un changement de résultat calculé seul n'est pas une différence ; activez **Valeurs calculées** pour le comparer.
