@@ -98,18 +98,23 @@ namespace FormulaExplorer
         {
             if (root == null) throw new ArgumentNullException("root");
             if (!FormulaSyntax.Flatten(root).Any(FormulaBranches.Supports)) return new HashSet<ExpressionNode>();
-            return WithExpressionContext(book, owner, true, (sheet, range) => FormulaBranches.Chosen(root,
+            return WithExpressionContext(book, owner, true, (sheet, range) => ReadExpressionBranches(sheet, range, root));
+        }
+
+        static ISet<ExpressionNode> ReadExpressionBranches(object sheet, object range, ExpressionNode root)
+        {
+            return FormulaBranches.Chosen(root,
                 operand => ReadBranchWitness(sheet, range, root, operand, ReadBranchValue, Type.Missing),
-                function => UsesFallback(sheet, range, root, function)));
+                function => UsesFallback(sheet, range, root, function));
         }
 
         static T ReadBranchWitness<T>(object sheet, object range, ExpressionNode root, ExpressionNode operand,
-            Func<object, T> read, T unavailable, string replacement = null)
+            Func<object, T> read, T unavailable, string replacement = null, bool evaluateOnApplication = false)
         {
             try
             {
                 string text = PrepareExpression(FormulaSyntax.EvaluationText(root, operand, replacement));
-                return ReadExpression(sheet, range, text, read);
+                return ReadExpression(sheet, range, text, read, evaluateOnApplication);
             }
             catch (InvalidOperationException) { return unavailable; }
             catch (FormatException) { return unavailable; }
@@ -125,13 +130,18 @@ namespace FormulaExplorer
             return text;
         }
 
-        static T ReadExpression<T>(object sheet, object range, string text, Func<object, T> read)
+        static T ReadExpression<T>(object sheet, object range, string text, Func<object, T> read, bool evaluateOnApplication = false)
         {
             string contextual = QualifyTableReferences(range, text);
             if (contextual.Length > 255) throw new InvalidOperationException("Expression contextualisée au-delà de la limite Excel Evaluate de 255 caractères.");
-            object result = OfficeCall(sheet, "Evaluate", BindingFlags.InvokeMethod, contextual);
-            try { return read(result); }
-            finally { Release(result); }
+            object app = null, result = null;
+            try
+            {
+                if (evaluateOnApplication) app = ((dynamic)sheet).Application;
+                result = OfficeCall(app ?? sheet, "Evaluate", BindingFlags.InvokeMethod, contextual);
+                return read(result);
+            }
+            finally { Release(result); Release(app); }
         }
 
         static readonly object[] multipleBranchCells = new object[0];
@@ -168,7 +178,7 @@ namespace FormulaExplorer
                         String.Equals((string)((dynamic)priorActive).Address[true, true, 1, true],
                             (string)((dynamic)range).Address[true, true, 1, true], StringComparison.OrdinalIgnoreCase);
                     if (preserveGroups && !alreadyAtOwner && ExcelConditionalFillContext.HasGroupedWindow(priorWindow, worksheet))
-                        throw new InvalidOperationException("Activez la cellule de formule pour analyser ses branches lorsque des feuilles sont groupées.");
+                        throw new InvalidOperationException("Activez la cellule de formule pour analyser ses expressions lorsque des feuilles sont groupées.");
                     changedFlags = true; app.EnableEvents = false; app.ScreenUpdating = false;
                     if (!alreadyAtOwner) { moved = true; app.Goto(range, false); }
                     return evaluate(worksheet, range);

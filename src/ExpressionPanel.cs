@@ -12,6 +12,7 @@ namespace FormulaExplorer
         readonly TextBox expressionValue = new TextBox();
         readonly Stack<FormulaChange> formulaChanges = new Stack<FormulaChange>();
         readonly CheckBox evaluateOnSelect = new CheckBox();
+        Dictionary<ExpressionNode, ExpressionTarget> expressionTargets = new Dictionary<ExpressionNode, ExpressionTarget>();
         ExpressionNode syntaxRoot;
         Cell expressionOwner;
         bool buildingExpressions;
@@ -30,16 +31,30 @@ namespace FormulaExplorer
             expressions.Dock = DockStyle.Fill; expressions.HideSelection = false; expressions.BorderStyle = BorderStyle.FixedSingle;
             expressions.AccessibleName = "Sous-expressions de la formule";
             expressions.ShowNodeToolTips = true;
-            Disposed += delegate { if (chosenExpressionFont != null) chosenExpressionFont.Dispose(); };
+            var targetMenu = new ContextMenuStrip();
+            var goToTarget = new ToolStripMenuItem("Aller à la cible dans Excel");
+            goToTarget.Click += delegate { NavigateSelectedExpression(); };
+            targetMenu.Items.Add(goToTarget);
+            targetMenu.Opening += delegate(object sender, System.ComponentModel.CancelEventArgs e) { e.Cancel = !CanNavigateSelectedExpression(); };
+            expressions.ContextMenuStrip = targetMenu;
+            Disposed += delegate { targetMenu.Dispose(); if (chosenExpressionFont != null) chosenExpressionFont.Dispose(); };
+            expressions.NodeMouseClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
+            { if (e.Button == MouseButtons.Right) expressions.SelectedNode = e.Node; };
+            expressions.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.KeyCode != Keys.Enter || !CanNavigateSelectedExpression()) return;
+                e.Handled = e.SuppressKeyPress = true;
+                NavigateSelectedExpression();
+            };
             evaluateOnSelect.CheckedChanged += delegate
             {
-                string warning = MarkExpressionBranches(evaluateOnSelect.Checked);
+                string warning = RefreshExpressionAnnotations(evaluateOnSelect.Checked);
                 if (warning != null) expressionValue.Text = warning;
             };
             tabs.SelectedIndexChanged += delegate
             {
                 if (tabs.SelectedIndex != 0 || !evaluateOnSelect.Checked || updatingExplorer) return;
-                string warning = MarkExpressionBranches(true);
+                string warning = RefreshExpressionAnnotations(true);
                 if (warning != null) expressionValue.Text = warning;
             };
             expressions.AfterSelect += delegate
@@ -63,21 +78,26 @@ namespace FormulaExplorer
         }
         static TreeNode ExpressionTree(ExpressionNode expression)
         {
-            string text = expression.Text.Replace("\r", " ").Replace("\n", " ");
-            if (expression.Kind == "Missing argument") text = "(argument omis)";
-            var node = new TreeNode(text.Length > 180 ? text.Substring(0, 177) + "…" : text) { Tag = expression, ToolTipText = ExpressionToolTip(expression) };
+            var node = new TreeNode(ExpressionNodeText(expression)) { Tag = expression, ToolTipText = ExpressionToolTip(expression) };
             foreach (ExpressionNode child in expression.Children) node.Nodes.Add(ExpressionTree(child));
             return node;
         }
+        static string ExpressionNodeText(ExpressionNode expression)
+        {
+            if (expression.Kind == "Missing argument") return "(argument omis)";
+            string text = expression.Text.Replace("\r", " ").Replace("\n", " ");
+            return text.Length > 180 ? text.Substring(0, 177) + "…" : text;
+        }
         static string ExpressionToolTip(ExpressionNode expression) { return expression.Kind + " · " + expression.Text; }
 
-        string MarkExpressionBranches(bool evaluate)
+        string RefreshExpressionAnnotations(bool evaluate)
         {
             ISet<ExpressionNode> chosen = null;
+            expressionTargets.Clear();
             string warning = null;
             if (evaluate && bridge != null && syntaxRoot != null && expressionOwner != null)
             {
-                try { chosen = bridge.EvaluateBranches(book, expressionOwner, syntaxRoot); }
+                try { bridge.ReadExpressionAnnotations(book, expressionOwner, syntaxRoot, out chosen, out expressionTargets); }
                 catch (InvalidOperationException error) { warning = error.Message; }
                 catch (COMException error) { warning = error.Message; }
             }
@@ -90,22 +110,32 @@ namespace FormulaExplorer
                 TreeNode node = pending.Pop();
                 var expression = (ExpressionNode)node.Tag;
                 bool selectedBranch = chosen != null && chosen.Contains(expression);
+                ExpressionTarget target;
+                expressionTargets.TryGetValue(expression, out target);
                 node.NodeFont = selectedBranch ? chosenExpressionFont : null;
-                node.ToolTipText = ExpressionToolTip(expression) + (selectedBranch ? " · Branche retenue" : "");
+                ShowExpressionTarget(node, expression, target);
                 foreach (TreeNode child in node.Nodes) pending.Push(child);
             }
-            return warning == null ? null : "Branches indisponibles. " + warning;
+            return warning == null ? null : "Branches et cibles indisponibles. " + warning;
+        }
+        void ShowExpressionTarget(TreeNode node, ExpressionNode expression, ExpressionTarget target)
+        {
+            string text = (target == null ? "" : target.Display(book, expressionOwner) + " ← ") + ExpressionNodeText(expression);
+            if (node.Text != text) node.Text = text;
+            node.ToolTipText = ExpressionToolTip(expression) + (node.NodeFont == null ? "" : " · Branche retenue") +
+                (target == null ? "" : "\nCible Excel · " + target.ExternalAddress + " · Entrée pour y aller");
         }
         void ShowExpression(Cell cell)
         {
             expressionOwner = cell; syntaxRoot = null; buildingExpressions = true;
+            expressionTargets.Clear();
             expressions.BeginUpdate(); expressions.Nodes.Clear(); expressionValue.Clear();
             try
             {
                 if (!cell.IsFormula) { expressionValue.Text = cell.Value; return; }
                 syntaxRoot = FormulaSyntax.Parse(cell.Formula);
                 TreeNode node = ExpressionTree(syntaxRoot); expressions.Nodes.Add(node); node.Expand(); expressions.SelectedNode = node;
-                string warning = MarkExpressionBranches(tabs.SelectedIndex == 0 && evaluateOnSelect.Checked);
+                string warning = RefreshExpressionAnnotations(tabs.SelectedIndex == 0 && evaluateOnSelect.Checked);
                 expressionValue.ForeColor = SystemColors.WindowText;
                 expressionValue.Text = "Valeur capturée : " + cell.Value + "\r\n" + (warning ?? "Sélectionnez un élément pour examiner sa valeur.");
             }
@@ -123,13 +153,36 @@ namespace FormulaExplorer
             ExpressionNode node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             if (node == null || expressionOwner == null || syntaxRoot == null) return;
             ExpressionValue value;
-            try { value = bridge.Evaluate(book, expressionOwner, FormulaSyntax.EvaluationText(syntaxRoot, node)); }
-            catch { MarkExpressionBranches(false); throw; }
-            string warning = MarkExpressionBranches(true);
+            try { value = bridge.EvaluateExpressionNode(book, expressionOwner, syntaxRoot, node); }
+            catch { RefreshExpressionAnnotations(false); throw; }
+            string warning = RefreshExpressionAnnotations(true);
+            ExpressionTarget target;
+            expressionTargets.TryGetValue(node, out target);
             expressionValue.ForeColor = value.IsError ? Color.Firebrick : Color.FromArgb(25, 80, 60);
-            expressionValue.Text = (value.Reference == null ? "" : value.Reference + "\r\n") + value.Text +
+            string location = target == null ? value.Reference : target.ExternalAddress;
+            expressionValue.Text = (location == null ? "" : location + "\r\n") + value.Text +
                 (value.Truncated ? "\r\nAperçu limité à 10 lignes × 5 colonnes, 8 zones." : "") + (warning == null ? "" : "\r\n" + warning);
             status.Text = "Expression calculée dans " + expressionOwner.Location + " · sélection Excel restaurée";
+        }
+        bool CanNavigateSelectedExpression()
+        {
+            var node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
+            return bridge != null && expressionOwner != null && syntaxRoot != null && node != null && ExcelBridge.SupportsExpressionTarget(node);
+        }
+        void NavigateSelectedExpression()
+        {
+            if (!CanNavigateSelectedExpression()) return;
+            TreeNode selected = expressions.SelectedNode;
+            var expression = (ExpressionNode)selected.Tag;
+            try
+            {
+                ExpressionTarget target = bridge.NavigateExpressionTarget(book, expressionOwner, syntaxRoot, expression);
+                expressionTargets[expression] = target;
+                ShowExpressionTarget(selected, expression, target);
+                status.Text = "Cible sélectionnée dans Excel";
+            }
+            catch (InvalidOperationException error) { expressionValue.Text = error.Message; }
+            catch (COMException error) { expressionValue.Text = error.Message; }
         }
         void EditSelectedFormula()
         {

@@ -1,5 +1,21 @@
 # Revue et validation
 
+## Cibles effectives des formules — 6 novembre 2026
+
+Les adresses ci-dessous ont été lues dans la colonne **Location** d'Arixcel 9.0.9623.19616 dans Excel, sur un classeur jetable. Le repère appartient à la fonction. La racine de l'explorateur original indique la cellule source.
+
+| Cellule | Fonction | Plage observée |
+| --- | --- | --- |
+| `B2` | `INDEX` sur deux colonnes | `Data!C3` |
+| `B3` | `OFFSET` dans `SUM` | `Data!B3:B4` sur les deux nœuds |
+| `B4` | `INDIRECT` interfeuille dans `SUM` | `Data!B3:B4` sur les deux nœuds |
+| `B5` | `VLOOKUP` exact | `Data!C3` |
+| `B7` | `XLOOKUP` sur une plage de retour | `Data!C3` |
+
+Clair retrouve les **sept emplacements** dans une copie identique du classeur, vérifiée par SHA-256. Les valeurs des cinq cellules concordent aussi. Le contrôle Clair passe par le moteur connecté à Excel.
+
+Les **97 contrôles Excel** couvrent aussi `HLOOKUP`, `LOOKUP`, `MATCH`, `XMATCH`, les erreurs sans cible, les références interclasseurs, le volet et la navigation après modification de la clé. Les **63 contrôles Excel** des branches et les **67 groupes sans Excel** passent sur le même binaire. Les tests distinguent la valeur d'une expression de sa cible. La conversion R1C1 utilise la cellule source comme point d'ancrage. Les cibles matricielles synthétiques restent hors de ce contrôle. [Application.ConvertFormula](https://learn.microsoft.com/en-us/office/vba/api/excel.application.convertformula)
+
 ## Palette de carte dans le volet — 6 novembre 2026
 
 - **67 groupes sans Excel réussis**. Les nouveaux groupes couvrent **69 assertions** de profils JSON Arixcel et de persistance XML, ainsi que **19 contrôles** de la palette du volet. Les anciens profils Clair restent lisibles. Les rendus à **320 × 540** et **420 × 650** montrent une liste défilante et les commandes de pied de volet accessibles.

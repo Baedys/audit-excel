@@ -130,7 +130,7 @@ namespace FormulaExplorer
             catch (OverflowException) { return null; }
         }
 
-        static bool? BooleanValue(object value)
+        internal static bool? BooleanValue(object value)
         {
             if (value == null) return false;
             if (value is bool) return (bool)value;
@@ -142,7 +142,7 @@ namespace FormulaExplorer
             return number.HasValue ? (bool?)(number.Value != 0) : null;
         }
 
-        static double? IndexValue(object value)
+        internal static double? IndexValue(object value)
         {
             if (value == null) return 0;
             if (value is bool) return (bool)value ? 1 : 0;

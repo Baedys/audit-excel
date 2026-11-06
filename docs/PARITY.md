@@ -46,6 +46,12 @@ Pour `FILTER`, le code distingue un masque booléen établi d'un tableau brut. L
 
 Les masques transmis par des noms définis, les comparaisons matricielles avec erreurs, les plages synthétiques issues d'une recherche matricielle, l'intersection implicite complexe et `LAMBDA` restent à comparer. Le graphe des références reste lexical. [Validation](VALIDATION.md)
 
+## Cibles effectives dans le volet Formule
+
+F04 associe une adresse au nœud de fonction et garde son résultat dans l'aperçu. `ResolveRangeOfFunction` (RVA `174880`) et `ResolveDisplayProperties` (RVA `163476`) d'Arixcel séparent la plage physique de la valeur affichée. Pour les formes scalaires de `VLOOKUP`, `HLOOKUP` et `LOOKUP`, le CIL (RVA `178948` et `179532`) passe par un `MATCH` puis un `INDEX`. `MATCH` et `XMATCH` utilisent leur position calculée. `INDIRECT` à référence relative est ancré sur la cellule source avant lecture de la plage. La propagation de la cible vers une somme à argument unique a été observée dans le produit original.
+
+Clair utilise les plages renvoyées par Excel pour `INDEX`, `OFFSET`, `INDIRECT` et `XLOOKUP`, et reconstruit les cibles scalaires des autres recherches. Il recalcule la cible avant navigation. Les unions synthétiques produites par une recherche matricielle, la propagation générale aux agrégats et certains contextes `LET` et `LAMBDA` restent à comparer. Les adresses du volet complètent le graphe lexical. [Validation](VALIDATION.md)
+
 ## Sources et limites
 
 | Repère | Preuve réutilisée | Portée |

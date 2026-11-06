@@ -179,6 +179,7 @@ static class Tests
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });
             Check("Excel direct highlight lifecycle session", delegate { ExcelDirectHighlightsTests.Run(); });
+            Check("Excel effective expression targets", delegate { ExcelExpressionTargetTests.Run(); });
             Check("Excel direct map window session", delegate { MapDirectPanelTests.Run(); });
             Check("Excel retained map areas", delegate { ExcelMapRangesTests.Run(); });
             Check("Excel map selection geometry", delegate { ExcelMapSelectionTests.Run(); });
