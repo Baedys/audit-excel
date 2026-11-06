@@ -41,7 +41,8 @@ namespace FormulaExplorer
                 "<button id=\"ClairClose\" label=\"Tout fermer\" imageMso=\"CloseAll\" onAction=\"CloseAll\"/>" +
                 "</group><group id=\"ClairAnalysis\" label=\"Analyse\">" +
                 "<splitButton id=\"ClairMapSplit\" size=\"large\"><button id=\"ClairMap\" label=\"Carte des cellules\" imageMso=\"ConditionalFormattingColorScalesGallery\" onAction=\"ShowMap\"/>" +
-                "<menu id=\"ClairMapMenu\"><button id=\"ClairMapPane\" label=\"Ouvrir le volet Carte\" onAction=\"ShowMapPane\"/></menu></splitButton>" +
+                "<menu id=\"ClairMapMenu\"><button id=\"ClairMapPane\" label=\"Ouvrir le volet Carte\" onAction=\"ShowMapPane\"/>" +
+                "<button id=\"ClairMapPalette\" label=\"Couleurs de carte\" onAction=\"ShowMapPalette\"/></menu></splitButton>" +
                 "<button id=\"ClairFlow\" label=\"Flux de calcul\" size=\"large\" imageMso=\"TracePrecedents\" onAction=\"ShowFlow\"/>" +
                 "<button id=\"ClairCompare\" label=\"Comparer\" size=\"large\" imageMso=\"CompareAndMergeWorkbooks\" onAction=\"ShowComparison\"/>" +
                 "</group><group id=\"ClairColors\" label=\"Couleurs directes\">" +
@@ -82,6 +83,7 @@ namespace FormulaExplorer
             catch (Exception error) { MessageBox.Show(error.Message, "Clair"); }
         }
         public void ShowMapPane([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("map"); }
+        public void ShowMapPalette([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("map-palette"); }
         public void ShowFlow([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("flow"); }
         public void ShowComparison([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("compare"); }
         public void CloseAll([MarshalAs(UnmanagedType.IDispatch)] object control) { ClosePanes(false); }

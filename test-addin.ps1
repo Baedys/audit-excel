@@ -94,7 +94,7 @@ try {
     if (-not $automation.IsRibbonLoaded()) { throw 'Excel did not invoke the ribbon onLoad callback.' }
     if (-not $automation.IsTaskPaneFactoryAvailable()) { throw 'Excel did not call CTPFactoryAvailable.' }
     [xml]$ribbon = $automation.GetCustomUI('Microsoft.Excel.Workbook')
-    if ($ribbon.OuterXml -notmatch 'ClairTab') { throw 'Ribbon XML missing ClairTab.' }
+    if ($ribbon.OuterXml -notmatch 'ClairTab' -or $ribbon.OuterXml -notmatch 'onAction="ShowMapPalette"') { throw 'Ribbon XML missing ClairTab or map palette callback.' }
     'PASS Excel COM activation, ribbon onLoad, ribbon XML and native task pane factory'
     # Callbacks do not inspect IRibbonControl. Supply a real IDispatch rather
     # than PowerShell's $null (VT_EMPTY), which is not a COM interface pointer.
@@ -124,10 +124,13 @@ try {
     $automation.ExploreDependents($excel)
     $automation.ShowFlow($excel)
     $automation.ShowMapPane($excel)
+    $automation.ShowMapPalette($excel)
+    if ($automation.OpenWindowCount() -ne 1) { throw 'Map palette did not reuse the docked task pane.' }
+    $automation.ShowMapPalette($excel)
     $automation.ShowComparison($excel)
     if ($automation.OpenWindowCount() -ne 1) { throw 'Ribbon commands did not reuse the task pane in the current Excel window.' }
     if (@([ExcelHost]::WindowThreadIds($ownedProcess.Id, 'Clair ')).Count -ne 0) { throw 'A floating Clair explorer was created.' }
-    'PASS worksheet space reserved on the right, all four views reuse one pane, no floating explorer'
+    'PASS worksheet space reserved on the right, all four views and the map palette reuse one pane, no floating explorer'
     $secondWindow = $workbook.NewWindow()
     $secondWindow.Activate()
     if ([int]$excel.Hwnd -eq $firstHwnd) { throw 'The new workbook window has no separate HWND.' }

@@ -48,12 +48,19 @@ namespace FormulaExplorer
             }
             public void RefreshViews()
             {
+                foreach (MainForm view in LiveViews()) { view.ShowMap(); view.RefreshMapPalette(); }
+            }
+            public void CloseOtherPalettes(MainForm owner)
+            {
+                foreach (MainForm view in LiveViews()) if (!Object.ReferenceEquals(view, owner)) view.CloseMapPalette();
+            }
+            IEnumerable<MainForm> LiveViews()
+            {
                 foreach (WeakReference reference in views.ToList())
                 {
                     var view = reference.Target as MainForm; MapDirectSession current;
                     if (view != null && !view.IsDisposed && view.bridge != null &&
-                        mapDirectSessions.TryGetValue(view.bridge.DirectHighlightSessionId, out current) && Object.ReferenceEquals(current, this))
-                        view.ShowMap();
+                        mapDirectSessions.TryGetValue(view.bridge.DirectHighlightSessionId, out current) && Object.ReferenceEquals(current, this)) yield return view;
                 }
             }
         }
@@ -221,6 +228,12 @@ namespace FormulaExplorer
         {
             if (bridge == null) return;
             MapDirectSession state = MapDirectState(bridge); HighlightPalette palette = state.Palette;
+            var analyses = PrepareMapDirectPalette(state, palette);
+            ApplyMapDirectPalette(state, palette, analyses);
+            state.RefreshViews();
+        }
+        static Dictionary<MapDirectModel, MapDirectReanalysis> PrepareMapDirectPalette(MapDirectSession state, HighlightPalette palette)
+        {
             PruneInvalidMapDirectModels(state);
             if (state.Models.Any(m => m.Active && !m.Ready))
                 throw new InvalidOperationException("Une carte a été interrompue. Cliquez sur « Colorer dans Excel » avant de modifier à nouveau sa palette.");
@@ -229,6 +242,10 @@ namespace FormulaExplorer
             var analyses = new Dictionary<MapDirectModel, MapDirectReanalysis>();
             foreach (MapDirectModel model in state.Models.Where(m => m.Active && m.Ready))
                 if (MapRequiresReanalysis(model, palette)) analyses.Add(model, PrepareMapDirectReanalysis(model, palette));
+            return analyses;
+        }
+        static void ApplyMapDirectPalette(MapDirectSession state, HighlightPalette palette, Dictionary<MapDirectModel, MapDirectReanalysis> analyses)
+        {
             foreach (MapDirectModel model in state.Models.Where(m => m.Active && m.Ready).ToList())
             {
                 MapDirectReanalysis reanalysis;
@@ -245,7 +262,6 @@ namespace FormulaExplorer
                     MapDirectRequests(model, palette, true).Where(request => validSources.Contains(request.Cell.Key)));
                 model.AppliedPalette = palette.Clone(); model.Ready = true;
             }
-            state.RefreshViews();
         }
         void MapDirectHighlightsChanged(ExcelBridge connection, DirectHighlightChange change)
         {

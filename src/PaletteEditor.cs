@@ -145,7 +145,10 @@ namespace FormulaExplorer
                 },
                 delegate(string path) {
                     HighlightPalette replacement = HighlightPalette.Load(path);
-                    edited.AnalyzeUniqueFormulas = replacement.AnalyzeUniqueFormulas; return replacement.Entries;
+                    edited.AnalyzeUniqueFormulas = replacement.AnalyzeUniqueFormulas;
+                    edited.CustomColors.Clear();
+                    foreach (int? color in replacement.CustomColors) edited.CustomColors.Add(color);
+                    return replacement.Entries;
                 },
                 delegate(string path) { edited.Save(path); }, label, defaultPath, title, description,
                 delegate { return edited.AnalyzeUniqueFormulas; }, delegate(bool value) { edited.AnalyzeUniqueFormulas = value; });

@@ -19,6 +19,9 @@ namespace FormulaExplorer
         }
         readonly CheckBox mapAllSheets = new CheckBox();
         readonly Label mapSummary = new Label();
+        TableLayoutPanel mapLayout;
+        MapPalettePane mapPalettePane;
+        bool showingMapPalette;
         string mapLocalPaletteWarning;
         string paletteLoadWarning
         {
@@ -47,7 +50,7 @@ namespace FormulaExplorer
             bar.Controls.Add(mapAllSheets);
             bar.Controls.Add(ActionButton(IsDocked ? "Colorer" : "Colorer dans Excel", ApplyMap));
             bar.Controls.Add(ActionButton(IsDocked ? "Retirer" : "Retirer couleurs", RemoveMap));
-            Button paletteButton = ActionButton("Palette…", EditMapPalette); bar.Controls.Add(paletteButton); bar.SetFlowBreak(paletteButton, true);
+            Button paletteButton = ActionButton("Palette…", ToggleMapPalette); bar.Controls.Add(paletteButton); bar.SetFlowBreak(paletteButton, true);
             InitializeMapDirectCommands(bar);
             bar.Controls.Add(ActionButton(IsDocked ? "Rapport" : "Rapport carte", ExportMap));
             mapSummary.AutoSize = true; mapSummary.MaximumSize = new Size(690, 0); mapSummary.ForeColor = Color.DimGray;
@@ -124,7 +127,53 @@ namespace FormulaExplorer
             RemoveMapDirectModels(bridge, book, selectedSheets);
             status.Text = "Cartes de cette session Excel retirées sur " + selectedSheets.Length + " feuille(s), quelle que soit la fenêtre d'origine. Anciennes cartes CF : commande séparée.";
         }
-        void EditMapPalette()
+        void ToggleMapPalette()
+        {
+            if (showingMapPalette && tabs.SelectedIndex == 1) { CloseMapPalette(); return; }
+            if (bridge != null) MapDirectState(bridge).CloseOtherPalettes(this);
+            if (mapPalettePane == null)
+            {
+                mapPalettePane = new MapPalettePane(() => mapPalette, edited => CommitMapPalette(edited, PalettePath),
+                    CloseMapPalette, EditAdvancedMapPalette) { Dock = DockStyle.Fill };
+                tabs.TabPages[1].Controls.Add(mapPalettePane);
+            }
+            showingMapPalette = true; mapLayout.Hide(); mapPalettePane.Show(); mapPalettePane.BringToFront();
+            tabs.SelectedIndex = 1; RefreshMapPalette();
+        }
+        void CloseMapPalette()
+        {
+            if (!showingMapPalette) return;
+            showingMapPalette = false; mapPalettePane.Hide(); mapLayout.Show();
+        }
+        void RefreshMapPalette()
+        { if (showingMapPalette) mapPalettePane.RefreshProfile(); }
+
+        void CommitMapPalette(HighlightPalette edited, string path)
+        {
+            HighlightPalette current = mapPalette;
+            MapDirectSession state = bridge == null ? null : MapDirectState(bridge);
+            bool recolor = state != null && (current.AnalyzeUniqueFormulas != edited.AnalyzeUniqueFormulas ||
+                current.Entries.Any(pair =>
+                {
+                    HighlightStyle next = edited.Entries[pair.Key], before = pair.Value;
+                    return before.Enabled != next.Enabled || before.FillRgb != next.FillRgb || before.FontRgb != next.FontRgb;
+                }));
+            var analyses = recolor ? PrepareMapDirectPalette(state, edited) : null;
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
+            edited.Save(path);
+            mapPalette = edited; paletteLoadWarning = null;
+            try { if (recolor) ApplyMapDirectPalette(state, edited, analyses); }
+            catch (Exception error)
+            {
+                throw new InvalidOperationException("Palette enregistrée. La mise à jour des cartes a été interrompue. " + error.Message, error);
+            }
+            finally
+            {
+                if (state == null) { ShowMap(); RefreshMapPalette(); }
+                else state.RefreshViews();
+            }
+        }
+        void EditAdvancedMapPalette()
         {
             HighlightPalette edited = mapPalette.Clone();
             using (var dialog = MapPaletteEditor.Create(edited,
@@ -132,7 +181,7 @@ namespace FormulaExplorer
                 "Palette de la carte",
                 "Analyser les formules uniques distingue leurs références. Une couleur de validation active cette analyse ; la retirer reclasse les constantes. Couleurs et options mettent à jour toutes les cartes de cette session Excel."))
                 if (dialog.ShowDialog(this) == DialogResult.OK)
-                { mapPalette = edited; paletteLoadWarning = null; UpdateMapDirectPalette(); ShowMap(); }
+                { CommitMapPalette(edited, PalettePath); }
         }
         void ExportMap()
         {

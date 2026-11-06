@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using FormulaExplorer;
@@ -43,6 +44,11 @@ public static class MapAnalysisOptionsExcelTests
     static void Update(MainForm view)
     {
         try { typeof(MainForm).GetMethod("UpdateMapDirectPalette", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, null); }
+        catch (TargetInvocationException error) { throw error.InnerException ?? error; }
+    }
+    static void Commit(MainForm view, HighlightPalette palette, string path)
+    {
+        try { typeof(MainForm).GetMethod("CommitMapPalette", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(view, new object[] { palette, path }); }
         catch (TargetInvocationException error) { throw error.InnerException ?? error; }
     }
     static void Toggle(ExcelBridge bridge, object sheet, string address, int created, int removed)
@@ -147,6 +153,43 @@ public static class MapAnalysisOptionsExcelTests
             palette.AnalyzeUniqueFormulas = true; Update(view);
             Equal(Fill(blank), Ole(0x444444), "options preserve explicit sheet map's blank exclusions");
             Equal(Member(Models(bridge).Single(), "A1").Kind, FormulaMapKind.UniqueFormulaNoRefs, "explicit sheet map updates its unique classification");
+
+            view.ExecuteRibbonCommand("map-palette");
+            Equal(Field<bool>(view, "showingMapPalette"), true, "palette shown in map tab");
+            using (var other = new MainForm(bridge))
+            {
+                other.ExecuteRibbonCommand("map-palette");
+                Equal(Field<bool>(view, "showingMapPalette"), false, "moving editor closes previous view");
+                Equal(Field<bool>(other, "showingMapPalette"), true, "editor follows command to other view");
+                other.ExecuteRibbonCommand("map-palette");
+                Equal(Field<bool>(other, "showingMapPalette"), false, "repeat command returns to map");
+            }
+            string profile = Path.Combine(Path.GetTempPath(), "clair-live-map-" + Guid.NewGuid().ToString("N") + ".xml");
+            try
+            {
+                object model = Models(bridge).Single();
+                object a1 = Keep(sparse.Range["A1"]);
+                HighlightPalette edited = palette.Clone();
+                edited.Entries[FormulaMapKind.UniqueFormulaNoRefs].FillRgb = 0x2357AD;
+                edited.CustomColors.Clear();
+                edited.CustomColors.Add(0x234567);
+                Commit(view, edited, profile);
+                Equal(Fill(a1), Ole(0x2357AD), "live color changes active Excel cell");
+                Equal(Fill(blank), Ole(0x444444), "live color keeps excluded cells intact");
+                Equal(Object.ReferenceEquals(Models(bridge).Single(), model), true, "live color keeps map owner");
+                Equal(HighlightPalette.Load(profile).CustomColors.Single(), 0x234567, "live update persists full profile");
+                HighlightPalette denied = edited.Clone();
+                denied.Entries[FormulaMapKind.UniqueFormulaNoRefs].FillRgb = 0x123456;
+                bool rejected = false;
+                using (File.Open(profile, FileMode.Open, FileAccess.Read, FileShare.None))
+                    try { Commit(view, denied, profile); } catch (IOException) { rejected = true; }
+                Equal(rejected, true, "locked profile rejects update");
+                Equal(Fill(a1), Ole(0x2357AD), "rejected profile leaves Excel cell intact");
+                Equal(Field<HighlightPalette>(State(bridge), "Palette").Entries[FormulaMapKind.UniqueFormulaNoRefs].FillRgb,
+                    0x2357AD, "rejected profile leaves session palette intact");
+                Equal(ReadConditional(cfCell), cfBase, "live update preserves restored conditional fills");
+            }
+            finally { File.Delete(profile); }
             Console.WriteLine("MAP_ANALYSIS_OPTIONS_EXCEL_ASSERTIONS " + checks); return checks;
         }
         finally

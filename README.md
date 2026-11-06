@@ -65,7 +65,7 @@ Dans **Carte des cellules**, choisissez une feuille ou **Toutes les feuilles**, 
 
 Dans l'archive 0.6, **Palette…** règle les catégories et couleurs. **Aucun** laisse la propriété existante visible. **Utiliser** change la palette de cette fenêtre pour le prochain clic **Colorer dans Excel**. **Enregistrer par défaut** la conserve dans `%LOCALAPPDATA%\Clair\map-palette.xml`. Le XML importé/exporté utilise le format Clair. **Rapport carte** exporte toutes les catégories et les avertissements de la capture.
 
-Sur la branche de développement en brouillon, **Utiliser** met à jour les cartes directes de la session Excel. Désactiver **Analyser les références des formules uniques** regroupe leurs sous-types tout en gardant les directions de copie. Le style **Validation de données** active son analyse. Le profil XML Clair v2 conserve le réglage des formules uniques et l'import v1 garde l'analyse active par défaut. Voir le [registre de parité](docs/PARITY.md).
+Sur la branche de développement en brouillon, **Carte → Palette…** affiche les couleurs dans le volet latéral. Chaque modification s'applique aux cartes actives et s'enregistre pour les prochaines sessions. Désactiver **Analyser les formules uniques** regroupe leurs sous-types tout en gardant les directions de copie. Un style de validation actif déclenche son analyse. **Plus…** permet de rétablir les couleurs d'origine et d'échanger des profils JSON Arixcel. Pour conserver aussi les polices et les catégories propres à Clair, utilisez le format XML Clair. [Registre de parité](docs/PARITY.md)
 
 Pour ajouter le ruban à Excel :
 
@@ -75,7 +75,7 @@ Pour ajouter le ruban à Excel :
 # Pour désinstaller : .\install-addin.ps1 -Uninstall
 ```
 
-Sur la branche de développement, **Clair → Antécédents** ouvre le volet **Formule**, ancré à droite de la feuille. **Dépendants** change le sens dans le même volet. Les onglets **Carte**, **Flux** et **Comparer** donnent accès aux autres analyses. Le bouton principal **Carte des cellules** bascule les couleurs sur la grille. Sa flèche ouvre le volet Carte. Redimensionnez le volet à la souris ou fermez-le avec sa croix pour retrouver toute la largeur de la feuille.
+Sur la branche de développement, **Clair → Antécédents** ouvre le volet **Formule**, ancré à droite de la feuille. **Dépendants** change le sens dans le même volet. Les onglets **Carte**, **Flux** et **Comparer** donnent accès aux autres analyses. Le bouton principal **Carte des cellules** bascule les couleurs sur la grille. Sa flèche donne accès à **Ouvrir le volet Carte** et **Couleurs de carte**. Redimensionnez le volet à la souris ou fermez-le avec sa croix pour retrouver toute la largeur de la feuille.
 
 Dans **Formule**, Clair met en gras l'argument retenu par `IF`, `IFS`, `CHOOSE`, `SWITCH`, `IFERROR` ou `IFNA` quand Excel fournit les valeurs nécessaires. `FILTER` et `XLOOKUP` peuvent aussi marquer leur valeur de secours. Tous les arguments restent consultables. **Évaluer** actualise ce repère quand l'évaluation au clic est désactivée. Le graphe des références continue de couvrir toute la formule.
 

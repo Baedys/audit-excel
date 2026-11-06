@@ -1,5 +1,12 @@
 # Revue et validation
 
+## Palette de carte dans le volet — 6 novembre 2026
+
+- **67 groupes sans Excel réussis**. Les nouveaux groupes couvrent **69 assertions** de profils JSON Arixcel et de persistance XML, ainsi que **19 contrôles** de la palette du volet. Les anciens profils Clair restent lisibles. Les rendus à **320 × 540** et **420 × 650** montrent une liste défilante et les commandes de pied de volet accessibles.
+- Le module des options réussit **52 contrôles Excel**, dont l'ouverture de la palette dans la vue Carte, son transfert entre vues, la mise à jour d'une carte active, le maintien du propriétaire et des cellules exclues, le refus d'un profil verrouillé et la conservation des fonds conditionnels déjà restaurés.
+- Le module de régression des cartes réussit **235 contrôles Excel** sur le même binaire, dans un processus STA séparé.
+- L'interface Arixcel 9.0.9623.19616 a été observée dans un classeur jetable. La disposition et les commandes ont été comparées à celles relevées statiquement. Les tests de fichiers couvrent le schéma observé dans le binaire. L'échange aller-retour dans Arixcel reste à vérifier. [Preuves de la carte](MAP-EVIDENCE.md)
+
 ## Valeurs de secours de `FILTER` et `XLOOKUP` — 6 novembre 2026
 
 - **65 groupes sans Excel réussis**. Le module des branches compte désormais **63 contrôles Excel**, dont 26 nouveaux cas. Il couvre les masques de comparaison, les tableaux bruts, les masques arithmétiques, les liaisons `LET`, l'égalité d'adresse et les modes exact, approché, inversé et joker.

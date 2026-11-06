@@ -98,7 +98,7 @@ namespace FormulaExplorer
             tree.AfterSelect += delegate { if (!updatingExplorer) ShowDetails(SelectedCell()); };
             tree.NodeMouseDoubleClick += delegate { Safe(Navigate); };
 
-            TableLayoutPanel mapLayout = PageLayout(mapTab, 100);
+            mapLayout = PageLayout(mapTab, 100);
             FlowLayoutPanel mapBar = CommandBar();
             sheets.DropDownStyle = ComboBoxStyle.DropDownList; sheets.Width = IsDocked ? 135 : 220;
             mapBar.Controls.Add(new Label { Text = "Feuille", AutoSize = true, Padding = new Padding(0, 6, 0, 0) }); mapBar.Controls.Add(sheets);
@@ -243,7 +243,7 @@ namespace FormulaExplorer
                 LoadExcel(); return;
             }
             ExecuteRibbonCommand(command);
-            if (book == null) LoadExcel();
+            if (book == null && command != "map-palette") LoadExcel();
         }
         public void ExecuteRibbonCommand(string command)
         {
@@ -254,7 +254,8 @@ namespace FormulaExplorer
                     case "precedents": SelectExplorerTab(false); ShowTree(); break;
                     case "dependents": SelectExplorerTab(true); ShowTree(); break;
                     case "back": Back(); break;
-                    case "map": tabs.SelectedIndex = 1; break;
+                    case "map": CloseMapPalette(); tabs.SelectedIndex = 1; break;
+                    case "map-palette": ToggleMapPalette(); break;
                     case "flow": tabs.SelectedIndex = 2; break;
                     case "compare": tabs.SelectedIndex = 3; break;
                     case "refresh": LoadExcel(); break;

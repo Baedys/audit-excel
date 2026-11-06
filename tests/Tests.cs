@@ -158,6 +158,8 @@ static class Tests
         Check("Formula map global toggle targets", delegate { Console.WriteLine("MAP_TARGET_ASSERTIONS " + FormulaMapTargetsTests.Run()); });
         Check("Highlight palette serialization and validation", delegate { Console.WriteLine("PALETTE_ASSERTIONS " + HighlightPaletteTests.Run()); });
         Check("Map palette analysis option editor", delegate { MapPaletteEditorTests.Run(); });
+        Check("Arixcel map profiles", delegate { ArixcelMapProfileTests.Run(); });
+        Check("Docked live map palette", delegate { LiveMapPalettePaneTests.Run(); });
         Check("Flow palette serialization and validation", delegate { Console.WriteLine("FLOW_PALETTE_ASSERTIONS " + FlowPaletteTests.Run()); });
         Check("Flow highlight composition and role activation", delegate { Console.WriteLine("FLOW_HIGHLIGHT_ASSERTIONS " + FlowHighlightPlanTests.Run()); });
         Check("Flow rectangles and block activation", delegate { Console.WriteLine("FLOW_BLOCK_ASSERTIONS " + FlowBlocksTests.Run()); });
