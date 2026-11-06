@@ -7,6 +7,29 @@ using System.Text.RegularExpressions;
 
 namespace FormulaExplorer
 {
+    internal sealed class CriterionGroup
+    {
+        internal readonly ExpressionNode Function, Range, Criterion;
+        internal readonly string Label;
+        internal readonly int Matched, Total;
+        internal readonly ExpressionTarget Target;
+
+        internal CriterionGroup(ExpressionNode function, int pair, string label, int matched, int total, ExpressionTarget target)
+        {
+            Function = function; Range = function.Children[pair]; Criterion = function.Children[pair + 1];
+            Label = label; Matched = matched; Total = total; Target = target;
+        }
+
+        internal string Description
+        {
+            get
+            {
+                if (Matched == 0) return "Filtre vide";
+                return Matched == Total ? "Filtre complet" : "Filtre";
+            }
+        }
+    }
+
     public sealed partial class ExcelBridge
     {
         const int MaxCriteriaCells = 20000, MaxCriteriaAreas = 128;
@@ -32,28 +55,39 @@ namespace FormulaExplorer
             switch (function)
             {
                 case "COUNTIF": case "COUNTIFS": case "SUMIF": case "SUMIFS": case "AVERAGEIF": case "AVERAGEIFS":
-                case "MINIFS": case "MAXIFS": case "MIN": case "MAX": case "FILTER": return true;
+                case "MINIFS": case "MAXIFS": case "MIN": case "MAX": case "MINA": case "MAXA":
+                case "SMALL": case "LARGE": case "SUBTOTAL": case "AGGREGATE": case "FILTER": return true;
                 default: return false;
             }
         }
 
-        ExpressionTarget ResolveCriteriaTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node, string function)
+        ExpressionTarget ResolveCriteriaTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node, string function,
+            Dictionary<ExpressionNode, CriterionGroup> groups = null)
         {
             if (function == "FILTER")
             {
                 ExpressionTarget unused;
                 return ResolveFilterTarget(sheet, owner, root, node, out unused);
             }
-            if (function == "MIN" || function == "MAX") return ResolveExtremaTarget(sheet, owner, root, node);
+            switch (function)
+            {
+                case "MIN": case "MAX": case "MINA": case "MAXA": case "SMALL": case "LARGE": case "SUBTOTAL": case "AGGREGATE":
+                    return ResolveExtremaTarget(sheet, owner, root, node, function);
+            }
             bool single = function == "COUNTIF" || function == "SUMIF" || function == "AVERAGEIF";
             bool count = function == "COUNTIF" || function == "COUNTIFS";
             bool extreme = function == "MINIFS" || function == "MAXIFS";
             int firstPair = single || count ? 0 : 1;
             int end = single ? 2 : node.Children.Count;
             if (node.Children.Count < firstPair + 2 || (end - firstPair) % 2 != 0) return null;
+            int pairs = (end - firstPair) / 2;
+            // A sole filter covering every argument is presented directly in Arixcel.
+            bool wrap = groups != null && !(pairs == 1 && firstPair == 0 && end == node.Children.Count);
 
             CriterionGrid first = null;
             bool[] mask = null;
+            bool compatible = true;
+            var individual = wrap ? new List<CriterionGroup>() : null;
             try
             {
                 for (int pair = firstPair; pair < end; pair += 2)
@@ -61,28 +95,48 @@ namespace FormulaExplorer
                     CriterionGrid candidates = EvaluateGrid(sheet, owner, root, node.Children[pair], true, true);
                     object raw = ReadBranchWitness(sheet, owner, root, node.Children[pair + 1], ReadBranchValue, Type.Missing);
                     int? error = FormulaBranches.ErrorCode(raw);
-                    if (error == 2015 || error == 2023 || error == 2029) return null;
+                    if (candidates == null || Object.ReferenceEquals(raw, Type.Missing) || raw is Array ||
+                        error == 2015 || error == 2023 || error == 2029) return null;
                     FormulaCriterion criterion = FormulaCriterion.Create(raw, CultureInfo.CurrentCulture);
-                    if (candidates == null || criterion == null) return null;
+                    var retained = new bool[(int)candidates.Size];
+                    if (criterion != null)
+                        for (int i = 0; i < retained.Length; i++) retained[i] = criterion.Matches(candidates.ValueAt(i));
+                    candidates.Values = null;
+                    if (wrap)
+                    {
+                        int matched = retained.Count(selected => selected);
+                        ExpressionTarget target = matched == 0 ? null : SelectCriteriaCells(candidates, (bool[])retained.Clone());
+                        string label = pairs == 1 ? "Filtre" : "Filtre " + (individual.Count + 1).ToString(CultureInfo.InvariantCulture);
+                        individual.Add(new CriterionGroup(node, pair, label, matched, retained.Length, target));
+                    }
                     if (first == null)
                     {
                         first = candidates;
-                        mask = new bool[(int)first.Size];
-                        for (int i = 0; i < mask.Length; i++) mask[i] = criterion.Matches(first.ValueAt(i));
+                        mask = retained;
                     }
                     else
                     {
-                        if (!SameShape(first, candidates)) return null;
-                        for (int i = 0; i < mask.Length; i++) if (mask[i]) mask[i] = criterion.Matches(candidates.ValueAt(i));
+                        compatible &= SameShape(first, candidates);
+                        if (!compatible && !wrap) return null;
+                        if (compatible)
+                            for (int i = 0; i < mask.Length; i++) mask[i] &= retained[i];
                     }
                 }
             }
             catch (RegexMatchTimeoutException) { return null; }
-            if (!mask.Any(selected => selected)) return null;
+            if (wrap)
+                foreach (CriterionGroup group in individual) groups.Add(group.Range, group);
+            if (!compatible || !mask.Any(selected => selected)) return null;
 
             CriterionGrid data = first;
             if (!count && single && node.Children.Count > 2 && node.Children[2].Kind != "Missing argument")
-                data = EvaluateGrid(sheet, owner, root, node.Children[2], false, false, first.Rows, first.Columns);
+            {
+                CriterionGrid original = EvaluateGrid(sheet, owner, root, node.Children[0], false, false);
+                if (original == null) return null;
+                data = EvaluateGrid(sheet, owner, root, node.Children[2], false, false, original.Rows, original.Columns);
+                if (!SameShape(first, data))
+                    data = EvaluateGrid(sheet, owner, root, node.Children[2], true, false, original.Rows, original.Columns);
+            }
             else if (!count && !single)
             {
                 data = EvaluateGrid(sheet, owner, root, node.Children[0], false, extreme);
@@ -107,19 +161,59 @@ namespace FormulaExplorer
             return SelectCriteriaCells(data, mask);
         }
 
-        ExpressionTarget ResolveExtremaTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node)
+        ExpressionTarget ResolveExtremaTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node, string function)
         {
+            int start = 0, end = node.Children.Count;
+            if (function == "SUBTOTAL" || function == "AGGREGATE")
+            {
+                start = function == "SUBTOTAL" ? 1 : 2;
+                if (end <= start) return null;
+                double? number = FormulaBranches.IndexValue(ReadBranchWitness(sheet, owner, root, node.Children[0], ReadBranchValue, Type.Missing));
+                if (start == 2 && (number == 14 || number == 15)) end = start + 1;
+                else if (number != 4 && number != 5)
+                {
+                    // Without a selected extremum, SUBTOTAL can inherit its only range argument.
+                    if (function == "SUBTOTAL" && end == 2 && number.HasValue && number == Math.Truncate(number.Value) &&
+                        ((number >= 1 && number <= 11) || (number >= 101 && number <= 111)))
+                        return ReadBranchWitness(sheet, owner, root, node.Children[1], ReadExpressionTarget, (ExpressionTarget)null);
+                    return null;
+                }
+            }
+            else if (function == "SMALL" || function == "LARGE") end = Math.Min(end, 1);
             object value = ReadBranchWitness(sheet, owner, root, node, ReadBranchValue, Type.Missing);
             FormulaCriterion result = FormulaCriterion.Create(value, CultureInfo.CurrentCulture, false);
             if (result == null) return null;
-            foreach (ExpressionNode child in node.Children)
+            bool includeTextAndLogical = (function == "MINA" || function == "MAXA") && FormulaCriterion.NumericValue(value).HasValue;
+            for (int argument = start; argument < end; argument++)
             {
-                CriterionGrid grid = EvaluateGrid(sheet, owner, root, child, true, true);
+                CriterionGrid grid = EvaluateGrid(sheet, owner, root, node.Children[argument], true, true);
                 if (grid == null) continue;
                 for (int i = 0; i < grid.Size; i++)
-                    if (result.Matches(grid.ValueAt(i))) return SelectCriteriaCells(grid, SingleCriterionCell((int)grid.Size, i));
+                {
+                    object candidate = grid.ValueAt(i);
+                    if (includeTextAndLogical && candidate is bool) candidate = (bool)candidate ? 1d : 0d;
+                    if (includeTextAndLogical && candidate is string) candidate = 0d;
+                    if (result.Matches(candidate)) return SelectCriteriaCells(grid, SingleCriterionCell((int)grid.Size, i));
+                }
             }
             return null;
+        }
+
+        internal CriterionGroup NavigateCriterionGroup(Book book, Cell owner, ExpressionNode root, CriterionGroup selected)
+        {
+            CriterionGroup refreshed = WithExpressionContext(book, owner, true, (sheet, range) =>
+            {
+                var groups = new Dictionary<ExpressionNode, CriterionGroup>();
+                ResolveCriteriaTarget(sheet, range, root, selected.Function, FormulaSyntax.FunctionName(selected.Function), groups);
+                CriterionGroup result;
+                return groups.TryGetValue(selected.Range, out result) ? result : null;
+            });
+            if (refreshed != null && refreshed.Target != null)
+            {
+                ExpressionTarget target = refreshed.Target;
+                Navigate(new Book { FullName = target.Workbook }, new Cell { Sheet = target.Sheet, Address = target.Address });
+            }
+            return refreshed;
         }
 
         internal static ExpressionNode FindFilterWithMask(ExpressionNode root, ExpressionNode mask)
@@ -223,20 +317,21 @@ namespace FormulaExplorer
         CriterionGrid ReadCriterionGrid(object value, bool trim, bool values, int rows, int columns)
         {
             if (value == null || !Marshal.IsComObject(value)) return null;
-            object areas = null, worksheet = null, used = null, adjusted = null;
+            object areas = null, worksheet = null, used = null, resized = null, adjusted = null;
             try
             {
                 areas = ((dynamic)value).Areas;
                 if ((int)((dynamic)areas).Count != 1) return null;
+                if (rows > 0) resized = ((dynamic)value).Resize[rows, columns];
+                object range = resized ?? value;
                 if (trim)
                 {
-                    worksheet = ((dynamic)value).Worksheet;
+                    worksheet = ((dynamic)range).Worksheet;
                     used = ((dynamic)worksheet).UsedRange;
-                    adjusted = ((dynamic)application).Intersect(value, used);
-                    if (adjusted == null) adjusted = ((dynamic)value).Resize[1, 1];
+                    adjusted = ((dynamic)application).Intersect(range, used);
+                    if (adjusted == null) adjusted = ((dynamic)range).Resize[1, 1];
+                    range = adjusted;
                 }
-                else if (rows > 0) adjusted = ((dynamic)value).Resize[rows, columns];
-                object range = adjusted ?? value;
                 ExpressionTarget target = ReadExpressionTarget(range);
                 var grid = new CriterionGrid { Target = target, Row = (int)((dynamic)range).Row, Column = (int)((dynamic)range).Column };
                 if (values)
@@ -246,7 +341,7 @@ namespace FormulaExplorer
                 }
                 return grid;
             }
-            finally { Release(adjusted); Release(used); Release(worksheet); Release(areas); }
+            finally { Release(adjusted); Release(used); Release(worksheet); Release(resized); Release(areas); }
         }
 
         ExpressionTarget SelectCriteriaCells(CriterionGrid grid, bool[] mask)

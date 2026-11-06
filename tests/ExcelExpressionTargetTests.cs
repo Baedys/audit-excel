@@ -23,7 +23,7 @@ public static class ExcelExpressionTargetTests
     { return (T)instance.GetType().GetField(name, Members).GetValue(instance); }
     static IDictionary Targets(ExcelBridge bridge, Book book, Cell owner, ExpressionNode root)
     {
-        object[] args = { book, owner, root, null, null };
+        object[] args = { book, owner, root, null, null, null };
         Invoke(bridge, "ReadExpressionAnnotations", args);
         return (IDictionary)args[4];
     }

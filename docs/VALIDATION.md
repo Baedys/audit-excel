@@ -1,5 +1,20 @@
 # Revue et validation
 
+## Groupes de filtres et cellules d'extrémum — 6 novembre 2026
+
+Arixcel 9.0.9623.19616 et Clair ont ouvert deux copies de `ArixcelCriteriaGroups.xlsx` au même SHA-256. Les sept adresses et les deux emplacements vides ci-dessous concordent. Les adresses sont présentées dans la notation d'Arixcel.
+
+| Cellule | Fonction | Emplacement observé |
+| --- | --- | --- |
+| `B4` | `SUMIFS` | Résultat `Data!B2;B6`. **Filtre 1** `Data!A2;A4;A6`. La plage résultat précède les deux groupes dans l'arbre. |
+| `B14` | `MINA` | `Data!E2`, cellule de texte associée au résultat numérique 0. |
+| `B18` | `SUBTOTAL(105,…)` | `Data!G2:G6`, plage entière. |
+| `B19` | `AGGREGATE(14,6,…,2)` | `Data!H5`, deuxième plus grande valeur malgré une erreur dans la plage. |
+| `B20` | `SUBTOTAL(5,…)` | `Data!G4`, cellule minimum dans une ligne masquée. |
+| `B22` | `SUMIFS` sans intersection | Fonction sans emplacement. **Filtre 1** `Data!A2;A4;A6`. **Filtre 2** marqué vide, sans emplacement. |
+
+Les **167 contrôles Excel** couvrent aussi les groupes complets, les dimensions incompatibles, les critères indisponibles, `MAXA`, `SMALL` et `LARGE`. Dans le volet, sélectionner un groupe surligne les deux arguments, affiche leur compteur et garde le groupe ouvert lors de l'évaluation. Entrée relit le critère avant de sélectionner ses zones. Les **68 groupes sans Excel** passent.
+
 ## Cellules retenues par critères — 6 novembre 2026
 
 Dans Excel, la colonne **Location** d'Arixcel 9.0.9623.19616 donne les emplacements suivants sur le classeur témoin.

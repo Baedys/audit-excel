@@ -66,10 +66,12 @@ namespace FormulaExplorer
         }
 
         internal void ReadExpressionAnnotations(Book book, Cell owner, ExpressionNode root,
-            out ISet<ExpressionNode> branches, out Dictionary<ExpressionNode, ExpressionTarget> targets)
+            out ISet<ExpressionNode> branches, out Dictionary<ExpressionNode, ExpressionTarget> targets,
+            out Dictionary<ExpressionNode, CriterionGroup> criteria)
         {
             ISet<ExpressionNode> chosen = new HashSet<ExpressionNode>();
             var found = new Dictionary<ExpressionNode, ExpressionTarget>();
+            var groups = new Dictionary<ExpressionNode, CriterionGroup>();
             ExpressionNode[] nodes = FormulaSyntax.Flatten(root).ToArray();
             bool hasBranches = nodes.Any(FormulaBranches.Supports);
             if (hasBranches || nodes.Any(SupportsExpressionTarget))
@@ -79,13 +81,15 @@ namespace FormulaExplorer
                     foreach (ExpressionNode node in nodes.Reverse().Where(SupportsExpressionTarget))
                     {
                         ExpressionTarget target;
+                        string function = FormulaSyntax.FunctionName(node);
                         if (IsSingleArgumentSum(node)) found.TryGetValue(node.Children[0], out target);
-                        else if (FormulaSyntax.FunctionName(node) == "FILTER")
+                        else if (function == "FILTER")
                         {
                             ExpressionTarget include;
                             target = ResolveFilterTarget(sheet, range, root, node, out include);
                             if (include != null) found[node.Children[1]] = include;
                         }
+                        else if (SupportsCriteriaTarget(function)) target = ResolveCriteriaTarget(sheet, range, root, node, function, groups);
                         else target = ResolveExpressionTarget(sheet, range, root, node);
                         if (target != null) found[node] = target;
                     }
@@ -93,6 +97,7 @@ namespace FormulaExplorer
                 });
             branches = chosen;
             targets = found;
+            criteria = groups;
         }
 
         internal ExpressionTarget NavigateExpressionTarget(Book book, Cell owner, ExpressionNode root, ExpressionNode node)

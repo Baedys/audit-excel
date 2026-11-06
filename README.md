@@ -81,7 +81,7 @@ Dans **Formule**, Clair met en gras l'argument retenu par `IF`, `IFS`, `CHOOSE`,
 
 Pour `INDEX`, `OFFSET`, `INDIRECT` et les recherches prises en charge, l'arbre affiche l'adresse effectivement trouvée devant la fonction. `MATCH` et `XMATCH` affichent toujours leur résultat numérique dans l'aperçu. Appuyez sur **Entrée** dans l'arbre ou utilisez **Aller à la cible dans Excel** pour recalculer et sélectionner la plage.
 
-Pour `SUMIF`, `COUNTIF`, `AVERAGEIF`, leurs variantes à plusieurs critères, `MIN`, `MAX`, `MINIFS`, `MAXIFS` et `FILTER`, le volet peut afficher plusieurs zones retenues. `FILTER` distingue la plage renvoyée de la source d'un masque issu d'une comparaison directe. L'aperçu affiche la valeur calculée par Excel. [Validation](docs/VALIDATION.md)
+Pour `SUMIF`, `COUNTIF`, `AVERAGEIF` et leurs variantes à plusieurs critères, le volet affiche les zones retenues. Les groupes **Filtre** montrent les cellules de chaque critère et gardent la plage et le critère consultables. `FILTER` distingue la plage renvoyée de la source d'un masque issu d'une comparaison directe. `MIN`, `MAX`, `MINA`, `MAXA`, `MINIFS`, `MAXIFS`, `SMALL`, `LARGE` et certains modes de `SUBTOTAL` et `AGGREGATE` peuvent pointer vers la cellule du résultat. L'aperçu de la formule affiche la valeur calculée par Excel. [Validation](docs/VALIDATION.md)
 
 Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 

@@ -13,6 +13,8 @@ namespace FormulaExplorer
         readonly Stack<FormulaChange> formulaChanges = new Stack<FormulaChange>();
         readonly CheckBox evaluateOnSelect = new CheckBox();
         Dictionary<ExpressionNode, ExpressionTarget> expressionTargets = new Dictionary<ExpressionNode, ExpressionTarget>();
+        Dictionary<ExpressionNode, CriterionGroup> criterionResults = new Dictionary<ExpressionNode, CriterionGroup>();
+        readonly HashSet<ExpressionNode> shownCriteria = new HashSet<ExpressionNode>();
         ExpressionNode syntaxRoot;
         Cell expressionOwner;
         bool buildingExpressions;
@@ -49,20 +51,22 @@ namespace FormulaExplorer
             evaluateOnSelect.CheckedChanged += delegate
             {
                 string warning = RefreshExpressionAnnotations(evaluateOnSelect.Checked);
-                if (warning != null) expressionValue.Text = warning;
+                CriterionGroup criterion = SelectedCriterion();
+                if (criterion != null) ShowCriterionValue(criterion, warning);
+                else if (warning != null) expressionValue.Text = warning;
             };
             tabs.SelectedIndexChanged += delegate
             {
                 if (tabs.SelectedIndex != 0 || !evaluateOnSelect.Checked || updatingExplorer) return;
+                CriterionGroup criterion = SelectedCriterion();
                 string warning = RefreshExpressionAnnotations(true);
-                if (warning != null) expressionValue.Text = warning;
+                if (criterion != null) ShowCriterionValue(criterion, warning);
+                else if (warning != null) expressionValue.Text = warning;
             };
             expressions.AfterSelect += delegate
             {
                 if (buildingExpressions) return;
-                ExpressionNode node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
-                if (node == null) return;
-                formula.HideSelection = false; formula.Select(node.Start, node.Length); formula.ScrollToCaret();
+                if (!HighlightExpression(expressions.SelectedNode)) return;
                 if (bridge != null && evaluateOnSelect.Checked) EvaluateExpressionInline();
                 else expressionValue.Text = bridge == null ? "Démonstration : connectez Excel pour calculer les sous-expressions." : "Sélectionnez Évaluer pour calculer cette expression dans Excel.";
             };
@@ -76,10 +80,33 @@ namespace FormulaExplorer
                 else if (e.Alt && e.KeyCode == Keys.Left) { e.Handled = true; Safe(Back); }
             };
         }
-        static TreeNode ExpressionTree(ExpressionNode expression)
+        bool HighlightExpression(TreeNode selected)
+        {
+            if (selected == null) return false;
+            var expression = selected.Tag as ExpressionNode;
+            var criterion = selected.Tag as CriterionGroup;
+            if (expression == null && criterion == null) return false;
+            int start = criterion == null ? expression.Start : criterion.Range.Start;
+            int end = criterion == null ? expression.Start + expression.Length : criterion.Criterion.Start + criterion.Criterion.Length;
+            formula.HideSelection = false; formula.Select(start, end - start); formula.ScrollToCaret();
+            return true;
+        }
+        TreeNode ExpressionTree(ExpressionNode expression)
         {
             var node = new TreeNode(ExpressionNodeText(expression)) { Tag = expression, ToolTipText = ExpressionToolTip(expression) };
-            foreach (ExpressionNode child in expression.Children) node.Nodes.Add(ExpressionTree(child));
+            for (int index = 0; index < expression.Children.Count; index++)
+            {
+                ExpressionNode child = expression.Children[index];
+                CriterionGroup group;
+                if (!criterionResults.TryGetValue(child, out group)) node.Nodes.Add(ExpressionTree(child));
+                else
+                {
+                    var wrapper = new TreeNode(group.Label) { Tag = group };
+                    wrapper.Nodes.Add(ExpressionTree(child));
+                    wrapper.Nodes.Add(ExpressionTree(expression.Children[++index]));
+                    node.Nodes.Add(wrapper);
+                }
+            }
             return node;
         }
         static string ExpressionNodeText(ExpressionNode expression)
@@ -90,31 +117,94 @@ namespace FormulaExplorer
         }
         static string ExpressionToolTip(ExpressionNode expression) { return expression.Kind + " · " + expression.Text; }
 
-        string RefreshExpressionAnnotations(bool evaluate)
+        IEnumerable<TreeNode> ExpressionNodes()
         {
-            ISet<ExpressionNode> chosen = null;
-            expressionTargets.Clear();
-            string warning = null;
-            if (evaluate && bridge != null && syntaxRoot != null && expressionOwner != null)
-            {
-                try { bridge.ReadExpressionAnnotations(book, expressionOwner, syntaxRoot, out chosen, out expressionTargets); }
-                catch (InvalidOperationException error) { warning = error.Message; }
-                catch (COMException error) { warning = error.Message; }
-            }
-            if (chosen != null && chosen.Count != 0 && chosenExpressionFont == null)
-                chosenExpressionFont = new Font(expressions.Font, FontStyle.Bold);
             var pending = new Stack<TreeNode>();
             foreach (TreeNode root in expressions.Nodes) pending.Push(root);
             while (pending.Count != 0)
             {
                 TreeNode node = pending.Pop();
+                yield return node;
+                foreach (TreeNode child in node.Nodes) pending.Push(child);
+            }
+        }
+
+        void RebuildCriterionLayout()
+        {
+            if (shownCriteria.SetEquals(criterionResults.Keys)) return;
+            var expandedExpressions = new HashSet<ExpressionNode>();
+            var expandedCriteria = new HashSet<ExpressionNode>();
+            foreach (TreeNode node in ExpressionNodes())
+            {
+                if (!node.IsExpanded) continue;
+                var group = node.Tag as CriterionGroup;
+                if (group != null) expandedCriteria.Add(group.Range);
+                else expandedExpressions.Add((ExpressionNode)node.Tag);
+            }
+            CriterionGroup oldCriterion = SelectedCriterion();
+            var oldExpression = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
+            bool wasBuilding = buildingExpressions;
+            buildingExpressions = true;
+            expressions.BeginUpdate();
+            try
+            {
+                shownCriteria.Clear();
+                shownCriteria.UnionWith(criterionResults.Keys);
+                expressions.Nodes.Clear();
+                TreeNode root = ExpressionTree(syntaxRoot);
+                expressions.Nodes.Add(root);
+                TreeNode selection = root;
+                foreach (TreeNode node in ExpressionNodes())
+                {
+                    var group = node.Tag as CriterionGroup;
+                    if (group != null)
+                    {
+                        if (expandedCriteria.Contains(group.Range) ||
+                            (oldCriterion == null && (oldExpression == group.Range || oldExpression == group.Criterion))) node.Expand();
+                        if (oldCriterion != null && oldCriterion.Range == group.Range) selection = node;
+                    }
+                    else
+                    {
+                        var expression = (ExpressionNode)node.Tag;
+                        if (expandedExpressions.Contains(expression)) node.Expand();
+                        if (oldExpression == expression || (oldCriterion != null && oldCriterion.Range == expression &&
+                            !shownCriteria.Contains(expression))) selection = node;
+                    }
+                }
+                expressions.SelectedNode = selection;
+                if (oldCriterion != null && !shownCriteria.Contains(oldCriterion.Range)) HighlightExpression(selection);
+            }
+            finally { expressions.EndUpdate(); buildingExpressions = wasBuilding; }
+        }
+
+        string RefreshExpressionAnnotations(bool evaluate)
+        {
+            ISet<ExpressionNode> chosen = null;
+            expressionTargets.Clear();
+            criterionResults.Clear();
+            string warning = null;
+            if (evaluate && bridge != null && syntaxRoot != null && expressionOwner != null)
+            {
+                try
+                {
+                    bridge.ReadExpressionAnnotations(book, expressionOwner, syntaxRoot, out chosen, out expressionTargets, out criterionResults);
+                    RebuildCriterionLayout();
+                }
+                catch (InvalidOperationException error) { warning = error.Message; }
+                catch (COMException error) { warning = error.Message; }
+            }
+            if (chosen != null && chosen.Count != 0 && chosenExpressionFont == null)
+                chosenExpressionFont = new Font(expressions.Font, FontStyle.Bold);
+            foreach (TreeNode node in ExpressionNodes())
+            {
+                var group = node.Tag as CriterionGroup;
+                if (group != null) { ShowCriterionTarget(node, group); continue; }
                 var expression = (ExpressionNode)node.Tag;
                 bool selectedBranch = chosen != null && chosen.Contains(expression);
                 ExpressionTarget target;
                 expressionTargets.TryGetValue(expression, out target);
                 node.NodeFont = selectedBranch ? chosenExpressionFont : null;
                 ShowExpressionTarget(node, expression, target);
-                foreach (TreeNode child in node.Nodes) pending.Push(child);
             }
             return warning == null ? null : "Branches et cibles indisponibles. " + warning;
         }
@@ -122,13 +212,44 @@ namespace FormulaExplorer
         {
             string text = (target == null ? "" : target.Display(book, expressionOwner) + " ← ") + ExpressionNodeText(expression);
             if (node.Text != text) node.Text = text;
-            node.ToolTipText = ExpressionToolTip(expression) + (node.NodeFont == null ? "" : " · Branche retenue") +
+            var group = node.Parent == null ? null : node.Parent.Tag as CriterionGroup;
+            string role = group == null ? "" : expression == group.Range ? "Plage du filtre · " : "Critère · ";
+            node.ToolTipText = role + ExpressionToolTip(expression) + (node.NodeFont == null ? "" : " · Branche retenue") +
                 (target == null ? "" : "\nCible Excel · " + target.ExternalAddress + " · Entrée pour y aller");
+        }
+        CriterionGroup SelectedCriterion()
+        { return expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as CriterionGroup; }
+
+        void ShowCriterionTarget(TreeNode node, CriterionGroup group)
+        {
+            CriterionGroup result;
+            criterionResults.TryGetValue(group.Range, out result);
+            ExpressionTarget target = result == null ? null : result.Target;
+            string text = (target == null ? "" : target.Display(book, expressionOwner) + " ← ") + group.Label;
+            if (node.Text != text) node.Text = text;
+            node.ToolTipText = CriterionDetails(result);
+        }
+
+        static string CriterionDetails(CriterionGroup result)
+        {
+            if (result == null) return "Sélectionnez Évaluer pour actualiser ce filtre.";
+            return result.Description + " · " + result.Matched + " sur " + result.Total + " cellule(s)" +
+                (result.Target == null ? "" : "\r\n" + result.Target.ExternalAddress + " · Entrée pour y aller");
+        }
+
+        void ShowCriterionValue(CriterionGroup group, string warning)
+        {
+            CriterionGroup result;
+            criterionResults.TryGetValue(group.Range, out result);
+            expressionValue.ForeColor = warning == null ? SystemColors.WindowText : Color.Firebrick;
+            expressionValue.Text = warning ?? CriterionDetails(result);
         }
         void ShowExpression(Cell cell)
         {
             expressionOwner = cell; syntaxRoot = null; buildingExpressions = true;
             expressionTargets.Clear();
+            criterionResults.Clear();
+            shownCriteria.Clear();
             expressions.BeginUpdate(); expressions.Nodes.Clear(); expressionValue.Clear();
             try
             {
@@ -150,6 +271,14 @@ namespace FormulaExplorer
         void EvaluateSelectedExpression()
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour évaluer les expressions.");
+            CriterionGroup criterion = SelectedCriterion();
+            if (criterion != null)
+            {
+                string groupWarning = RefreshExpressionAnnotations(true);
+                if (groupWarning == null && !criterionResults.ContainsKey(criterion.Range)) groupWarning = "Ce critère ne peut pas être évalué.";
+                ShowCriterionValue(criterion, groupWarning);
+                return;
+            }
             ExpressionNode node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             if (node == null || expressionOwner == null || syntaxRoot == null) return;
             ExpressionValue value;
@@ -167,16 +296,28 @@ namespace FormulaExplorer
         bool CanNavigateSelectedExpression()
         {
             var node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
-            return bridge != null && expressionOwner != null && syntaxRoot != null && node != null &&
-                (ExcelBridge.SupportsExpressionTarget(node) || ExcelBridge.FindFilterWithMask(syntaxRoot, node) != null);
+            return bridge != null && expressionOwner != null && syntaxRoot != null &&
+                (SelectedCriterion() != null || (node != null &&
+                (ExcelBridge.SupportsExpressionTarget(node) || ExcelBridge.FindFilterWithMask(syntaxRoot, node) != null)));
         }
         void NavigateSelectedExpression()
         {
             if (!CanNavigateSelectedExpression()) return;
             TreeNode selected = expressions.SelectedNode;
-            var expression = (ExpressionNode)selected.Tag;
             try
             {
+                CriterionGroup criterion = SelectedCriterion();
+                if (criterion != null)
+                {
+                    CriterionGroup result = bridge.NavigateCriterionGroup(book, expressionOwner, syntaxRoot, criterion);
+                    if (result == null) criterionResults.Remove(criterion.Range);
+                    else criterionResults[criterion.Range] = result;
+                    ShowCriterionTarget(selected, criterion);
+                    ShowCriterionValue(criterion, result == null ? "Ce critère ne peut pas être évalué." : null);
+                    if (result != null && result.Target != null) status.Text = "Cellules du filtre sélectionnées dans Excel";
+                    return;
+                }
+                var expression = (ExpressionNode)selected.Tag;
                 ExpressionTarget target = bridge.NavigateExpressionTarget(book, expressionOwner, syntaxRoot, expression);
                 expressionTargets[expression] = target;
                 ShowExpressionTarget(selected, expression, target);

@@ -22,17 +22,13 @@ public static class ExcelCriteriaTargetTests
     }
     static T Field<T>(object instance, string name)
     { return (T)instance.GetType().GetField(name, Members).GetValue(instance); }
-    static IDictionary Read(ExcelBridge bridge, Book book, Cell cell, ExpressionNode root)
-    {
-        object[] args = { book, cell, root, null, null };
-        Invoke(bridge, "ReadExpressionAnnotations", args);
-        return (IDictionary)args[4];
-    }
     static void CheckTarget(ExcelBridge bridge, Book book, int row, string address, string includeAddress = null)
     {
         Cell cell = book.Get("Audit", "B" + row);
         ExpressionNode root = FormulaSyntax.Parse(cell.Formula);
-        IDictionary targets = Read(bridge, book, cell, root);
+        object[] args = { book, cell, root, null, null, null };
+        Invoke(bridge, "ReadExpressionAnnotations", args);
+        var targets = (IDictionary)args[4];
         string label = "B" + row;
         Equal(targets.Count, address == null ? 0 : includeAddress == null ? 1 : 2, label + " annotations");
         if (address == null) return;
@@ -41,6 +37,26 @@ public static class ExcelCriteriaTargetTests
         Equal(Field<string>(targets[selected], "Sheet"), "Data", label + " result sheet");
         if (includeAddress != null)
             Equal(Field<string>(targets[selected.Children[1]], "Address"), includeAddress, label + " mask source");
+    }
+    static IDictionary ReadGroups(ExcelBridge bridge, Book book, int row, out ExpressionNode root)
+    {
+        Cell cell = book.Get("Audit", "B" + row);
+        root = FormulaSyntax.Parse(cell.Formula);
+        object[] args = { book, cell, root, null, null, null };
+        Invoke(bridge, "ReadExpressionAnnotations", args);
+        return (IDictionary)args[5];
+    }
+    static void CheckGroup(IDictionary groups, ExpressionNode root, int pair, string label, int matched, int total,
+        string description, string address)
+    {
+        object group = groups[root.Children[pair]];
+        Equal(Field<ExpressionNode>(group, "Criterion"), root.Children[pair + 1], label + " criterion AST");
+        Equal(Field<string>(group, "Label"), label, label + " name");
+        Equal(Field<int>(group, "Matched"), matched, label + " retained");
+        Equal(Field<int>(group, "Total"), total, label + " candidates");
+        Equal(group.GetType().GetProperty("Description", Members).GetValue(group, null), description, label + " description");
+        object target = Field<object>(group, "Target");
+        Equal(target == null ? null : Field<string>(target, "Address"), address, label + " source cells");
     }
 
     public static int Run()
@@ -70,6 +86,12 @@ public static class ExcelCriteriaTargetTests
             keep(data.Range["D4"]).Formula2 = "=\"0\"";
             keep(data.Range["D6"]).Value2 = 8d;
             keep(data.Range["E2:G2"]).Value2 = new object[,] { { 1d, 0d, 1d } };
+            keep(data.Range["J2:J5"]).Value2 = new object[,] { { "texte" }, { true }, { 7d }, { 3d } };
+            keep(data.Range["K2:K5"]).Value2 = new object[,] { { "texte" }, { true }, { 0d }, { -0.5d } };
+            keep(data.Range["L2:L6"]).Value2 = new object[,] { { 5d }, { 20d }, { 0d }, { 30d }, { 40d } };
+            keep(data.Range["M2:M6"]).Value2 = new object[,] { { 5d }, { 20d }, { 0d }, { 30d }, { 40d } };
+            keep(data.Range["M3"]).Formula2 = "=NA()";
+            keep(data.Rows[4]).Hidden = true;
             string[] formulas = {
                 "=SUMIF(Data!$A$2:$A$6,\"A*\",Data!$B$2:$B$6)",
                 "=COUNTIFS(Data!$A$2:$A$6,\"A*\",Data!$B$2:$B$6,\">0\")",
@@ -91,7 +113,22 @@ public static class ExcelCriteriaTargetTests
                 "=FILTER(Data!$B$2:$B$6,Data!$A$2:$A$6=\"Absent\",Data!$G$2)",
                 "=MAX(Data!$B$2:$B$6,123)",
                 "=AVERAGEIFS(Data!$B$2:$B$6,Data!$A$2:$A$6,\"A*\")",
-                "=SUMIFS(Data!$B$2:$B$6,Data!$C$2:$C$6,\">=" + date.AddDays(2).ToString("d", CultureInfo.CurrentCulture) + "\")"
+                "=SUMIFS(Data!$B$2:$B$6,Data!$C$2:$C$6,\">=" + date.AddDays(2).ToString("d", CultureInfo.CurrentCulture) + "\")",
+                "=MINA(Data!$J$2:$J$5)",
+                "=MAXA(Data!$K$2:$K$5)",
+                "=SMALL(Data!$L$2:$L$6,2)",
+                "=LARGE(Data!$L$2:$L$6,2)",
+                "=SUBTOTAL(105,Data!$L$2:$L$6)",
+                "=AGGREGATE(14,6,Data!$M$2:$M$6,2)",
+                "=SUBTOTAL(5,Data!$L$2:$L$6)",
+                "=AGGREGATE(4,6,Data!$K$2:$K$5,Data!$M$2:$M$6)",
+                "=AGGREGATE(15,6,Data!$M$2:$M$6,2)",
+                "=SUMIFS(Data!$B$2:$B$6,Data!$A$2:$A$6,\"A*\",Data!$B$2:$B$6,\">999\")",
+                "=SUMIFS(Data!$B$2:$B$6,Data!$B$2:$B$6,\">=0\")",
+                "=SUMIFS(Data!$B$2:$B$6,Data!$A$2:$A$6,\"A*\",Data!$B$2:$B$5,\">=0\")",
+                "=SUMIFS(Data!$B$2:$B$6,Data!$A$2:$A$6,\"A*\",Data!$B$2:$B$6,VALUE(\"texte\"))",
+                "=COUNTIFS(Data!$A$2:$A$6,\"A*\")",
+                "=SUMIFS(Data!$B$2:$B$6,Data!$B$2:$B$6,\">\")"
             };
             for (int i = 0; i < formulas.Length; i++) keep(audit.Range["B" + (i + 2)]).Formula2 = formulas[i];
             audit.Activate(); keep(audit.Range["G1:G2"]).Select(); keep(audit.Range["G2"]).Activate();
@@ -118,6 +155,38 @@ public static class ExcelCriteriaTargetTests
             CheckTarget(bridge, book, 20, null);
             CheckTarget(bridge, book, 21, "$B$2,$B$4,$B$6");
             CheckTarget(bridge, book, 22, "$B$4:$B$6");
+            CheckTarget(bridge, book, 23, "$J$2");
+            CheckTarget(bridge, book, 24, "$K$3");
+            CheckTarget(bridge, book, 25, "$L$2");
+            CheckTarget(bridge, book, 26, "$L$5");
+            CheckTarget(bridge, book, 27, "$L$2:$L$6");
+            CheckTarget(bridge, book, 28, "$M$5");
+            CheckTarget(bridge, book, 29, "$L$4");
+            CheckTarget(bridge, book, 30, "$M$6");
+            CheckTarget(bridge, book, 31, "$M$2");
+            CheckTarget(bridge, book, 32, null);
+            CheckTarget(bridge, book, 33, "$B$2:$B$6");
+            CheckTarget(bridge, book, 34, null);
+            CheckTarget(bridge, book, 35, null);
+            CheckTarget(bridge, book, 36, "$A$2,$A$4,$A$6");
+            CheckTarget(bridge, book, 37, null);
+            ExpressionNode root;
+            IDictionary filters = ReadGroups(bridge, book, 4, out root);
+            Equal(filters.Count, 2, "SUMIFS group count");
+            CheckGroup(filters, root, 1, "Filtre 1", 3, 5, "Filtre", "$A$2,$A$4,$A$6");
+            CheckGroup(filters, root, 3, "Filtre 2", 4, 5, "Filtre", "$B$2:$B$3,$B$5:$B$6");
+            filters = ReadGroups(bridge, book, 32, out root);
+            CheckGroup(filters, root, 1, "Filtre 1", 3, 5, "Filtre", "$A$2,$A$4,$A$6");
+            CheckGroup(filters, root, 3, "Filtre 2", 0, 5, "Filtre vide", null);
+            filters = ReadGroups(bridge, book, 33, out root);
+            CheckGroup(filters, root, 1, "Filtre", 5, 5, "Filtre complet", "$B$2:$B$6");
+            filters = ReadGroups(bridge, book, 34, out root);
+            CheckGroup(filters, root, 1, "Filtre 1", 3, 5, "Filtre", "$A$2,$A$4,$A$6");
+            CheckGroup(filters, root, 3, "Filtre 2", 4, 4, "Filtre complet", "$B$2:$B$5");
+            Equal(ReadGroups(bridge, book, 35, out root).Count, 0, "invalid evaluation suppresses all groups");
+            Equal(ReadGroups(bridge, book, 36, out root).Count, 0, "single COUNTIFS pair stays unwrapped");
+            filters = ReadGroups(bridge, book, 37, out root);
+            CheckGroup(filters, root, 1, "Filtre", 0, 5, "Filtre vide", null);
             Equal((string)keep(app.Selection).Address, "$G$1:$G$2", "selection restored after criteria");
             Equal((string)keep(app.ActiveCell).Address, "$G$2", "active cell restored after criteria");
             Equal((bool)app.EnableEvents, events, "events restored");
@@ -133,12 +202,30 @@ public static class ExcelCriteriaTargetTests
                 tabs.SelectedIndex = 0;
                 Invoke(form, "SetBook", book, "Audit", "B2");
                 var tree = Field<TreeView>(form, "expressions");
+                Equal(tree.Handle != IntPtr.Zero, true, "docked tree initialized");
                 Equal(tree.Nodes[0].Text.Contains("$B$4"), true, "tree shows noncontiguous criteria result");
+                Equal(tree.Nodes[0].Nodes[0].Text.EndsWith("Filtre", StringComparison.Ordinal), true, "SUMIF filter precedes result range");
+                Equal(tree.Nodes[0].Nodes[1].Text.Contains("$B$2:$B$6"), true, "SUMIF result argument retained");
                 Invoke(form, "EvaluateSelectedExpression");
                 Equal(Field<TextBox>(form, "expressionValue").Text.EndsWith("\r\n45", StringComparison.Ordinal), true, "Excel's scalar result stays separate");
                 Invoke(form, "NavigateSelectedExpression");
                 Equal((string)keep(app.ActiveSheet).Name, "Data", "navigation activates criteria result sheet");
                 Equal((string)keep(app.Selection).Address, "$B$2,$B$4,$B$6", "navigation selects every result area");
+                Invoke(form, "SetBook", book, "Audit", "B4");
+                TreeNode resultNode = tree.Nodes[0];
+                Equal(resultNode.Nodes.Count, 3, "SUMIFS result and two groups");
+                Equal(resultNode.Nodes[0].Text.Contains("$B$2:$B$6"), true, "SUMIFS result precedes filters");
+                TreeNode first = resultNode.Nodes[1];
+                Equal(first.Nodes.Count, 2, "range and criterion remain selectable");
+                first.Expand(); tree.SelectedNode = first;
+                Equal(Field<TextBox>(form, "formula").SelectedText, "Data!$A$2:$A$6,\"A*\"", "group selects both arguments in formula");
+                Invoke(form, "EvaluateSelectedExpression");
+                Equal(tree.SelectedNode, first, "evaluation keeps the group selected");
+                Equal(first.IsExpanded, true, "evaluation keeps both arguments open");
+                Equal(Field<TextBox>(form, "expressionValue").Text.Contains("3 sur 5"), true, "group shows retained count");
+                keep(data.Range["A2"]).Value2 = "Beta";
+                Invoke(form, "NavigateSelectedExpression");
+                Equal((string)keep(app.Selection).Address, "$A$4,$A$6", "group navigation recalculates its own areas");
             }
         }
         finally
