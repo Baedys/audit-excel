@@ -16,6 +16,7 @@ namespace FormulaExplorer
         readonly NumericUpDown tolerance = new NumericUpDown { DecimalPlaces = 6, Maximum = 1000000, Width = 92 };
         readonly Label referenceLabel = new Label { AutoSize = true };
         string liveComparisonReportHeading;
+        bool readingComparisonOptions;
 
         void ConfigureComparison(TabPage tab)
         {
@@ -43,7 +44,10 @@ namespace FormulaExplorer
             PlaceCommandBar(layout, bar, 0);
             layout.Controls.Add(differences, 0, 1);
             comparisonScope.SelectedIndexChanged += delegate { UpdateComparisonOptions(); ShowComparisonReference(); };
-            valuesOnly.CheckedChanged += delegate { UpdateComparisonOptions(); };
+            valuesOnly.CheckedChanged += delegate { UpdateComparisonOptions(); ChangeComparisonOption(options => options.ValuesOnly = valuesOnly.Checked); };
+            compareRelative.CheckedChanged += delegate { ChangeComparisonOption(options => options.Relative = compareRelative.Checked); };
+            ignoreComparisonInputs.CheckedChanged += delegate { ChangeComparisonOption(options => options.IgnoreInputs = ignoreComparisonInputs.Checked); };
+            tolerance.ValueChanged += delegate { ChangeComparisonOption(options => options.Tolerance = tolerance.Value); };
             tabs.SelectedIndexChanged += delegate { if (tabs.SelectedTab == tab) ShowComparisonReference(); };
             differences.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs e)
             {
@@ -74,8 +78,30 @@ namespace FormulaExplorer
                 referenceLabel.Text = baseline == null ? "Aucun instantané de référence." :
                     "Instantané · " + baseline.Name + " · " + baseline.Captured.ToString("HH:mm:ss");
             else
+            {
                 referenceLabel.Text = bridge == null || bridge.ComparisonReferenceLabel == null ? "Aucune référence Excel." :
                     "Référence " + ComparisonScopes[(int)bridge.ReferenceScope].ToLowerInvariant() + " · " + bridge.ComparisonReferenceLabel;
+                if (bridge == null) return;
+                var options = bridge.ComparisonOptions;
+                readingComparisonOptions = true;
+                try
+                {
+                    valuesOnly.Checked = options.ValuesOnly;
+                    compareRelative.Checked = options.Relative;
+                    ignoreComparisonInputs.Checked = options.IgnoreInputs;
+                    tolerance.Value = options.Tolerance;
+                }
+                finally { readingComparisonOptions = false; }
+            }
+        }
+
+        internal void RefreshComparisonOnFocus()
+        { if (tabs.SelectedIndex == 3) ShowComparisonReference(); }
+
+        void ChangeComparisonOption(Action<ComparisonSettings> change)
+        {
+            if (readingComparisonOptions || bridge == null || SelectedComparisonScope == ComparisonScope.Snapshot) return;
+            change(bridge.ComparisonOptions);
         }
 
         void SetComparisonReference()
@@ -99,7 +125,8 @@ namespace FormulaExplorer
         {
             if (SelectedComparisonScope == ComparisonScope.Snapshot) { CompareSnapshot(); return; }
             if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
-            var rows = bridge.CompareSelection(valuesOnly.Checked, compareRelative.Checked, ignoreComparisonInputs.Checked, (double)tolerance.Value);
+            ShowComparisonReference();
+            var rows = bridge.CompareSelection();
             comparisonScope.SelectedIndex = (int)bridge.ReferenceScope;
             string mode = valuesOnly.Checked ? "valeurs · tolérance " + tolerance.Value.ToString(CultureInfo.InvariantCulture) :
                 "formules " + (compareRelative.Checked ? "R1C1" : "A1") + (ignoreComparisonInputs.Checked ? " · entrées ignorées" : "");

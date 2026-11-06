@@ -11,6 +11,7 @@ namespace FormulaExplorer
         Reference comparisonArea;
         object comparisonRange;
         internal ComparisonScope ReferenceScope { get; private set; }
+        internal readonly ComparisonSettings ComparisonOptions = new ComparisonSettings();
 
         internal string ComparisonReferenceLabel
         {
@@ -51,11 +52,13 @@ namespace FormulaExplorer
             }
         }
 
-        internal List<ComparisonRow> CompareSelection(bool valuesOnly, bool relative, bool ignoreInputs, double tolerance)
+        internal List<ComparisonRow> CompareSelection()
         {
             if (comparisonBook == null) throw new InvalidOperationException("Définissez d’abord une référence Excel.");
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
             Book right = ActiveDirectHighlightBook();
+            bool valuesOnly = ComparisonOptions.ValuesOnly, relative = ComparisonOptions.Relative, ignoreInputs = ComparisonOptions.IgnoreInputs;
+            double tolerance = (double)ComparisonOptions.Tolerance;
             var result = new List<ComparisonRow>();
             if (ReferenceScope == ComparisonScope.Range)
             {

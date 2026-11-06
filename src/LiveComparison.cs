@@ -6,6 +6,13 @@ namespace FormulaExplorer
 {
     internal enum ComparisonScope { Workbook, Worksheet, Range, Snapshot }
 
+    internal sealed class ComparisonSettings
+    {
+        internal bool ValuesOnly, IgnoreInputs;
+        internal bool Relative = true;
+        internal decimal Tolerance = 0.000001M;
+    }
+
     internal sealed class ComparisonRow
     {
         public string Référence { get; internal set; }

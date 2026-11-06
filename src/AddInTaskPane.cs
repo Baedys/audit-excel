@@ -58,7 +58,11 @@ namespace FormulaExplorer
         protected override void OnEnter(EventArgs e)
         {
             base.OnEnter(e);
-            if (explorer != null && !explorer.IsDisposed) explorer.RefreshFormulaDisplayStyle(true);
+            if (explorer != null && !explorer.IsDisposed)
+            {
+                explorer.RefreshFormulaDisplayStyle(true);
+                explorer.RefreshComparisonOnFocus();
+            }
         }
 
         protected override void OnLeave(EventArgs e)

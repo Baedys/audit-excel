@@ -71,6 +71,7 @@ public static class ExcelComparisonTests
                 Invoke(sourcePane, "ShowCommand", bridge, "compare", (int)keep(app.ActiveWindow).Hwnd);
                 MainForm sourceView = Field<MainForm>(sourcePane, "explorer");
                 Field<ComboBox>(sourceView, "comparisonScope").SelectedIndex = 2;
+                Field<CheckBox>(sourceView, "ignoreComparisonInputs").Checked = true;
                 Invoke(sourceView, "SetComparisonReference");
                 keep(left.Range["B2"]).Value2 = 15d;
 
@@ -84,6 +85,8 @@ public static class ExcelComparisonTests
                 var values = Field<CheckBox>(targetView, "valuesOnly");
                 Func<IList> compare = () => { Invoke(targetView, "CompareSelection"); return (IList)grid.DataSource; };
                 Equal(mode.SelectedIndex, 2, "the reference is shared with a newly opened pane");
+                Equal(ignore.Checked, true, "comparison options follow the reference across panes");
+                ignore.Checked = false;
                 IList rows = compare();
                 Equal(rows.Count, 1, "an anchor expands and R1C1 ignores moved formula copies");
                 Equal(Text(rows[0], "Référence").EndsWith("Audit!C3"), true, "source address is physical");
@@ -131,6 +134,7 @@ public static class ExcelComparisonTests
 
                 ((dynamic)before).Activate(); left.Activate();
                 Field<ComboBox>(sourceView, "comparisonScope").SelectedIndex = 1;
+                Field<CheckBox>(sourceView, "compareRelative").Checked = false;
                 Invoke(sourceView, "SetComparisonReference");
                 left.Name = "Modèle";
                 ((dynamic)after).Activate();
@@ -139,8 +143,11 @@ public static class ExcelComparisonTests
                 keep(second.Range["B2"]).Value2 = 15d;
                 keep(second.Range["C2"]).Formula2 = "=B2+1";
                 right.Select(true); second.Select(false);
+                Invoke(targetPane, "OnEnter", EventArgs.Empty);
+                Equal(relative.Checked, false, "the existing pane refreshes options on focus");
                 rows = compare();
                 Equal(mode.SelectedIndex, 1, "the remembered scope governs the comparison");
+                Equal(relative.Checked, false, "an existing comparator pane loads updated options");
                 Equal(rows.Cast<object>().Any(row => Text(row, "Référence").EndsWith("Modèle!B2") &&
                     Text(row, "Comparateur").EndsWith("Audit!B2")), true, "renamed source is matched by identity and sheet coordinates stay absolute");
                 Equal(rows.Cast<object>().Any(row => Text(row, "Comparateur").Contains("Autre!")), true, "all selected worksheets become comparators");
