@@ -26,6 +26,7 @@ namespace FormulaExplorer
     {
         internal static bool SupportsExpressionTarget(ExpressionNode node)
         {
+            if (SupportsCriteriaTarget(FormulaSyntax.FunctionName(node))) return true;
             while (IsSingleArgumentSum(node)) node = node.Children[0];
             switch (FormulaSyntax.FunctionName(node))
             {
@@ -79,8 +80,14 @@ namespace FormulaExplorer
                     {
                         ExpressionTarget target;
                         if (IsSingleArgumentSum(node)) found.TryGetValue(node.Children[0], out target);
+                        else if (FormulaSyntax.FunctionName(node) == "FILTER")
+                        {
+                            ExpressionTarget include;
+                            target = ResolveFilterTarget(sheet, range, root, node, out include);
+                            if (include != null) found[node.Children[1]] = include;
+                        }
                         else target = ResolveExpressionTarget(sheet, range, root, node);
-                        if (target != null) found.Add(node, target);
+                        if (target != null) found[node] = target;
                     }
                     return true;
                 });
@@ -91,16 +98,24 @@ namespace FormulaExplorer
         internal ExpressionTarget NavigateExpressionTarget(Book book, Cell owner, ExpressionNode root, ExpressionNode node)
         {
             ExpressionTarget target = WithExpressionContext(book, owner, true,
-                (sheet, range) => ResolveExpressionTarget(sheet, range, root, node));
+                (sheet, range) =>
+                {
+                    ExpressionNode filter = FindFilterWithMask(root, node);
+                    if (filter == null) return ResolveExpressionTarget(sheet, range, root, node);
+                    ExpressionTarget mask;
+                    ResolveFilterTarget(sheet, range, root, filter, out mask);
+                    return mask;
+                });
             if (target == null) throw new InvalidOperationException("Cette expression ne désigne pas de plage Excel établie.");
             Navigate(new Book { FullName = target.Workbook }, new Cell { Sheet = target.Sheet, Address = target.Address });
             return target;
         }
 
-        static ExpressionTarget ResolveExpressionTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node)
+        ExpressionTarget ResolveExpressionTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node)
         {
             while (IsSingleArgumentSum(node)) node = node.Children[0];
             string function = FormulaSyntax.FunctionName(node);
+            if (SupportsCriteriaTarget(function)) return ResolveCriteriaTarget(sheet, owner, root, node, function);
             switch (function)
             {
                 case "INDEX": case "OFFSET": case "XLOOKUP":

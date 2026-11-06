@@ -167,7 +167,8 @@ namespace FormulaExplorer
         bool CanNavigateSelectedExpression()
         {
             var node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
-            return bridge != null && expressionOwner != null && syntaxRoot != null && node != null && ExcelBridge.SupportsExpressionTarget(node);
+            return bridge != null && expressionOwner != null && syntaxRoot != null && node != null &&
+                (ExcelBridge.SupportsExpressionTarget(node) || ExcelBridge.FindFilterWithMask(syntaxRoot, node) != null);
         }
         void NavigateSelectedExpression()
         {

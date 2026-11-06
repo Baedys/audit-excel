@@ -1,5 +1,21 @@
 # Revue et validation
 
+## Cellules retenues par critères — 6 novembre 2026
+
+Dans Excel, la colonne **Location** d'Arixcel 9.0.9623.19616 donne les emplacements suivants sur le classeur témoin.
+
+| Cellule | Fonction | Emplacement |
+| --- | --- | --- |
+| `B2` | `SUMIF` avec joker | `Data!B2;B4;B6` |
+| `B3` | `COUNTIFS` avec deux critères | `Data!A2;A6` |
+| `B4` | `SUMIFS` avec deux critères | `Data!B2;B6` |
+| `B5` | `MINIFS` | `Data!B4` |
+| `B8` | `FILTER` dans `SUM` | `Data!B2;B6` pour le filtre et `Data!A2;A6` pour la comparaison. La somme a un emplacement vide. |
+
+Sur B2 et B4, les nœuds de somme d'Arixcel affichent 0 alors que la cellule et la racine indiquent 45. Clair utilise la valeur calculée par Excel et affiche l'adresse indépendamment.
+
+Clair retrouve les **six emplacements** sur les cinq formules d'une copie du même classeur, vérifiée par SHA-256. Les **68 contrôles Excel** des critères couvrent aussi les dates, erreurs, plages de somme courtes, colonnes entières, masques horizontaux, secours physique, absence de cible et navigation par zones disjointes. Les modules des branches (**63 assertions**) et des cibles de recherche (**97**) passent dans des processus séparés avec le même binaire. Les **68 groupes sans Excel** passent, dont **21 assertions** sur la correspondance des critères.
+
 ## Cibles effectives des formules — 6 novembre 2026
 
 Les adresses ci-dessous ont été lues dans la colonne **Location** d'Arixcel 9.0.9623.19616 dans Excel, sur un classeur jetable. Le repère appartient à la fonction. La racine de l'explorateur original indique la cellule source.

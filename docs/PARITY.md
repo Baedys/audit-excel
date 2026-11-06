@@ -52,6 +52,14 @@ F04 associe une adresse au nœud de fonction et garde son résultat dans l'aper�
 
 Clair utilise les plages renvoyées par Excel pour `INDEX`, `OFFSET`, `INDIRECT` et `XLOOKUP`, et reconstruit les cibles scalaires des autres recherches. Il recalcule la cible avant navigation. Les unions synthétiques produites par une recherche matricielle, la propagation générale aux agrégats et certains contextes `LET` et `LAMBDA` restent à comparer. Les adresses du volet complètent le graphe lexical. [Validation](VALIDATION.md)
 
+## Cellules retenues par critères dans le volet Formule
+
+F05 affiche l'union retenue pour `SUMIF(S)`, `COUNTIF(S)` et `AVERAGEIF(S)`. La somme et la moyenne utilisent la plage de résultats. Le comptage utilise la première plage de critères. `MINIFS` et `MAXIFS` désignent une cellule après filtrage, et `MIN` ou `MAX` peut désigner une cellule correspondant au résultat d'Excel. `FILTER` peut montrer séparément les données renvoyées et les cellules sources d'une comparaison directe. Entrée sélectionne les zones disjointes dans Excel.
+
+Les preuves statiques proviennent de `Element.ResolveRangeOfFunction` (RVA `174880`), `ResolveRangeAfterValue` (`171356`), `ResolveRangeFinal` (`170092`) et `MatchCriterion` (`185664`, `186600`, `187640`). Les masques multiples sont croisés par position. Pour `SUMIF` et `AVERAGEIF`, la taille du premier critère détermine l'étendue de la plage de résultat à partir de son coin supérieur gauche. Les jokers de l'original sont ancrés au début du texte. Cette règle peut produire une adresse alors que le résultat natif d'Excel diffère. Les valeurs affichées dans Clair proviennent d'Excel. [Validation](VALIDATION.md)
+
+Les groupes synthétiques par critère d'Arixcel, les variantes `MINA`, `MAXA`, `SMALL`, `LARGE`, les comparaisons dont le masque contient des erreurs et la couverture complète des formats locaux restent à établir. Clair borne le relevé à 20 000 cellules et 128 zones par adresse. La limite de caractères d'Excel Evaluate reste applicable aux expressions.
+
 ## Sources et limites
 
 | Repère | Preuve réutilisée | Portée |

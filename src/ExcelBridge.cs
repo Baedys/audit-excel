@@ -47,7 +47,7 @@ namespace FormulaExplorer
                 if (workbook == null) throw new InvalidOperationException("Classeur fermé ou renommé : rechargez la sélection.");
                 sheets = ((dynamic)workbook).Worksheets; sheet = ((dynamic)sheets).Item[cell.Sheet];
                 if ((int)((dynamic)sheet).Visible != -1) throw new InvalidOperationException("Feuille masquée : affichez-la dans Excel avant de naviguer.");
-                range = ((dynamic)sheet).Range[cell.Address]; app.Goto(range, true);
+                range = RangeAt(sheet, cell.Address); app.Goto(range, true);
             }
             finally { Release(range); Release(sheet); Release(sheets); Release(workbook); Release(books); }
         }
