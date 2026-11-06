@@ -28,7 +28,7 @@ namespace FormulaExplorer
         { return Chosen(root, read, null); }
 
         internal static ISet<ExpressionNode> Chosen(ExpressionNode root, Func<ExpressionNode, object> read,
-            Func<ExpressionNode, bool> usesFallback, Func<ExpressionNode, int, int, object> readExtremumArgument = null)
+            Func<ExpressionNode, bool> usesFallback, Func<ExpressionNode, ExpressionNode, int, object> readExtremumArgument = null)
         {
             if (root == null) throw new ArgumentNullException("root");
             if (read == null) throw new ArgumentNullException("read");
@@ -52,7 +52,7 @@ namespace FormulaExplorer
                     });
                 }
                 else if (firstExtremumArgument >= 0)
-                    choice = ChooseExtremum(node, firstExtremumArgument, read, readExtremumArgument);
+                    choice = ChooseExtremum(node, firstExtremumArgument, read, readExtremumArgument, chosen);
                 else if (usesFallback != null)
                 {
                     int fallback = function == "FILTER" ? 2 : function == "XLOOKUP" ? 3 : -1;
@@ -77,7 +77,7 @@ namespace FormulaExplorer
         }
 
         static int ChooseExtremum(ExpressionNode node, int first, Func<ExpressionNode, object> read,
-            Func<ExpressionNode, int, int, object> readArgument)
+            Func<ExpressionNode, ExpressionNode, int, object> readArgument, ISet<ExpressionNode> chosen)
         {
             if (node.Children.Count < 2 || node.Children.Count <= first) return -1;
             if (first != 0)
@@ -94,16 +94,24 @@ namespace FormulaExplorer
             {
                 ExpressionNode child = node.Children[i];
                 if (child.Kind == "Missing argument" || IsLambda(child)) continue;
-                object argument = readArgument == null ? read(child) : readArgument(node, i, first);
-                if (criterion.Matches(UnwrapSingleValue(argument))) return i;
+                object argument = readArgument == null ? read(child) : readArgument(node, child, first);
+                if (!criterion.Matches(UnwrapSingleValue(argument))) continue;
+                SheetSpanReference span = FormulaSyntax.UnwrapGroups(child).SheetSpan;
+                if (span != null && readArgument != null)
+                    foreach (ExpressionNode part in span.Parts)
+                    {
+                        if (!criterion.Matches(UnwrapSingleValue(readArgument(node, part, first)))) continue;
+                        chosen.Add(part);
+                        break;
+                    }
+                return i;
             }
             return -1;
         }
 
         static bool IsLambda(ExpressionNode node)
         {
-            while (node.Kind == "Group" && node.Children.Count == 1) node = node.Children[0];
-            return FormulaSyntax.FunctionName(node) == "LAMBDA";
+            return FormulaSyntax.FunctionName(FormulaSyntax.UnwrapGroups(node)) == "LAMBDA";
         }
 
         static int Choose(string function, int count, Func<int, object> read)

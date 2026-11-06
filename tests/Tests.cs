@@ -177,6 +177,7 @@ static class Tests
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
             Check("Excel conditional formula branch rendering", delegate { ExcelFormulaBranchesTests.Run(); });
+Check("Excel 3D worksheet spans and expression pane", delegate { ExcelSheetSpanTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });
             Check("Excel direct highlight lifecycle session", delegate { ExcelDirectHighlightsTests.Run(); });

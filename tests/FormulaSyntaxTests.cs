@@ -88,8 +88,14 @@ public static class FormulaSyntaxTests
         Equal(Parse("='C:\\Reports\\[Book.xlsx]Sheet 1'!A1").Kind, "Reference");
         Equal(Parse("=[Book.xlsx]Sheet1!A1").Kind, "Reference");
         Equal(Parse("=2026!A1+2026Expenses!A2").Kind, "Operator +");
-        Equal(Parse("=SUM(Sheet1:Sheet3!A1)").Children[0].Kind, "Range");
-        Equal(Parse("=SUM('Sheet 1:Sheet 3'!A1)").Children[0].Kind, "Reference");
+        Equal(Parse("=SUM(Sheet1:Sheet3!A1)").Children[0].Kind, "3D reference");
+        Equal(Parse("=SUM('Sheet 1:Sheet 3'!A1)").Children[0].Kind, "3D reference");
+        root = Parse("=SUM(Jan:Mar!$B$2:$C$7,'North 1:North O''Brien'!$D$2,2024:2026!$2:$3,[Book.xlsx]Jan:Mar!$A:$C)");
+        Equal(root.Children.Count, 4);
+        Equal(root.Children.All(node => node.Kind == "3D reference" && node.Children.Count == 0), true);
+        Equal(root.Children[0].Text, "Jan:Mar!$B$2:$C$7");
+        Equal(root.Children[3].Text, "[Book.xlsx]Jan:Mar!$A:$C");
+        Equal(Parse("=SUM('C:\\Reports\\[Book.xlsx]Sheet 1:Sheet 3'!A1)").Children[0].Kind, "3D reference");
         Equal(Parse("=SUM(A:C,1:3,$A:$B,$1:$3)").Children.Count, 4);
         Equal(Parse("=Table1[[#Headers],[Net Sales]]").Kind, "Reference");
         Equal(Parse("=Table1[Item'] code]").Kind, "Reference");

@@ -85,6 +85,8 @@ Pour `SUMIF`, `COUNTIF`, `AVERAGEIF` et leurs variantes à plusieurs critères, 
 
 `MIN`, `MAX`, `MINA`, `MAXA`, ainsi que `SUBTOTAL` et `AGGREGATE` en modes 4 et 5, mettent en gras le premier argument qui correspond au résultat. Une plage peut être en gras pendant que la fonction affiche l'adresse de la cellule correspondante. [Validation des arguments retenus](docs/VALIDATION.md)
 
+Une référence 3D comme `Jan:Mar!B2` se développe par feuille dans **Formule**. L'aperçu calcule le résultat de l'argument seul pour les agrégats pris en charge. Pour un extrémum, le gras distingue aussi la première feuille qui correspond au résultat. Sélectionnez une feuille dans l'arbre puis appuyez sur **Entrée** pour ouvrir sa plage. Les feuilles masquées restent consultables dans l'arbre et doivent être affichées dans Excel pour y naviguer. [Validation des références 3D](docs/VALIDATION.md)
+
 Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
 
 Pour comparer : chargez le premier état, ouvrez **Comparaison**, puis **Mémoriser référence**. Modifiez le classeur ou activez un autre classeur dans Excel, puis cliquez sur **Comparer classeur Excel actif**. Les cellules sont appariées par nom de feuille et adresse. En mode formules, un changement de résultat calculé seul n'est pas une différence ; activez **Valeurs calculées** pour le comparer.

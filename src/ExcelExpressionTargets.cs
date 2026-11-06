@@ -26,6 +26,7 @@ namespace FormulaExplorer
     {
         internal static bool SupportsExpressionTarget(ExpressionNode node)
         {
+            if (node.SheetSpanOrigin != null) return true;
             if (SupportsCriteriaTarget(FormulaSyntax.FunctionName(node))) return true;
             while (IsSingleArgumentSum(node)) node = node.Children[0];
             switch (FormulaSyntax.FunctionName(node))
@@ -41,6 +42,7 @@ namespace FormulaExplorer
 
         internal ExpressionValue EvaluateExpressionNode(Book book, Cell owner, ExpressionNode root, ExpressionNode node)
         {
+            if (node.SheetSpan != null || node.SheetSpanOrigin != null) return EvaluateSheetSpanNode(book, owner, root, node);
             ExpressionNode[] indirect = FormulaSyntax.Flatten(node).Where(part => FormulaSyntax.FunctionName(part) == "INDIRECT").ToArray();
             if (indirect.Length == 0) return Evaluate(book, owner, FormulaSyntax.EvaluationText(root, node));
             return WithExpressionContext(book, owner, true, (sheet, range) =>
@@ -74,9 +76,10 @@ namespace FormulaExplorer
             var groups = new Dictionary<ExpressionNode, CriterionGroup>();
             ExpressionNode[] nodes = FormulaSyntax.Flatten(root).ToArray();
             bool hasBranches = nodes.Any(FormulaBranches.Supports);
-            if (hasBranches || nodes.Any(SupportsExpressionTarget))
+            if (hasBranches || nodes.Any(node => node.SheetSpan != null || SupportsExpressionTarget(node)))
                 WithExpressionContext(book, owner, true, (sheet, range) =>
                 {
+                    RefreshSheetSpans(sheet, nodes);
                     if (hasBranches) chosen = ReadExpressionBranches(sheet, range, root);
                     foreach (ExpressionNode node in nodes.Reverse().Where(SupportsExpressionTarget))
                     {
@@ -93,6 +96,12 @@ namespace FormulaExplorer
                         else target = ResolveExpressionTarget(sheet, range, root, node);
                         if (target != null) found[node] = target;
                     }
+                    foreach (ExpressionNode span in nodes.Where(node => node.SheetSpan != null))
+                        foreach (ExpressionNode part in span.SheetSpan.Parts)
+                        {
+                            ExpressionTarget target = ResolveExpressionTarget(sheet, range, root, part);
+                            if (target != null) found[part] = target;
+                        }
                     return true;
                 });
             branches = chosen;
@@ -105,6 +114,7 @@ namespace FormulaExplorer
             ExpressionTarget target = WithExpressionContext(book, owner, true,
                 (sheet, range) =>
                 {
+                    RefreshSheetSpans(sheet, FormulaSyntax.Flatten(root));
                     ExpressionNode filter = FindFilterWithMask(root, node);
                     if (filter == null) return ResolveExpressionTarget(sheet, range, root, node);
                     ExpressionTarget mask;
@@ -118,6 +128,10 @@ namespace FormulaExplorer
 
         ExpressionTarget ResolveExpressionTarget(object sheet, object owner, ExpressionNode root, ExpressionNode node)
         {
+            if (node.SheetSpanOrigin != null)
+                return node.SheetSpanOrigin.SheetSpan.Parts.Contains(node)
+                    ? ReadBranchWitness(sheet, owner, root, node, ReadExpressionTarget, (ExpressionTarget)null, evaluateOnApplication: true)
+                    : null;
             while (IsSingleArgumentSum(node)) node = node.Children[0];
             string function = FormulaSyntax.FunctionName(node);
             if (SupportsCriteriaTarget(function)) return ResolveCriteriaTarget(sheet, owner, root, node, function);

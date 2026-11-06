@@ -98,7 +98,11 @@ namespace FormulaExplorer
         {
             if (root == null) throw new ArgumentNullException("root");
             if (!FormulaSyntax.Flatten(root).Any(FormulaBranches.Supports)) return new HashSet<ExpressionNode>();
-            return WithExpressionContext(book, owner, true, (sheet, range) => ReadExpressionBranches(sheet, range, root));
+            return WithExpressionContext(book, owner, true, (sheet, range) =>
+            {
+                RefreshSheetSpans(sheet, FormulaSyntax.Flatten(root));
+                return ReadExpressionBranches(sheet, range, root);
+            });
         }
 
         static ISet<ExpressionNode> ReadExpressionBranches(object sheet, object range, ExpressionNode root)
@@ -109,14 +113,16 @@ namespace FormulaExplorer
                 (function, argument, first) => ReadExtremumArgument(sheet, range, root, function, argument, first));
         }
 
-        static object ReadExtremumArgument(object sheet, object range, ExpressionNode root, ExpressionNode function, int argument, int first)
+        static object ReadExtremumArgument(object sheet, object range, ExpressionNode root, ExpressionNode function, ExpressionNode child, int first)
         {
-            ExpressionNode child = function.Children[argument];
-            object value = ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing);
-            if (!Object.ReferenceEquals(value, multipleBranchCells)) return value;
-            // Arixcel evaluates a multi-cell reference as a separate argument to the parent function.
-            string prefix = String.Concat(function.Children.Take(first).Select(option => option.Text + ","));
-            string expression = FormulaSyntax.FunctionName(function) + "(" + prefix + child.Text + ")";
+            if (FormulaSyntax.UnwrapGroups(child).SheetSpan == null)
+            {
+                object value = ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing,
+                    evaluateOnApplication: child.SheetSpanOrigin != null);
+                if (!Object.ReferenceEquals(value, multipleBranchCells)) return value;
+            }
+            // Arixcel evaluates multi-cell and 3D references through the parent function.
+            string expression = ReducedReferenceText(function, child, first);
             return ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing, expression, evaluateOnApplication: true);
         }
 

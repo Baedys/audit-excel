@@ -186,14 +186,19 @@ namespace FormulaExplorer
             bool includeTextAndLogical = (function == "MINA" || function == "MAXA") && FormulaCriterion.NumericValue(value).HasValue;
             for (int argument = start; argument < end; argument++)
             {
-                CriterionGrid grid = EvaluateGrid(sheet, owner, root, node.Children[argument], true, true);
-                if (grid == null) continue;
-                for (int i = 0; i < grid.Size; i++)
+                ExpressionNode child = node.Children[argument];
+                SheetSpanReference span = FormulaSyntax.UnwrapGroups(child).SheetSpan;
+                foreach (ExpressionNode part in span == null ? new[] { child } : span.Parts)
                 {
-                    object candidate = grid.ValueAt(i);
-                    if (includeTextAndLogical && candidate is bool) candidate = (bool)candidate ? 1d : 0d;
-                    if (includeTextAndLogical && candidate is string) candidate = 0d;
-                    if (result.Matches(candidate)) return SelectCriteriaCells(grid, SingleCriterionCell((int)grid.Size, i));
+                    CriterionGrid grid = EvaluateGrid(sheet, owner, root, part, true, true);
+                    if (grid == null) continue;
+                    for (int i = 0; i < grid.Size; i++)
+                    {
+                        object candidate = grid.ValueAt(i);
+                        if (includeTextAndLogical && candidate is bool) candidate = (bool)candidate ? 1d : 0d;
+                        if (includeTextAndLogical && candidate is string) candidate = 0d;
+                        if (result.Matches(candidate)) return SelectCriteriaCells(grid, SingleCriterionCell((int)grid.Size, i));
+                    }
                 }
             }
             return null;

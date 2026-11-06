@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -15,6 +16,7 @@ namespace FormulaExplorer
         Dictionary<ExpressionNode, ExpressionTarget> expressionTargets = new Dictionary<ExpressionNode, ExpressionTarget>();
         Dictionary<ExpressionNode, CriterionGroup> criterionResults = new Dictionary<ExpressionNode, CriterionGroup>();
         readonly HashSet<ExpressionNode> shownCriteria = new HashSet<ExpressionNode>();
+        Dictionary<SheetSpanReference, ExpressionNode[]> shownSheetSpans = new Dictionary<SheetSpanReference, ExpressionNode[]>();
         ExpressionNode syntaxRoot;
         Cell expressionOwner;
         bool buildingExpressions;
@@ -94,6 +96,8 @@ namespace FormulaExplorer
         TreeNode ExpressionTree(ExpressionNode expression)
         {
             var node = new TreeNode(ExpressionNodeText(expression)) { Tag = expression, ToolTipText = ExpressionToolTip(expression) };
+            if (expression.SheetSpan != null)
+                foreach (ExpressionNode part in expression.SheetSpan.Parts) node.Nodes.Add(ExpressionTree(part));
             for (int index = 0; index < expression.Children.Count; index++)
             {
                 ExpressionNode child = expression.Children[index];
@@ -129,9 +133,12 @@ namespace FormulaExplorer
             }
         }
 
-        void RebuildCriterionLayout()
+        void RebuildExpressionLayout()
         {
-            if (shownCriteria.SetEquals(criterionResults.Keys)) return;
+            var sheetSpans = FormulaSyntax.Flatten(syntaxRoot).Where(node => node.SheetSpan != null && node.SheetSpan.Parts.Length != 0)
+                .ToDictionary(node => node.SheetSpan, node => node.SheetSpan.Parts);
+            if (shownCriteria.SetEquals(criterionResults.Keys) && sheetSpans.Count == shownSheetSpans.Count &&
+                sheetSpans.All(pair => shownSheetSpans.ContainsKey(pair.Key) && Object.ReferenceEquals(shownSheetSpans[pair.Key], pair.Value))) return;
             var expandedExpressions = new HashSet<ExpressionNode>();
             var expandedCriteria = new HashSet<ExpressionNode>();
             foreach (TreeNode node in ExpressionNodes())
@@ -143,6 +150,7 @@ namespace FormulaExplorer
             }
             CriterionGroup oldCriterion = SelectedCriterion();
             var oldExpression = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
+            ExpressionNode oldSpan = oldExpression == null ? null : oldExpression.SheetSpanOrigin;
             bool wasBuilding = buildingExpressions;
             buildingExpressions = true;
             expressions.BeginUpdate();
@@ -150,6 +158,7 @@ namespace FormulaExplorer
             {
                 shownCriteria.Clear();
                 shownCriteria.UnionWith(criterionResults.Keys);
+                shownSheetSpans = sheetSpans;
                 expressions.Nodes.Clear();
                 TreeNode root = ExpressionTree(syntaxRoot);
                 expressions.Nodes.Add(root);
@@ -167,12 +176,13 @@ namespace FormulaExplorer
                     {
                         var expression = (ExpressionNode)node.Tag;
                         if (expandedExpressions.Contains(expression)) node.Expand();
-                        if (oldExpression == expression || (oldCriterion != null && oldCriterion.Range == expression &&
+                        if (oldExpression == expression || oldSpan == expression || (oldCriterion != null && oldCriterion.Range == expression &&
                             !shownCriteria.Contains(expression))) selection = node;
                     }
                 }
                 expressions.SelectedNode = selection;
-                if (oldCriterion != null && !shownCriteria.Contains(oldCriterion.Range)) HighlightExpression(selection);
+                if ((oldCriterion != null && !shownCriteria.Contains(oldCriterion.Range)) ||
+                    (oldSpan != null && selection.Tag == oldSpan)) HighlightExpression(selection);
             }
             finally { expressions.EndUpdate(); buildingExpressions = wasBuilding; }
         }
@@ -188,7 +198,7 @@ namespace FormulaExplorer
                 try
                 {
                     bridge.ReadExpressionAnnotations(book, expressionOwner, syntaxRoot, out chosen, out expressionTargets, out criterionResults);
-                    RebuildCriterionLayout();
+                    RebuildExpressionLayout();
                 }
                 catch (InvalidOperationException error) { warning = error.Message; }
                 catch (COMException error) { warning = error.Message; }
@@ -210,7 +220,7 @@ namespace FormulaExplorer
         }
         void ShowExpressionTarget(TreeNode node, ExpressionNode expression, ExpressionTarget target)
         {
-            string text = (target == null ? "" : target.Display(book, expressionOwner) + " ← ") + ExpressionNodeText(expression);
+            string text = (target == null || expression.SheetSpanOrigin != null ? "" : target.Display(book, expressionOwner) + " ← ") + ExpressionNodeText(expression);
             if (node.Text != text) node.Text = text;
             var group = node.Parent == null ? null : node.Parent.Tag as CriterionGroup;
             string role = group == null ? "" : expression == group.Range ? "Plage du filtre · " : "Critère · ";
@@ -250,6 +260,7 @@ namespace FormulaExplorer
             expressionTargets.Clear();
             criterionResults.Clear();
             shownCriteria.Clear();
+            shownSheetSpans.Clear();
             expressions.BeginUpdate(); expressions.Nodes.Clear(); expressionValue.Clear();
             try
             {

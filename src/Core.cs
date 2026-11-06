@@ -126,7 +126,7 @@ namespace FormulaExplorer
     // Lexical dependency extraction; it deliberately does not evaluate Excel expressions.
     public static class FormulaParser
     {
-        static readonly Regex AddressPattern = new Regex(@"\G(?:\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?::\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9][0-9]{0,6}:\$?[1-9][0-9]{0,6})(?![!\p{L}\p{N}_.\\])");
+        internal static readonly Regex AddressPattern = new Regex(@"\G(?:\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?::\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9][0-9]{0,6}:\$?[1-9][0-9]{0,6})(?![!\p{L}\p{N}_.\\])");
         static readonly Regex NamePattern = new Regex(@"\G[\p{L}_\\][\p{L}\p{N}_.\\]*");
         static readonly Regex NumberPattern = new Regex(@"\G(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?");
         static bool NameChar(char c) { return Char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '\\'; }

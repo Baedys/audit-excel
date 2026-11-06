@@ -1,5 +1,21 @@
 # Revue et validation
 
+## Références 3D dans le volet Formule — 6 novembre 2026
+
+Arixcel 9.0.9623.19616 et Clair ont ouvert deux copies de `Arixcel3DReferences.xlsx` au même SHA-256. Les valeurs, les repères et les emplacements relevés concordent sur ces cinq formules. `Fev` est masquée dans le classeur témoin.
+
+| Cellule | Formule | Observations |
+| --- | --- | --- |
+| `B2` | `SUM(Jan:Mar!$B$2)` | Référence 3D `14`. Feuilles `Jan`, `Fev`, `Mar` dans cet ordre, valeurs `8`, `3`, `3`, toutes à `B2`. Les emplacements de la fonction et du groupe restent vides. |
+| `B3` | `MIN(Jan:Mar!$B$2,7)` | La fonction indique `Fev!B2`. La référence 3D et `Fev` sont en gras. `Mar` a la même valeur. |
+| `B4` | `MAX(Jan:Mar!$B$2:$B$3,5)` | Valeurs par feuille `20`, `19`, `40`, chacune sur `B2:B3`. La référence 3D et `Mar` sont en gras. La fonction indique `Mar!B3`. |
+| `B5` | `SUM('North 1:North O''Brien'!$D$2)` | Deux feuilles, valeurs `6` et `11`, somme `17`. |
+| `B8` | `SUM(Jan:Mar!B2,4)` | La référence 3D affiche `14` et la fonction `18`. |
+
+Excel a réécrit `MIN(Mar:Jan!$B$2,7)` en `MIN(Jan:Mar!$B$2,7)` à l'enregistrement de la formule. La comparaison avec l'original couvre les références du classeur courant. [Références 3D, Microsoft](https://support.microsoft.com/en-us/excel/create-a-3-d-reference-to-the-same-cell-range-on-multiple-worksheets)
+
+Les **88 contrôles Excel** des références 3D couvrent aussi `COUNT`, un onglet graphique intercalé, une feuille insérée entre les bornes, la sélection conservée dans le volet, la navigation vers la plage d'une feuille visible et la restauration du contexte Excel. Les modules des branches (**106 contrôles**), des critères (**167**) et des cibles (**97**) passent sur le même binaire. Les **68 groupes sans Excel** passent, dont **698 assertions** de syntaxe. Un essai Clair distinct sur deux classeurs ouverts retrouve les deux adresses du classeur source et leur somme `30`. Les cas du graphique et du classeur externe restent à comparer dans Arixcel.
+
 ## Argument retenu pour un extrémum — 6 novembre 2026
 
 Le gras d'Arixcel 9.0.9623.19616 et celui calculé par Clair concordent sur dix formules de `ArixcelExtremumChoices.xlsx`. Les copies ouvertes dans Excel ont le même SHA-256. La comparaison identifie chaque argument par sa position, même lorsque deux arguments ont le même texte.
@@ -17,7 +33,7 @@ Le gras d'Arixcel 9.0.9623.19616 et celui calculé par Clair concordent sur dix 
 | `B14` | `MIN(1,IF(TRUE,2,3),4)` | `1`. Le `IF` reste consultable avec ses arguments en texte normal. |
 | `B16` | `MAX` avec une cellule contenant le texte `30` avant le nombre `30` | `$H$3` |
 
-Les **106 contrôles Excel** des branches incluent le gras et l'adresse dans le volet, le contexte `LET`, les modes 4 et 5 et les tableaux de plusieurs éléments. Les modules des cibles (**97 contrôles**) et des critères (**167**) passent séparément sur le même binaire. Les **68 groupes sans Excel** passent, dont **164 assertions** sur les choix et **31** nouvelles sur les extrémums. La comparaison ci-dessus porte sur les repères de l'arbre. L'aperçu de plage conserve ses valeurs brutes. La sélection d'une feuille dans une référence 3D reste à valider.
+Les **106 contrôles Excel** des branches incluent le gras et l'adresse dans le volet, le contexte `LET`, les modes 4 et 5 et les tableaux de plusieurs éléments. Les modules des cibles (**97 contrôles**) et des critères (**167**) passent séparément sur le même binaire. Les **68 groupes sans Excel** passent, dont **164 assertions** sur les choix et **31** nouvelles sur les extrémums. La comparaison ci-dessus porte sur les repères d'arguments hors 3D. L'aperçu des plages ordinaires conserve ses valeurs brutes.
 
 ## Groupes de filtres et cellules d'extrémum — 6 novembre 2026
 

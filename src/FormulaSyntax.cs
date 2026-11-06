@@ -10,7 +10,39 @@ namespace FormulaExplorer
         public string Text, Kind;
         public int Start, Length;
         public readonly List<ExpressionNode> Children = new List<ExpressionNode>();
+        internal SheetSpanReference SheetSpan;
+        internal ExpressionNode SheetSpanOrigin;
         public override string ToString() { return Text; }
+    }
+
+    internal sealed class SheetSpanReference
+    {
+        static readonly Regex Qualifier = new Regex(@"\G(?<s>'(?:[^']|'')+'|(?:\[[^\]]+\])?[\p{L}\p{N}_.]+:[\p{L}\p{N}_.]+)!");
+        internal readonly string First, Last, Address, Workbook;
+        internal readonly bool HasPath;
+        internal ExpressionNode[] Parts = new ExpressionNode[0];
+
+        SheetSpanReference(string first, string last, string address, string workbook, bool hasPath)
+        { First = first; Last = last; Address = address; Workbook = workbook; HasPath = hasPath; }
+
+        internal static SheetSpanReference Read(string source, int start, out int end)
+        {
+            end = start;
+            Match qualifier = Qualifier.Match(source, start);
+            if (!qualifier.Success) return null;
+            string sheets = qualifier.Groups["s"].Value;
+            if (sheets[0] == '\'') sheets = sheets.Substring(1, sheets.Length - 2).Replace("''", "'");
+            int bracket = sheets.LastIndexOf(']');
+            int bookStart = bracket < 0 ? -1 : sheets.LastIndexOf('[', bracket);
+            if (bracket >= 0 && (bookStart < 0 || bracket == bookStart + 1)) return null;
+            string workbook = bookStart < 0 ? "" : sheets.Substring(bookStart + 1, bracket - bookStart - 1);
+            string[] names = sheets.Substring(bracket + 1).Split(':');
+            if (names.Length != 2 || names[0].Length == 0 || names[1].Length == 0) return null;
+            Match address = FormulaParser.AddressPattern.Match(source, start + qualifier.Length);
+            if (!address.Success || Reference.Parse(names[0], address.Value) == null) return null;
+            end = address.Index + address.Length;
+            return new SheetSpanReference(names[0], names[1], address.Value, workbook, bookStart > 0);
+        }
     }
 
     /// <summary>
@@ -47,6 +79,11 @@ namespace FormulaExplorer
         internal static string EvaluationText(ExpressionNode root, ExpressionNode target, string replacement)
         {
             if (root == null || target == null) throw new ArgumentNullException(root == null ? "root" : "target");
+            if (target.SheetSpanOrigin != null)
+            {
+                replacement = replacement ?? target.Text;
+                target = target.SheetSpanOrigin;
+            }
             var path = new List<ExpressionNode>();
             if (!FindPath(root, target, path)) throw new ArgumentException("The selected expression does not belong to this formula.", "target");
             string expression = replacement ?? target.Text;
@@ -78,6 +115,12 @@ namespace FormulaExplorer
             string name = parenthesis < 0 ? "" : node.Text.Substring(0, parenthesis).Trim().ToUpperInvariant();
             if (name.StartsWith("_XLFN.", StringComparison.Ordinal)) name = name.Substring(6);
             return name.StartsWith("_XLWS.", StringComparison.Ordinal) ? name.Substring(6) : name;
+        }
+
+        internal static ExpressionNode UnwrapGroups(ExpressionNode node)
+        {
+            while (node.Kind == "Group" && node.Children.Count == 1) node = node.Children[0];
+            return node;
         }
 
         internal static ExpressionNode LetBinding(ExpressionNode root, ExpressionNode variable)
@@ -122,6 +165,7 @@ namespace FormulaExplorer
         {
             public string Text, Kind;
             public int Start, End;
+            public SheetSpanReference SheetSpan;
         }
 
         sealed class Parser
@@ -218,7 +262,7 @@ namespace FormulaExplorer
             static bool ReferenceLike(ExpressionNode node)
             {
                 if (node.Kind == "Group") return node.Children.Count == 1 && ReferenceLike(node.Children[0]);
-                return node.Kind == "Reference" || node.Kind == "Name" || node.Kind == "Function" || node.Kind == "Invocation" || node.Kind == "Range" || node.Kind == "Union" || node.Kind == "Intersection" || node.Kind == "Spill";
+                return node.SheetSpan != null || node.Kind == "Reference" || node.Kind == "Name" || node.Kind == "Function" || node.Kind == "Invocation" || node.Kind == "Range" || node.Kind == "Union" || node.Kind == "Intersection" || node.Kind == "Spill";
             }
             static bool RangeEndpoint(ExpressionNode node)
             {
@@ -229,6 +273,12 @@ namespace FormulaExplorer
             ExpressionNode Prefix(bool union)
             {
                 Token token = Take();
+                if (token.SheetSpan != null)
+                {
+                    ExpressionNode span = Node("3D reference", token.Start, token.End);
+                    span.SheetSpan = token.SheetSpan;
+                    return span;
+                }
                 if (token.Text == "+" || token.Text == "-" || token.Text == "@")
                 {
                     ExpressionNode operand = Expression(70, union);
@@ -330,6 +380,17 @@ namespace FormulaExplorer
                     if (Char.IsWhiteSpace(source[p])) { p++; continue; }
                     int start = p;
                     char c = source[p];
+                    if (c == '\'' || c == '[' || IsNameCharacter(c))
+                    {
+                        int end;
+                        SheetSpanReference span = SheetSpanReference.Read(source, p, out end);
+                        if (span != null)
+                        {
+                            tokens.Add(new Token { Start = start, End = end, Kind = "Atom", Text = source.Substring(start, end - start), SheetSpan = span });
+                            p = end;
+                            continue;
+                        }
+                    }
                     string kind = "Symbol";
                     if (c == '"')
                     {
