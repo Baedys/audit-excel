@@ -38,7 +38,9 @@ namespace FormulaExplorer
 
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
-            if (keyData == (Keys.Control | Keys.Back) && tabs.SelectedIndex == 0 &&
+            Control source = keyData == Keys.Enter ? Control.FromChildHandle(message.HWnd) : null;
+            if (!(source is ButtonBase) && HandleFormulaEditingKey(keyData)) return true;
+            if (formulaEditCell == null && keyData == (Keys.Control | Keys.Back) && tabs.SelectedIndex == 0 &&
                 HasWorksheetShortcutTrace && LeaveExplorerForWorksheet != null)
             {
                 Control previous = Control.FromChildHandle(message.HWnd);
@@ -51,11 +53,10 @@ namespace FormulaExplorer
             if (keyData == Keys.Escape && HandleExplorerExitKey(keyData)) return true;
             if (keyData == Keys.Enter)
             {
-                Control source = Control.FromChildHandle(message.HWnd);
                 if (!(source is ButtonBase) && !(source is LinkLabel) && !(source is ComboBox) &&
                     HandleExplorerExitKey(keyData)) return true;
             }
-            if (keyData == (Keys.Alt | Keys.R))
+            if (formulaEditCell == null && keyData == (Keys.Alt | Keys.R))
             {
                 TreeView view = expressions.ContainsFocus || formula.Focused || expressionValue.Focused ? expressions : tree;
                 if (HandleExplorerNavigationKey(view, new KeyEventArgs(keyData))) return true;
@@ -66,6 +67,7 @@ namespace FormulaExplorer
         internal bool ResumeExplorerFromWorksheet()
         {
             if (!HasWorksheetShortcutTrace || !Visible) return false;
+            if (formulaEditCell != null) return shortcutControlFocus(formulaEditor);
             SelectExplorerTab(reverse);
             Control destination = shortcutFocus;
             if (destination == null || destination.IsDisposed || !shortcutControlFocus(destination))

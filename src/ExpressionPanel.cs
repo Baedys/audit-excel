@@ -11,7 +11,6 @@ namespace FormulaExplorer
     {
         readonly TreeView expressions = new TreeView();
         readonly TextBox expressionValue = new TextBox();
-        readonly Stack<FormulaChange> formulaChanges = new Stack<FormulaChange>();
         readonly CheckBox evaluateOnSelect = new CheckBox();
         Dictionary<ExpressionNode, ExpressionTarget> expressionTargets = new Dictionary<ExpressionNode, ExpressionTarget>();
         Dictionary<ExpressionNode, CriterionGroup> criterionResults = new Dictionary<ExpressionNode, CriterionGroup>();
@@ -29,9 +28,12 @@ namespace FormulaExplorer
             panel.RowStyles.Add(BarRow(72)); panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); panel.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 43 : 76));
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var actions = CommandBar(); actions.Margin = Padding.Empty;
-            actions.Controls.Add(ActionButton("Évaluer", EvaluateSelectedExpression));
-            actions.Controls.Add(ActionButton(IsDocked ? "Modifier" : "Modifier (F2)", EditSelectedFormula));
-            actions.Controls.Add(ActionButton(IsDocked ? "Annuler" : "Annuler édition", UndoLastFormula));
+            evaluateExpressionButton = ActionButton("Évaluer", EvaluateSelectedExpression);
+            formulaEditButton = ActionButton(FormulaEditLabel, EditSelectedFormula);
+            formulaUndoButton = ActionButton(FormulaUndoLabel, UndoLastFormula);
+            actions.Controls.Add(evaluateExpressionButton);
+            actions.Controls.Add(formulaEditButton);
+            actions.Controls.Add(formulaUndoButton);
             evaluateOnSelect.Text = IsDocked ? "Évaluer au clic" : "Évaluer à la sélection"; evaluateOnSelect.AutoSize = true; evaluateOnSelect.Checked = true;
             actions.Controls.Add(evaluateOnSelect); PlaceCommandBar(panel, actions, 0);
             expressions.Dock = DockStyle.Fill; expressions.HideSelection = false; expressions.BorderStyle = BorderStyle.FixedSingle;
@@ -68,8 +70,7 @@ namespace FormulaExplorer
             KeyPreview = true;
             KeyDown += delegate(object sender, KeyEventArgs e)
             {
-                if (e.KeyCode == Keys.F2) { e.Handled = true; e.SuppressKeyPress = true; Safe(EditSelectedFormula); }
-                else if (e.Alt && e.KeyCode == Keys.Left) { e.Handled = true; Safe(Back); }
+                if (formulaEditCell == null && e.Alt && e.KeyCode == Keys.Left) { e.Handled = true; Safe(Back); }
             };
         }
         TreeNode ExpressionTree(ExpressionNode expression)
@@ -344,61 +345,6 @@ namespace FormulaExplorer
             catch (InvalidOperationException error) { expressionValue.Text = error.Message; }
             catch (COMException error) { expressionValue.Text = error.Message; }
             catch (AggregateException error) { expressionValue.Text = error.Message; }
-        }
-        void EditSelectedFormula()
-        {
-            if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour modifier une formule.");
-            Cell cell = SelectedCell(); if (cell == null) return;
-            if (cell.Workbook != null && cell.Workbook != book)
-            {
-                status.Text = "Ouvrez Clair dans le classeur lié pour modifier cette formule.";
-                return;
-            }
-            using (var dialog = new Form { Text = "Modifier " + cell.Location, Width = 720, Height = 330, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
-            {
-                var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 4, ColumnCount = 1 };
-                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-                layout.Controls.Add(new Label { Text = "Formule Excel : noms de fonctions anglais, virgules entre arguments.", Dock = DockStyle.Fill }, 0, 0);
-                var editor = new TextBox { Multiline = true, Dock = DockStyle.Fill, Font = new Font("Consolas", 12), ScrollBars = ScrollBars.Both, Text = cell.Formula ?? "=" };
-                layout.Controls.Add(editor, 0, 1);
-                var message = new Label { Dock = DockStyle.Fill, ForeColor = Color.Firebrick, Text = "Appliquer écrit dans le classeur. Annuler édition permettra de restaurer cette cellule." }; layout.Controls.Add(message, 0, 2);
-                var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-                var cancel = new Button { Text = "Fermer", DialogResult = DialogResult.Cancel, AutoSize = true };
-                var apply = new Button { Text = "Appliquer", AutoSize = true };
-                actions.Controls.Add(cancel); actions.Controls.Add(apply); layout.Controls.Add(actions, 0, 3); dialog.Controls.Add(layout);
-                dialog.CancelButton = cancel; dialog.AcceptButton = apply;
-                editor.KeyDown += delegate(object sender, KeyEventArgs e)
-                {
-                    if (e.KeyData != (Keys.Alt | Keys.Enter)) return;
-                    editor.SelectedText = Environment.NewLine;
-                    e.Handled = e.SuppressKeyPress = true;
-                };
-                apply.Click += delegate
-                {
-                    try
-                    {
-                        FormulaChange change = bridge.EditFormula(book, cell, editor.Text);
-                        formulaChanges.Push(change); dialog.DialogResult = DialogResult.OK; dialog.Close();
-                    }
-                    catch (Exception ex) { message.Text = ex.Message; }
-                };
-                dialog.Shown += delegate { editor.Focus(); editor.SelectionStart = editor.Text.Length; };
-                if (dialog.ShowDialog(this) == DialogResult.OK)
-                {
-                    Book updated = bridge.Refresh(book, cell);
-                    SetCapturedBook(updated, cell.Sheet, cell.Address, null, hasTracePeers ? bridge.CaptureDependencyPeers(updated) : null);
-                    status.Text = "Formule modifiée dans " + cell.Location + ". Annulation disponible dans Clair.";
-                }
-            }
-        }
-        void UndoLastFormula()
-        {
-            if (bridge == null || formulaChanges.Count == 0) throw new InvalidOperationException("Aucune édition Clair à annuler.");
-            FormulaChange change = formulaChanges.Peek(); bridge.UndoFormula(change); formulaChanges.Pop();
-            Book changedBook = new Book { FullName = change.Workbook };
-            Cell changedCell = new Cell { Sheet = change.Sheet, Address = change.Address };
-            Book updated = bridge.Refresh(changedBook, changedCell); SetBook(updated, change.Sheet, change.Address);
-            status.Text = "Édition annulée : " + change.Location;
         }
     }
 }

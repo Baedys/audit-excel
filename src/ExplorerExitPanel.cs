@@ -51,7 +51,7 @@ namespace FormulaExplorer
 
         bool HandleExplorerExitKey(Keys keyData)
         {
-            if (!IsDocked || tabs.SelectedIndex != 0 || root == null ||
+            if (formulaEditCell != null || !IsDocked || tabs.SelectedIndex != 0 || root == null ||
                 (keyData != Keys.Escape && keyData != Keys.Enter)) return false;
             try
             {

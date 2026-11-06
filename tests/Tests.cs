@@ -186,6 +186,7 @@ static class Tests
             Check("Excel multi-area direct dependency traces", delegate { ExcelDependencyRangesTests.Run(); });
             Check("Excel direct dependencies across workbooks", ExcelExternalDependencyTests.Run);
             Check("Excel formula text, tree and cell selection", ExcelFormulaSelectionTests.Run);
+            Check("Excel in-pane formula editing", ExcelFormulaEditingPanelTests.Run);
             Check("Excel temporary navigation visibility", ExcelNavigationVisibilityTests.Run);
             Check("Excel navigation corner shortcuts", ExcelNavigationShortcutTests.Run);
             Check("Excel worksheet shortcut locations", WorksheetShortcutTests.RunExcel);

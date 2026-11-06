@@ -77,7 +77,7 @@ namespace FormulaExplorer
         void RefreshExplorerModel(TreeView navigationView)
         { RefreshExplorerModelCore(navigationView, false); }
 
-        void RefreshExplorerModelCore(TreeView navigationView, bool fromWorksheetHistory)
+        void RefreshExplorerModelCore(TreeView navigationView, bool fromWorksheetHistory, bool fromFormulaEdit = false)
         {
             if (bridge == null || book == null || liveSource == null)
                 throw new InvalidOperationException("Chargez une sélection Excel pour actualiser le tracé.");
@@ -124,7 +124,7 @@ namespace FormulaExplorer
                 sheetName(oldExpression.Workbook, oldExpression.Sheet);
             Cell nextExpression = expressionSheet == null ? null : ReferenceEquals(oldExpression, root) ? nextRoot :
                 replace(oldExpression.Workbook).Get(expressionSheet, oldExpression.Address);
-            ExplorerExpressionState expressionState = navigationView == null || nextExpression == null ? null : CaptureExplorerExpressions();
+            ExplorerExpressionState expressionState = (navigationView == null && !fromFormulaEdit) || nextExpression == null ? null : CaptureExplorerExpressions();
 
             Cell nextCaptured = ReferenceEquals(capturedRoot, root) ? nextRoot : null;
             var previousHistory = history.Reverse().ToArray();
@@ -162,7 +162,7 @@ namespace FormulaExplorer
                 history.Push(item);
             }
 
-            ResetExplorerNavigation();
+            if (!fromFormulaEdit) ResetExplorerNavigation();
             ResetFlowDisplay();
             status.Text = "Tracé actualisé · " + TraceCellLabel(root);
             ShowTreeSelection(selection);

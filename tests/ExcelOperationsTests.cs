@@ -142,6 +142,10 @@ public static class ExcelOperationsTests
             book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M1"), "=DATE(2026,1,1)"); bridge.UndoFormula(change);
             Equal(Format(dateCell, null), "General"); Equal((double)dateCell.Value2, 8.0);
             book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M1"), "=DATE(2026,1,1)"); Format(dateCell, "0.000"); bridge.UndoFormula(change); Equal(Format(dateCell, null), "0.000");
+            dynamic textFormatted = Keep(ws.Range["M2"]); Format(textFormatted, "@"); textFormatted.Value2 = "texte";
+            book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M2"), "=1+2");
+            Equal((bool)textFormatted.HasFormula, true); Equal((double)textFormatted.Value2, 3.0); Equal(Format(textFormatted, null), "@");
+            bridge.UndoFormula(change); Equal((bool)textFormatted.HasFormula, false); Equal((string)textFormatted.Value2, "texte"); Equal(Format(textFormatted, null), "@");
             other.Activate(); dynamic shapes = Keep(other.Shapes), shape = Keep(shapes.AddShape(1, 5, 5, 30, 30)); shape.Select();
             book = bridge.Capture(workbook); bridge.Evaluate(book, book.Get("Values", "K3"), "[@[Input!]]*2");
             Equal((string)Keep(app.Selection).Name, (string)shape.Name);
@@ -151,6 +155,14 @@ public static class ExcelOperationsTests
             book = bridge.Capture(workbook); Equal(bridge.SelectionCells(book).Count, 5);
             bridge.Evaluate(book, book.Get("Values", "K3"), "[@[Input!]]*2");
             Equal((int)Keep(Keep(app.Selection).Areas).Count, 2); Equal((string)Keep(app.ActiveCell).Address, "$E$10");
+            dynamic moved = Keep(ws.Range["M20"]); moved.Formula2 = "=42";
+            book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M20"), "=99");
+            Keep(moved.EntireRow).Insert();
+            Keep(ws.Range["M20"]).Formula2 = "=99";
+            ws.Name = "Valeurs déplacées";
+            bridge.UndoFormula(change);
+            Equal((string)Keep(ws.Range["M20"]).Formula2, "=99"); Equal((string)Keep(ws.Range["M21"]).Formula2, "=42");
+            Equal(change.Location, "'Valeurs déplacées'!M21");
             Console.WriteLine("PASS Excel expressions, locale, context restoration, formula edit/undo and conflict protection");
         }
         finally

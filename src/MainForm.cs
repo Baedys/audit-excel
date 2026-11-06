@@ -94,7 +94,7 @@ namespace FormulaExplorer
             formula.Dock = DockStyle.Fill; formula.Multiline = true; formula.ReadOnly = true;
             formula.ScrollBars = IsDocked ? RichTextBoxScrollBars.Vertical : RichTextBoxScrollBars.Both;
             formula.WordWrap = false; formula.Font = new Font("Consolas", 11); formula.BackColor = Color.White;
-            formulaLayout.Controls.Add(formula, 0, 1);
+            InitializeFormulaEditing(formulaLayout, toolbar, direction);
             InitializeExpressions(formulaLayout);
             if (IsDocked)
             {
@@ -354,6 +354,7 @@ namespace FormulaExplorer
         }
         internal void ExecuteDockedRibbonCommand(string command)
         {
+            if (formulaEditCell != null) { status.Text = FormulaEditingHint; return; }
             if (command == "precedents" || command == "dependents")
             {
                 SelectExplorerTab(command == "dependents");

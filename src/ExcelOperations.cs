@@ -17,11 +17,13 @@ namespace FormulaExplorer
 
     public sealed class FormulaChange
     {
-        internal string Workbook, Sheet, Address, BeforeFormula, AfterFormula, BeforeFormat, AfterFormat;
-        internal object BeforeValue;
+        internal Book Workbook;
+        internal string Sheet, Address, DisplaySheet, BeforeFormula, AfterFormula, BeforeFormat, AfterFormat;
+        internal object BeforeValue, Target;
         internal bool WasFormula;
         public bool Undone { get; internal set; }
-        public string Location { get { return "'" + Sheet.Replace("'", "''") + "'!" + Address; } }
+        public string Location { get { return "'" + (DisplaySheet ?? Sheet).Replace("'", "''") + "'!" + Address; } }
+        internal void ReleaseTarget() { ExcelBridge.Release(Target); Target = null; }
     }
 
     public sealed partial class ExcelBridge
@@ -55,7 +57,10 @@ namespace FormulaExplorer
                 app = ((dynamic)range).Application; autoCorrect = ((dynamic)app).AutoCorrect;
                 autoFill = ((dynamic)autoCorrect).AutoFillFormulasInLists; captured = true;
                 ((dynamic)autoCorrect).AutoFillFormulasInLists = false;
-                OfficeCall(range, modern ? "Formula2" : "Formula", BindingFlags.SetProperty, text);
+                bool textFormat = String.Equals(FormulaNumberFormat(range), "@", StringComparison.Ordinal);
+                if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "General");
+                try { OfficeCall(range, modern ? "Formula2" : "Formula", BindingFlags.SetProperty, text); }
+                finally { if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "@"); }
             }
             finally
             {
@@ -370,7 +375,7 @@ namespace FormulaExplorer
         public FormulaChange EditFormula(Book book, Cell cell, string formulaText)
         {
             if (String.IsNullOrWhiteSpace(formulaText) || !formulaText.StartsWith("=", StringComparison.Ordinal)) throw new ArgumentException("La formule doit commencer par = (noms de fonctions anglais).");
-            return AtCell(book.FullName, cell.Sheet, cell.Address, delegate(object worksheet, object range)
+            return AtDirectCell(book, cell.Sheet, cell.Address, delegate(object worksheet, object range)
             {
                 RequireEditable(range); RequireCurrentFormula(range, cell);
                 dynamic target = range;
@@ -378,28 +383,95 @@ namespace FormulaExplorer
                 string currentKind = currentValue == null ? "Vide" : currentValue is ErrorWrapper || currentValue is Int32 ? "Erreur" : currentValue is bool ? "Booléen" : currentValue is string ? "Texte" : "Nombre";
                 if (!cell.IsFormula && ((bool)target.HasFormula || currentKind != cell.Kind || !String.Equals(Scalar(currentValue), String.IsNullOrEmpty(cell.Value) && cell.Kind == "Vide" ? "(vide)" : cell.Kind == "Booléen" ? cell.Value.ToUpperInvariant() : cell.Value, StringComparison.Ordinal)))
                     throw new InvalidOperationException("Cellule modifiée dans Excel : rechargez avant de l'éditer.");
-                FormulaChange change = new FormulaChange { Workbook = book.FullName, Sheet = cell.Sheet, Address = cell.Address,
-                    BeforeFormula = Convert.ToString(ReadFormula(range), FormulaCulture), BeforeValue = target.Value2, WasFormula = (bool)target.HasFormula, BeforeFormat = (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty) };
-                WriteFormula(range, formulaText);
-                change.AfterFormula = Convert.ToString(ReadFormula(range), FormulaCulture);
-                change.AfterFormat = (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty);
+                // Keep the physical workbook ticket without retaining all the captured cells in the undo stack.
+                var lifetime = new Book { FullName = book.FullName };
+                directSnapshots.Add(lifetime, RequireDependencySnapshot(book));
+                FormulaChange change = new FormulaChange { Workbook = lifetime, Sheet = cell.Sheet, Address = cell.Address,
+                    BeforeFormula = Convert.ToString(ReadFormula(range), FormulaCulture), BeforeValue = currentValue, WasFormula = (bool)target.HasFormula, BeforeFormat = FormulaNumberFormat(range) };
+                change.Target = RangeAt(worksheet, cell.Address);
+                try
+                {
+                    WriteFormula(range, formulaText);
+                    if (!(bool)target.HasFormula) throw new InvalidOperationException("Excel n’a pas accepté le texte comme formule.");
+                    change.AfterFormula = Convert.ToString(ReadFormula(range), FormulaCulture);
+                    change.AfterFormat = FormulaNumberFormat(range);
+                }
+                catch (Exception writeError)
+                {
+                    change.ReleaseTarget();
+                    try { RestoreFormulaContent(range, change, change.BeforeFormat); }
+                    catch (Exception rollbackError)
+                    {
+                        throw new InvalidOperationException("Restauration après échec de l’écriture impossible. " +
+                            writeError.Message + " · " + rollbackError.Message, new AggregateException(writeError, rollbackError));
+                    }
+                    throw;
+                }
                 return change;
             });
         }
         public void UndoFormula(FormulaChange change)
         {
-            if (change == null || change.Undone) throw new InvalidOperationException("Aucune édition à annuler.");
-            AtCell(change.Workbook, change.Sheet, change.Address, delegate(object worksheet, object range)
+            if (change == null || change.Undone || change.Target == null) throw new InvalidOperationException("Aucune édition à annuler.");
+            AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
             {
+                object range = change.Target;
                 RequireEditable(range);
                 if (!(bool)((dynamic)range).HasFormula || !String.Equals(Convert.ToString(ReadFormula(range), FormulaCulture), change.AfterFormula, StringComparison.Ordinal))
                     throw new InvalidOperationException("Cellule modifiée depuis l'édition : annulation refusée pour préserver votre modification.");
-                if (change.WasFormula) WriteFormula(range, change.BeforeFormula);
-                else if (change.BeforeValue is string) ((dynamic)range).Value2 = "'" + (string)change.BeforeValue;
-                else ((dynamic)range).Value2 = change.BeforeValue;
-                if (String.Equals((string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty), change.AfterFormat, StringComparison.Ordinal)) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, change.BeforeFormat);
-                change.Undone = true; return true;
+                string sheet = (string)((dynamic)worksheet).Name;
+                string address = ((string)((dynamic)range).Address).Replace("$", "");
+                string format = FormulaNumberFormat(range);
+                try
+                {
+                    RestoreFormulaContent(range, change, String.Equals(format, change.AfterFormat, StringComparison.Ordinal) ? change.BeforeFormat : format);
+                }
+                catch (Exception undoError)
+                {
+                    try
+                    {
+                        WriteFormulaIfDifferent(range, change.AfterFormula);
+                        RestoreFormulaNumberFormat(range, format);
+                    }
+                    catch (Exception rollbackError)
+                    {
+                        throw new InvalidOperationException("Restauration après échec de l’annulation impossible. " +
+                            undoError.Message + " · " + rollbackError.Message, new AggregateException(undoError, rollbackError));
+                    }
+                    throw;
+                }
+                change.DisplaySheet = sheet; change.Address = address; change.Undone = true;
+                change.ReleaseTarget();
+                return true;
             });
+        }
+
+        static string FormulaNumberFormat(object range)
+        { return (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty); }
+
+        static void RestoreFormulaNumberFormat(object range, string format)
+        {
+            if (!String.Equals(FormulaNumberFormat(range), format, StringComparison.Ordinal))
+                OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, format);
+        }
+
+        static void WriteFormulaIfDifferent(object range, string formula)
+        {
+            if (!(bool)((dynamic)range).HasFormula || !String.Equals(Convert.ToString(ReadFormula(range), FormulaCulture), formula, StringComparison.Ordinal))
+                WriteFormula(range, formula);
+        }
+
+        static void RestoreFormulaContent(object range, FormulaChange change, string format)
+        {
+            dynamic target = range;
+            bool hasFormula = (bool)target.HasFormula;
+            if (change.WasFormula) WriteFormulaIfDifferent(range, change.BeforeFormula);
+            else if (hasFormula || !Object.Equals((object)target.Value2, change.BeforeValue))
+            {
+                if (change.BeforeValue is string) target.Value2 = "'" + (string)change.BeforeValue;
+                else target.Value2 = change.BeforeValue;
+            }
+            RestoreFormulaNumberFormat(range, format);
         }
         public Book Refresh(Book book, Cell cell)
         {
