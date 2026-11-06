@@ -32,6 +32,7 @@ static class Tests
         Check("reversed range normalized", delegate { var r = Parse("=SUM(C8:A2)").References[0]; Equal(r.FirstColumn, 1); Equal(r.FirstRow, 2); });
         Check("external reference not local", delegate { var p = Parse("='[Other.xlsx]S1'!A1+B2"); Equal(p.References.Count, 1); Assert(p.Warnings.Count > 0, "missing warning"); });
         Check("external unquoted reference", delegate { var p = Parse("=[Other.xlsx]S1!A1+B2"); Equal(p.References.Count, 1); Equal(p.References[0].FirstRow, 2); });
+        Check("open workbook reference parsing", ExternalFormulaParserTests.Run);
         Check("3D reference explicit unknown", delegate { var p = Parse("=SUM(S1:S3!A1)+B2"); Equal(p.References.Count, 1); Assert(p.Warnings.Count > 0, "missing warning"); });
         Check("structured reference explicit unknown", delegate { var p = Parse("=SUM(Table1[[#Data],[A1]])+B2"); Equal(p.References.Count, 1); Assert(p.Warnings.Count > 0, "missing warning"); });
         Check("dynamic reference warning", delegate { var p = Parse("=INDIRECT(\"A1\")+OFFSET(B1,1,0)"); Equal(p.References.Count, 1); Equal(p.Warnings.Count, 2); });
@@ -180,6 +181,7 @@ static class Tests
             Check("Excel conditional formula branch rendering", delegate { ExcelFormulaBranchesTests.Run(); });
             Check("Excel 3D worksheet spans and expression pane", delegate { ExcelSheetSpanTests.Run(); });
             Check("Excel multi-area direct dependency traces", delegate { ExcelDependencyRangesTests.Run(); });
+            Check("Excel direct dependencies across workbooks", ExcelExternalDependencyTests.Run);
             Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });
             Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
             Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });

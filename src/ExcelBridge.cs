@@ -190,6 +190,7 @@ namespace FormulaExplorer
                 if ((int)((dynamic)application).Calculation == -4135) book.Warnings.Add("Calcul Excel manuel : valeurs potentiellement anciennes.");
                 return book;
             }
+            catch { UnregisterDirectSnapshot(book); throw; }
             finally { Release(names); Release(worksheets); }
         }
 

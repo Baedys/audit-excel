@@ -96,17 +96,17 @@ namespace FormulaExplorer
                 FlowActivation.ForCells(a.Category, a.Cells.Select(current).Where(c => c != null).ToList().AsReadOnly())).ToList();
             if (bridge != null)
             {
-                Cell location = current(root);
+                Cell location = current(FlowRoot);
                 if (location == null) throw new InvalidOperationException("Cellule racine supprimée : rechargez une sélection Excel avant d'analyser.");
                 Book fresh = bridge.RefreshDirectHighlightOwner(flowLayer, book); string sheet = location.Sheet, address = location.Address;
                 SetBook(fresh, sheet, address);
             }
             List<Cell> selection = flowScope.SelectedIndex == 2 || flowFocus.SelectedIndex == 2 ? FlowSelection() : null;
             IEnumerable<Cell> scope = flowScope.SelectedIndex == 2 ? selection :
-                flowScope.SelectedIndex == 1 ? book.Cells.Values.Where(c => String.Equals(c.Sheet, root.Sheet, StringComparison.OrdinalIgnoreCase)) : book.Cells.Values;
+                flowScope.SelectedIndex == 1 ? book.Cells.Values.Where(c => String.Equals(c.Sheet, FlowRoot.Sheet, StringComparison.OrdinalIgnoreCase)) : book.Cells.Values;
             List<Cell> area = scope.ToList();
             IEnumerable<Cell> focus = flowFocus.SelectedIndex == 2 ? selection :
-                flowFocus.SelectedIndex == 1 ? area.Where(c => String.Equals(c.Sheet, root.Sheet, StringComparison.OrdinalIgnoreCase)) : area;
+                flowFocus.SelectedIndex == 1 ? area.Where(c => String.Equals(c.Sheet, FlowRoot.Sheet, StringComparison.OrdinalIgnoreCase)) : area;
             flowResult = FlowAnalysis.Analyze(engine, area, focus); flowBlocks = FlowBlocks.Build(flowResult); flowExcludedRoles.Clear(); flowActivations.Clear();
             var members = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
             foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
@@ -236,7 +236,7 @@ namespace FormulaExplorer
         void RemoveLegacyFlowColors()
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel.");
-            bridge.GetDirectHighlightSheetIdentity(book, root.Sheet);
+            bridge.GetDirectHighlightSheetIdentity(book, FlowRoot.Sheet);
             bridge.RemoveHighlightLayers(book, bridge.HighlightLayers(book).Where(IsFlowLayer));
             status.Text = "Anciennes couleurs de flux CF de Clair retirées du classeur chargé.";
         }

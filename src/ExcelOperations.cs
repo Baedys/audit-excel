@@ -178,7 +178,7 @@ namespace FormulaExplorer
 
         T WithExpressionContext<T>(Book book, Cell owner, bool preserveGroups, Func<object, object, T> evaluate)
         {
-            return AtCell(book.FullName, owner.Sheet, owner.Address, delegate(object worksheet, object range)
+            return AtDirectCell(book, owner.Sheet, owner.Address, delegate(object worksheet, object range)
             {
                 RequireCurrentFormula(range, owner);
                 dynamic app = application;

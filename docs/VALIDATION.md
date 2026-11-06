@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Dépendances entre classeurs ouverts — 6 novembre 2026
+
+Le témoin Excel utilise trois classeurs aux noms proches, chacun avec une feuille `Data`. Il vérifie des antécédents à la même adresse dans les trois classeurs, l'évaluation d'une formule externe dans sa propre feuille, un dépendant dans un classeur pair, des rectangles homonymes et leur surlignage, la navigation explicite et le retour dans l'arbre. Fermer un pair garde le surlignage de la source. La capture suivante signale le fichier fermé et conserve les résultats des classeurs ouverts.
+
+Le parseur est testé séparément sur les références 3D vers un classeur ouvert, les chemins et feuilles avec apostrophes, les lignes et colonnes entières et les intersections. Le témoin Excel exerce le volet par ses gestionnaires. Le comportement d'Arixcel pour l'ouverture du fichier lié provient du CIL.
+
 ## Surbrillance de la trace dans Excel — 6 novembre 2026
 
 Le volet reprend la palette Arixcel relevée par REA. Source rose `#FF99FF`, antécédents bleus `#66CCFF`, dépendants verts `#99FFCC`. Le test du volet vérifie une source automatique, deux plages antécédentes sur des feuilles différentes, la couleur de la source du tracé enfant, le retour à la couleur précédente et le retrait par la case.

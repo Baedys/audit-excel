@@ -68,7 +68,13 @@ F07 traite les plages 3D directes. `Element.Parse3DReference` (RVA `146804`) dé
 
 Pour les agrégats reconnus, le volet évalue la référence seule sous la fonction. Sur une feuille, un enfant d'une cellule conserve sa valeur brute et un enfant de plusieurs cellules affiche la réduction. `ChildRangesUsedByThisFunction` (RVA `171084`) relie les plages des feuilles au ciblage des extrémums. La fonction peut pointer vers une cellule et la feuille retenue apparaît en gras. La navigation de Clair conserve le masquage des feuilles. Les chemins externes sur disque restent ouverts. [Validation](VALIDATION.md)
 
-Dans le classeur capturé, les arbres et le Flux suivent chaque plage physique d'une référence 3D. Le Flux coupe les liens à son périmètre. Les chemins d'Arixcel diffèrent selon la vue. Le Flux lit les enfants physiques de la référence dans `CalcFlow.ParsedFormula` (RVA `302492`). Les listes d'antécédents et de dépendants utilisent les flèches d'audit Excel dans `Collector.Search` (RVA `203188`) et `FollowArrow` (RVA `203648`). Deux listes de dépendants et six blocs du Flux concordent sur le témoin. Les antécédents concordent comme ensemble de cellules. Le graphe interclasseurs reste à traiter. [Validation](VALIDATION.md)
+Dans le classeur capturé, les arbres et le Flux suivent chaque plage physique d'une référence 3D. Le Flux coupe les liens à son périmètre. Les chemins d'Arixcel diffèrent selon la vue. Le Flux lit les enfants physiques de la référence dans `CalcFlow.ParsedFormula` (RVA `302492`). Les listes d'antécédents et de dépendants utilisent les flèches d'audit Excel dans `Collector.Search` (RVA `203188`) et `FollowArrow` (RVA `203648`). Deux listes de dépendants et six blocs du Flux concordent sur le témoin. Les antécédents concordent comme ensemble de cellules. [Validation](VALIDATION.md)
+
+## Dépendances entre classeurs ouverts
+
+F08 couvre les références directes A1 dans l'Explorateur. Clair capture les classeurs ouverts de la même instance Excel et distingue les cibles par classeur, feuille et adresse. L'arbre et les plages affichent le nom du classeur externe. Le surlignage s'applique à chaque classeur et le volet évalue les formules sélectionnées dans leur contexte. Un clic garde la fenêtre du volet active. **Entrée** ou **Voir cellule** active la cible. Le classeur lié possède son propre volet pour l'édition.
+
+Dans Arixcel, `Element.ResolveRange` demande à Excel de résoudre la référence et `OpenAnyExternalLink` (RVA `194492`) peut proposer l'ouverture du fichier. Clair signale les références à un classeur fermé dans les avertissements. Il reste à couvrir l'ouverture sur demande et les noms externes. Le Flux garde le périmètre du classeur analysé. [Validation](VALIDATION.md)
 
 ## Sélections multicellules dans le volet
 
@@ -80,7 +86,7 @@ D03 couvre maintenant la sélection de plusieurs résultats, y compris depuis un
 
 Un clic ou une sélection au clavier dans le volet sélectionne automatiquement l'union sur la feuille du résultat courant. `FormulaForm.SelectOnSheet` (RVA `134056`) distingue les couleurs et la sélection Excel. Clair suit le résultat dans la fenêtre Excel active. Il conserve le masquage des feuilles. **Entrée** ou **Voir cellule** permet aussi la navigation explicite.
 
-La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. Les coins de zones au clavier, le dévoilement temporaire, la surbrillance de l'arbre des sous-expressions et le tracé interclasseurs restent ouverts. [Validation](VALIDATION.md)
+La surbrillance des dépendances reprend les fonds temporaires rose, bleu et vert de l'original. La source et les résultats sélectionnés peuvent se trouver sur plusieurs feuilles ou classeurs ouverts. Les fonds sont découpés aux chevauchements et partagent la pile Carte et Flux. Les formats conditionnels gardent leurs règles et leur priorité. Les coins de zones au clavier, le dévoilement temporaire et la surbrillance de l'arbre des sous-expressions restent ouverts. [Validation](VALIDATION.md)
 
 ## Sources et limites
 
@@ -131,7 +137,7 @@ Le produit documente un arbre de composants avec valeurs et emplacements, des ch
 | F05 | Cellules retenues par critères et filtrage de tableaux. | Absent. | Résultats disjoints, critères multiples, dates, jokers et erreurs ; vérifier SUMIF/SUMIFS, MIN/MAX et filtres logiques avec preuves d'Excel. |
 | F06 | Noms définis, LAMBDA et validation d'entrée dans l'arbre. | Partiel : noms absolus seulement. | Noms locaux/classeur, noms relatifs et récursifs, fonctions nommées, formule de validation et source de liste déroulante. |
 | F07 | Références structurées, 3D, tableaux, LET et contexte d'évaluation. | Incomplet, avertissements présents. | Tables, colonne courante, déversements, intersection implicite, variables LET, paramètres LAMBDA et plages 3D ; comportement de référence à établir pour chaque famille. E3 expose `Parse3DReference`, `IsTableReference`, `HaveLambda`, `EvaluateArrayFunction`. |
-| F08 | Références vers tout classeur ouvert. | Absent : capture d'un classeur, préfixes externes non résolus. | Deux classeurs ouverts avec noms proches ; navigation et valeurs contextualisées, avertissement explicite après fermeture. |
+| F08 | Références vers tout classeur ouvert. | Références A1 directes dans l'Explorateur, avec navigation, valeurs contextualisées et couleurs. Ouverture sur demande et noms externes à traiter. | Trois classeurs ouverts avec feuilles homonymes et noms proches. Avertissement après fermeture. |
 | F09 | Sélection synchronisée entre arbre, portion de formule et cellules ; multisélection. | Absent : texte simple en lecture seule. | Cliquer composant puis texte correspondant ; Ctrl/Shift sélectionnent plusieurs composants sans perdre leurs emplacements. |
 | F10 | Surlignage source/antécédents/dépendants configurable. | Absent. | Couleurs distinctes ; nettoyage à fermeture et changement de sélection ; formats antérieurs intacts. |
 | F11 | Édition de composant ou formule, validation, annulation, undo. | Absent. | F2, Entrée, Échap, Ctrl+Z ; protection et erreurs gérées ; formule exacte restaurée ; une édition invalide n'écrase pas la cellule. |
@@ -147,7 +153,7 @@ W2 décrit des dépendances **directes**, regroupées en blocs, avec sélection 
 | D01 | Source multizone et multicellule. | Absent : racine unique. | Plages contiguës/disjointes, fusionnées et feuilles multiples ; union sans doublons ; source conservée pour retour. |
 | D02 | Résultats regroupés par blocs et feuille, avec nombres fiables. | Partiel : liste/arbre de cellules. | Blocs de formules relatives identiques ; réglage de regroupement par feuille ; compte cohérent avec les cellules réellement trouvées. |
 | D03 | Sélection multiple, surbrillance et exploration successive. | Absent. | Sélection de plusieurs résultats puis trace suivante ; navigation clavier et source initiale retrouvée. |
-| D04 | Limites du traçage explicites. | Partiel : avertissements lexicaux. | Classeur externe fermé, feuille protégée, opération annulée, référence indirecte : aucune affirmation « aucun dépendant » si recherche incomplète. |
+| D04 | Limites du traçage explicites. | Résolution partielle signalée pour les liens non résolus et les erreurs de capture, sur une cellule ou une plage. | Classeur externe fermé et référence indirecte. Restent à comparer la feuille protégée et l'interruption d'un tracé. |
 
 ## 4. Carte des formules
 

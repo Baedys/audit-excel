@@ -13,12 +13,15 @@ namespace FormulaExplorer
         {
             internal readonly IList<Reference> Ranges;
             internal readonly string LaunchSheet;
+            internal readonly Book LaunchWorkbook;
             internal readonly bool SeparateSources;
             internal string Sheet { get { return Ranges[0].Sheet; } }
+            internal Book Workbook { get { return Ranges[0].Workbook; } }
             internal string ExcelAddress { get { return String.Join(",", Ranges.Select(range => range.Address)); } }
-            internal string Location { get { return "'" + Sheet.Replace("'", "''") + "'!" + String.Join(";", Ranges.Select(range => range.Address)); } }
-            internal TraceLocation(IList<Reference> ranges, string launchSheet = null)
-            { Ranges = ranges; LaunchSheet = launchSheet ?? Sheet; SeparateSources = launchSheet != null; }
+            internal string Location(Book primary)
+            { return "'" + new WorkbookSheet(Workbook ?? primary, Sheet).Label(primary).Replace("'", "''") + "'!" + String.Join(";", Ranges.Select(range => range.Address)); }
+            internal TraceLocation(IList<Reference> ranges, string launchSheet = null, Book launchWorkbook = null)
+            { Ranges = ranges; LaunchSheet = launchSheet ?? Sheet; LaunchWorkbook = launchWorkbook ?? Workbook; SeparateSources = launchSheet != null; }
         }
 
         sealed class ExplorerHistory
@@ -58,7 +61,11 @@ namespace FormulaExplorer
             };
             tabs.SelectedIndexChanged += delegate
             {
-                if (!updatingExplorer) RefreshTraceHighlights();
+                if (!updatingExplorer) Safe(delegate
+                {
+                    if (tabs.SelectedIndex == 0 && EnsureTracePeers()) ShowTreeSelection(CaptureExplorerSelection());
+                    else RefreshTraceHighlights();
+                });
             };
             Disposed += delegate
             {
@@ -164,7 +171,8 @@ namespace FormulaExplorer
             {
                 TrackDirectConnection(bridge);
                 traceHighlightConnections[traceHighlightOwner] = bridge;
-                bridge.ReplaceTraceHighlights(book, traceHighlightOwner, TraceHighlights());
+                if (!bridge.ReplaceTraceHighlights(book, traceHighlightOwner, TraceHighlights()))
+                    status.Text = "Surbrillance partielle · un classeur lié a été fermé. Rechargez la sélection.";
             }
             catch (Exception error) { status.Text = "Surbrillance Excel indisponible · " + error.Message; }
         }
@@ -172,12 +180,12 @@ namespace FormulaExplorer
         IEnumerable<TraceHighlightRange> TraceHighlights()
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            IList<Reference> sources = traceSource == null ? new[] { Reference.Parse(root.Sheet, root.Address) } : traceSource.Ranges;
-            var uniqueSources = sources.Where(range => seen.Add(Book.Key(range.Sheet, range.Address))).ToList();
+            IList<Reference> sources = traceSource == null ? new[] { TraceCellReference(root) } : traceSource.Ranges;
+            var uniqueSources = sources.Where(range => seen.Add(TraceRangeKey(range))).ToList();
             int resultColor = reverse ? traceDependentsColor : tracePrecedentsColor;
             foreach (TraceLocation location in selectedRelations.Select(RelationLocation).Where(location => location != null))
                 foreach (Reference range in location.Ranges)
-                    if (seen.Add(Book.Key(range.Sheet, range.Address)))
+                    if (seen.Add(TraceRangeKey(range)))
                         yield return new TraceHighlightRange { Range = range, Color = resultColor };
             foreach (Reference range in uniqueSources)
                 yield return new TraceHighlightRange { Range = range, Color = traceSourceColor };
@@ -272,11 +280,17 @@ namespace FormulaExplorer
             relationAnchor = restore == null ? rootNode : FindRelationNode(restore.Anchor) ?? tree.SelectedNode;
         }
 
+        static Reference TraceCellReference(Cell cell)
+        { return Reference.FromBounds(cell.Sheet, cell.Row, cell.Column, cell.Row, cell.Column, cell.Workbook); }
+
+        string TraceRangeKey(Reference range)
+        { return traceEngine.SheetOf(range).CellKey(range.Address); }
+
         static TraceLocation RelationLocation(TreeNode node)
         {
             if (node == null) return null;
             Cell cell = node.Tag as Cell;
-            return cell == null ? node.Tag as TraceLocation : new TraceLocation(new[] { Reference.Parse(cell.Sheet, cell.Address) });
+            return cell == null ? node.Tag as TraceLocation : new TraceLocation(new[] { TraceCellReference(cell) });
         }
 
         TraceLocation SelectedTraceLocation()
@@ -284,9 +298,10 @@ namespace FormulaExplorer
             TraceLocation[] locations = selectedRelations.Select(RelationLocation).Where(location => location != null).ToArray();
             if (locations.Length <= 1) return locations.FirstOrDefault();
             Reference[] ranges = locations.SelectMany(location => location.Ranges)
-                .GroupBy(range => range.Sheet + "!" + range.Address, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(TraceRangeKey, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First()).ToArray();
-            return new TraceLocation(ranges, ranges.Length > 1 ? (traceSource == null ? root.Sheet : traceSource.LaunchSheet) : null);
+            return new TraceLocation(ranges, ranges.Length > 1 ? (traceSource == null ? root.Sheet : traceSource.LaunchSheet) : null,
+                traceSource == null ? root.Workbook : traceSource.LaunchWorkbook);
         }
 
         TraceLocation NavigableRelationSelection()
@@ -297,14 +312,16 @@ namespace FormulaExplorer
             TraceLocation location = selectedRelations.Contains(current) ? RelationLocation(current)
                 : selectedRelations.Select(RelationLocation).LastOrDefault(item => item != null);
             if (location == null) return null;
-            return new TraceLocation(selection.Ranges.Where(range =>
-                String.Equals(range.Sheet, location.Sheet, StringComparison.OrdinalIgnoreCase)).ToArray());
+            WorkbookSheet target = traceEngine.SheetOf(location.Ranges[0]);
+            return new TraceLocation(selection.Ranges.Where(range => traceEngine.SheetOf(range).Equals(target)).ToArray());
         }
 
         void FollowRelationInExcel()
         {
             if (!IsDocked || bridge == null || book == null || tabs.SelectedIndex != 0) return;
             TraceLocation selection = NavigableRelationSelection();
+            // Switching windows on an ordinary tree selection would hide this docked pane.
+            if (selection != null && selection.Workbook != null && selection.Workbook != book) return;
             bool keepFocus = tree.Focused;
             try
             {
@@ -320,7 +337,7 @@ namespace FormulaExplorer
             TraceLocation selection = SelectedTraceLocation();
             if (selection == null) return;
             Reference range = selection.Ranges[0];
-            Cell anchor = book.Get(range.Sheet, Coordinates.Address(range.FirstRow, range.FirstColumn));
+            Cell anchor = (range.Workbook ?? book).Get(range.Sheet, Coordinates.Address(range.FirstRow, range.FirstColumn));
             bool singleCell = selection.Ranges.Count == 1 && range.Single;
             SetExplorerRoot(anchor, true, singleCell ? null : selection, downstream);
         }
@@ -328,7 +345,7 @@ namespace FormulaExplorer
         TreeNode RangeTraceTree()
         {
             bool incomplete;
-            List<Reference> ranges = engine.TraceRanges(traceSource.Ranges, reverse, out incomplete);
+            List<Reference> ranges = traceEngine.TraceRanges(traceSource.Ranges, reverse, out incomplete);
             TreeNode rootNode, results;
             if (traceSource.SeparateSources)
             {
@@ -339,7 +356,7 @@ namespace FormulaExplorer
                 rootNode.Nodes.Add(sources);
                 rootNode.Nodes.Add(results);
             }
-            else rootNode = results = new TreeNode(traceSource.Location + " · " + TraceRangeCount(ranges.Count)) { Name = "root", Tag = traceSource };
+            else rootNode = results = new TreeNode(traceSource.Location(book) + " · " + TraceRangeCount(ranges.Count)) { Name = "root", Tag = traceSource };
 
             AddTraceBlocks(results, ranges, "result:", 500);
             if (ranges.Count > 500) results.Nodes.Add(new TreeNode("Affichage limité aux 500 premières plages.") { Name = "limit" });
@@ -349,16 +366,16 @@ namespace FormulaExplorer
 
         void AddTraceBlocks(TreeNode container, IList<Reference> ranges, string prefix, int remaining)
         {
-            var order = book.SheetOrder.Select((sheet, index) => new { sheet, index })
-                .ToDictionary(pair => pair.sheet, pair => pair.index, StringComparer.OrdinalIgnoreCase);
-            foreach (var sheet in ranges.GroupBy(range => range.Sheet, StringComparer.OrdinalIgnoreCase)
-                .OrderBy(group => String.Equals(group.Key, traceSource.LaunchSheet, StringComparison.OrdinalIgnoreCase) ? -1 : order[group.Key]))
+            var launch = new WorkbookSheet(traceSource.LaunchWorkbook ?? book, traceSource.LaunchSheet);
+            var order = traceEngine.TraceWorksheetOrder();
+            foreach (var sheet in ranges.GroupBy(range => traceEngine.SheetOf(range))
+                .OrderBy(group => group.Key.Equals(launch) ? -1 : order[group.Key]))
             {
                 if (remaining == 0) break;
                 TreeNode parent = container;
-                if (groupTraceSheets.Checked && !String.Equals(sheet.Key, traceSource.LaunchSheet, StringComparison.OrdinalIgnoreCase))
+                if (groupTraceSheets.Checked && !sheet.Key.Equals(launch))
                 {
-                    parent = new TreeNode(sheet.Key + " · " + TraceRangeCount(sheet.Count())) { Name = prefix + "sheet:" + sheet.Key };
+                    parent = new TreeNode(sheet.Key.Label(book) + " · " + TraceRangeCount(sheet.Count())) { Name = prefix + "sheet:" + sheet.Key.CellKey("") };
                     container.Nodes.Add(parent);
                 }
                 foreach (Reference range in sheet.OrderBy(range => range.FirstRow).ThenBy(range => range.FirstColumn).Take(remaining))
@@ -369,10 +386,10 @@ namespace FormulaExplorer
             }
         }
 
-        static TreeNode RangeTraceNode(Reference range, string prefix)
+        TreeNode RangeTraceNode(Reference range, string prefix)
         {
             var location = new TraceLocation(new[] { range });
-            return new TreeNode(location.Location) { Name = prefix + location.Location, Tag = location };
+            return new TreeNode(location.Location(book)) { Name = prefix + TraceRangeKey(range), Tag = location };
         }
 
         static string TraceRangeCount(int count)
@@ -384,9 +401,9 @@ namespace FormulaExplorer
             if (cell != null) { ShowDetails(cell); return; }
             TraceLocation selection = SelectedTraceLocation();
             if (selection == null) detail.Text = tree.SelectedNode == null ? "" : tree.SelectedNode.Text;
-            else if (!selection.SeparateSources) detail.Text = selection.Location;
+            else if (!selection.SeparateSources) detail.Text = selection.Location(book);
             else detail.Text = TraceRangeCount(selection.Ranges.Count) + " sélectionnées · " +
-                selection.Ranges.Select(range => range.Sheet).Distinct(StringComparer.OrdinalIgnoreCase).Count() + " feuille(s)";
+                selection.Ranges.Select(range => traceEngine.SheetOf(range)).Distinct().Count() + " feuille(s)";
             formula.Clear();
             ShowExpression(new Cell());
         }

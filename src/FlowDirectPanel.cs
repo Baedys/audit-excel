@@ -61,7 +61,7 @@ namespace FormulaExplorer
             // Bind every role, including unchecked targets, before returning control
             // to Excel. Later first activation follows the retained physical cell.
             bridge.BindDirectHighlightTargets(book, flowLayer, "flow", Enum.GetValues(typeof(FlowCategory)).Cast<FlowCategory>()
-                .SelectMany(c => flowResult.Cells(c)).Concat(new[] { root }).GroupBy(c => c.Key, StringComparer.OrdinalIgnoreCase).Select(g => g.First()));
+                .SelectMany(c => flowResult.Cells(c)).Concat(new[] { FlowRoot }).GroupBy(c => c.Key, StringComparer.OrdinalIgnoreCase).Select(g => g.First()));
             flowDirectBook = book; flowDirectConnection = bridge;
             // Rebinding has succeeded. Retained choices now belong to the fresh
             // snapshot even if the following write is rejected and rolled back.

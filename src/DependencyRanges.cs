@@ -8,23 +8,23 @@ namespace FormulaExplorer
     {
         internal List<Reference> TraceRanges(IList<Reference> source, bool dependents, out bool incomplete)
         {
-            var selected = source.Select(range => TrimTraceReference(range, true)).GroupBy(range => range.Sheet, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
+            var selected = source.Select(range => TrimTraceReference(range, true)).GroupBy(range => SheetOf(range))
+                .ToDictionary(group => group.Key, group => group.ToArray());
             var results = new List<Reference>();
-            incomplete = Book.Warnings.Count != 0;
+            incomplete = workbooks.Any(book => book.Warnings.Count != 0);
             if (dependents)
             {
                 var matches = new List<Cell>();
-                foreach (var formula in parsed)
+                foreach (var formula in parsed.Values)
                 {
-                    Cell cell = Book.Cells[formula.Key];
+                    Cell cell = formula.Key;
                     if (ContainsSourceCell(selected, cell)) continue;
                     incomplete |= formula.Value.Warnings.Count != 0;
-                    if (formula.Value.References.Any(reference => IntersectsSource(selected, reference))) matches.Add(cell);
+                    if (formula.Value.References.Any(reference => IntersectsSource(selected, reference, SheetOf(cell).Workbook))) matches.Add(cell);
                 }
-                foreach (var sheet in matches.GroupBy(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase))
+                foreach (var sheet in matches.GroupBy(SheetOf))
                     foreach (var kind in sheet.GroupBy(cell => String.IsNullOrEmpty(cell.FormulaR1C1) ? cell.Key : cell.FormulaR1C1, StringComparer.Ordinal))
-                        results.AddRange(UnionRanges(sheet.Key, kind.Select(cell => Reference.FromBounds(cell.Sheet, cell.Row, cell.Column, cell.Row, cell.Column))));
+                        results.AddRange(UnionRanges(sheet.Key, kind.Select(cell => Reference.FromBounds(cell.Sheet, cell.Row, cell.Column, cell.Row, cell.Column, sheet.Key.Workbook))));
             }
             else
             {
@@ -33,11 +33,11 @@ namespace FormulaExplorer
                     foreach (Cell cell in sheets[area.Key])
                     {
                         if (!cell.IsFormula || !area.Value.Any(range => range.Contains(cell))) continue;
-                        ParsedFormula formula = parsed[cell.Key];
+                        ParsedFormula formula = Parsed(cell);
                         incomplete |= formula.Warnings.Count != 0;
-                        foreach (Reference reference in formula.References) ranges.Add(TrimTraceReference(reference));
+                        foreach (Reference reference in formula.References) ranges.Add(TrimTraceReference(reference, false, area.Key.Workbook));
                     }
-                foreach (var sheet in ranges.GroupBy(range => range.Sheet, StringComparer.OrdinalIgnoreCase))
+                foreach (var sheet in ranges.GroupBy(range => SheetOf(range)))
                 {
                     Reference[] exclusions;
                     IEnumerable<Reference> retained = sheet;
@@ -47,22 +47,28 @@ namespace FormulaExplorer
                     results.AddRange(UnionRanges(sheet.Key, retained));
                 }
             }
-            var order = Book.SheetOrder.Select((name, index) => new { name, index })
-                .ToDictionary(item => item.name, item => item.index, StringComparer.OrdinalIgnoreCase);
-            return results.OrderBy(range => String.Equals(range.Sheet, source[0].Sheet, StringComparison.OrdinalIgnoreCase) ? -1 : order[range.Sheet])
+            WorkbookSheet launch = SheetOf(source[0]);
+            var order = TraceWorksheetOrder();
+            return results.OrderBy(range => SheetOf(range).Equals(launch) ? -1 : order[SheetOf(range)])
                 .ThenBy(range => range.FirstRow).ThenBy(range => range.FirstColumn).ToList();
         }
 
-        static bool ContainsSourceCell(Dictionary<string, Reference[]> selected, Cell cell)
+        internal Dictionary<WorkbookSheet, int> TraceWorksheetOrder()
         {
-            Reference[] areas;
-            return selected.TryGetValue(cell.Sheet, out areas) && areas.Any(range => range.Contains(cell));
+            return workbooks.SelectMany(book => book.SheetOrder.Select(sheet => new WorkbookSheet(book, sheet)))
+                .Select((location, index) => new { location, index }).ToDictionary(item => item.location, item => item.index);
         }
 
-        static bool IntersectsSource(Dictionary<string, Reference[]> selected, Reference reference)
+        bool ContainsSourceCell(Dictionary<WorkbookSheet, Reference[]> selected, Cell cell)
         {
             Reference[] areas;
-            return selected.TryGetValue(reference.Sheet, out areas) && areas.Any(range => Intersects(range, reference));
+            return selected.TryGetValue(SheetOf(cell), out areas) && areas.Any(range => range.Contains(cell));
+        }
+
+        bool IntersectsSource(Dictionary<WorkbookSheet, Reference[]> selected, Reference reference, Book origin)
+        {
+            Reference[] areas;
+            return selected.TryGetValue(SheetOf(reference, origin), out areas) && areas.Any(range => Intersects(range, reference));
         }
 
         static bool Intersects(Reference a, Reference b)
@@ -70,26 +76,28 @@ namespace FormulaExplorer
             return a.FirstRow <= b.LastRow && b.FirstRow <= a.LastRow && a.FirstColumn <= b.LastColumn && b.FirstColumn <= a.LastColumn;
         }
 
-        Reference TrimTraceReference(Reference reference, bool source = false)
+        Reference TrimTraceReference(Reference reference, bool source = false, Book origin = null)
         {
+            Book owner = SheetOf(reference, origin).Workbook;
             Reference used;
-            if (!Book.UsedRanges.TryGetValue(reference.Sheet, out used)) return reference;
+            if (!owner.UsedRanges.TryGetValue(reference.Sheet, out used))
+                return Reference.FromBounds(reference.Sheet, reference.FirstRow, reference.FirstColumn, reference.LastRow, reference.LastColumn, owner);
             // The native source scan extends the used rectangle up to A1. The result scan keeps its exact origin.
             if (source) used = Reference.FromBounds(reference.Sheet, 1, 1, used.LastRow, used.LastColumn);
             if (!Intersects(reference, used))
-                return Reference.FromBounds(reference.Sheet, reference.FirstRow, reference.FirstColumn, reference.FirstRow, reference.FirstColumn);
+                return Reference.FromBounds(reference.Sheet, reference.FirstRow, reference.FirstColumn, reference.FirstRow, reference.FirstColumn, owner);
             return Reference.FromBounds(reference.Sheet, Math.Max(reference.FirstRow, used.FirstRow), Math.Max(reference.FirstColumn, used.FirstColumn),
-                Math.Min(reference.LastRow, used.LastRow), Math.Min(reference.LastColumn, used.LastColumn));
+                Math.Min(reference.LastRow, used.LastRow), Math.Min(reference.LastColumn, used.LastColumn), owner);
         }
 
         static IEnumerable<Reference> Subtract(Reference range, Reference exclusion)
         {
             if (!Intersects(range, exclusion)) { yield return range; yield break; }
             int top = Math.Max(range.FirstRow, exclusion.FirstRow), bottom = Math.Min(range.LastRow, exclusion.LastRow);
-            if (range.FirstRow < top) yield return Reference.FromBounds(range.Sheet, range.FirstRow, range.FirstColumn, top - 1, range.LastColumn);
-            if (bottom < range.LastRow) yield return Reference.FromBounds(range.Sheet, bottom + 1, range.FirstColumn, range.LastRow, range.LastColumn);
-            if (range.FirstColumn < exclusion.FirstColumn) yield return Reference.FromBounds(range.Sheet, top, range.FirstColumn, bottom, exclusion.FirstColumn - 1);
-            if (exclusion.LastColumn < range.LastColumn) yield return Reference.FromBounds(range.Sheet, top, exclusion.LastColumn + 1, bottom, range.LastColumn);
+            if (range.FirstRow < top) yield return Reference.FromBounds(range.Sheet, range.FirstRow, range.FirstColumn, top - 1, range.LastColumn, range.Workbook);
+            if (bottom < range.LastRow) yield return Reference.FromBounds(range.Sheet, bottom + 1, range.FirstColumn, range.LastRow, range.LastColumn, range.Workbook);
+            if (range.FirstColumn < exclusion.FirstColumn) yield return Reference.FromBounds(range.Sheet, top, range.FirstColumn, bottom, exclusion.FirstColumn - 1, range.Workbook);
+            if (exclusion.LastColumn < range.LastColumn) yield return Reference.FromBounds(range.Sheet, top, exclusion.LastColumn + 1, bottom, range.LastColumn, range.Workbook);
         }
 
         sealed class RangeBoundary
@@ -99,7 +107,7 @@ namespace FormulaExplorer
             internal Reference Range;
         }
 
-        static IEnumerable<Reference> UnionRanges(string sheet, IEnumerable<Reference> ranges)
+        static IEnumerable<Reference> UnionRanges(WorkbookSheet sheet, IEnumerable<Reference> ranges)
         {
             var boundaries = ranges.GroupBy(range => new { range.FirstRow, range.FirstColumn, range.LastRow, range.LastColumn })
                 .Select(group => group.First()).SelectMany(range => new[] {
@@ -117,7 +125,7 @@ namespace FormulaExplorer
                 {
                     Reference block;
                     if (growing.TryGetValue(span, out block)) { block.LastRow = boundary.Key - 1; growing.Remove(span); }
-                    else block = Reference.FromBounds(sheet, startRow, span.Item1, boundary.Key - 1, span.Item2);
+                    else block = Reference.FromBounds(sheet.Sheet, startRow, span.Item1, boundary.Key - 1, span.Item2, sheet.Workbook);
                     next.Add(span, block);
                 }
                 foreach (Reference completed in growing.Values) yield return completed;

@@ -13,7 +13,7 @@ namespace FormulaExplorer
 
     public sealed partial class ExcelBridge
     {
-        internal void ReplaceTraceHighlights(Book book, string ownerId, IEnumerable<TraceHighlightRange> highlights)
+        internal bool ReplaceTraceHighlights(Book book, string ownerId, IEnumerable<TraceHighlightRange> highlights)
         {
             if (book == null) throw new ArgumentNullException("book");
             DirectColorLayers.CheckId(ownerId, "ownerId");
@@ -29,13 +29,18 @@ namespace FormulaExplorer
                 DirectColorValue.Rgb(request.Color);
                 // Later requests take precedence inside this owner. Plan
                 // disjoint rectangles before opening any writable Excel port.
-                plan = plan.SelectMany(previous => SubtractFill(previous.Range, bounds)
-                    .Select(piece => new TraceHighlightRange { Range = piece, Color = previous.Color })).ToList();
+                plan = plan.SelectMany(previous => (previous.Range.Workbook ?? book) != (bounds.Workbook ?? book) ? new[] { previous } :
+                    SubtractFill(previous.Range, bounds).Select(piece => new TraceHighlightRange { Range = piece, Color = previous.Color })).ToList();
                 plan.Add(request);
             }
-            if (plan.Count == 0) { DetachDirectHighlightOwner(ownerId, false); return; }
+            if (plan.Count == 0) { DetachDirectHighlightOwner(ownerId, false); return true; }
 
-            PrepareDirectHighlightWorkbook(book);
+            var missing = new HashSet<Book>();
+            foreach (Book target in plan.Select(request => request.Range.Workbook ?? book).Append(book).Distinct())
+            {
+                if (target != book && !DependencyBookIsOpen(target)) missing.Add(target);
+                else PrepareDirectHighlightWorkbook(target);
+            }
             DirectSession session = DirectColors; session.Enter();
             try
             {
@@ -44,8 +49,8 @@ namespace FormulaExplorer
                 string layer = DirectLayer(ownerId, "selection");
                 var index = session.Index();
                 var desired = new List<DirectDesired>();
-                foreach (TraceHighlightRange request in plan)
-                    AtDirectCell(book, request.Range.Sheet, request.Range.Address, delegate(object sheet, object unused)
+                foreach (TraceHighlightRange request in plan.Where(item => !missing.Contains(item.Range.Workbook ?? book)))
+                    AtDirectCell(request.Range.Workbook ?? book, request.Range.Sheet, request.Range.Address, delegate(object sheet, object unused)
                     {
                         foreach (DirectReference reference in session.FillTargets(sheet, request.Range, index, false))
                         {
@@ -65,6 +70,7 @@ namespace FormulaExplorer
                     });
                 });
                 session.Notify(new string[0], false);
+                return missing.Count == 0;
             }
             finally { try { session.ReleaseUnusedLeases(); } finally { session.Exit(); } }
         }
@@ -82,13 +88,13 @@ namespace FormulaExplorer
             Reference overlap = FillIntersection(source, exclusion);
             if (overlap == null) { yield return source; yield break; }
             if (source.FirstRow < overlap.FirstRow)
-                yield return Reference.FromBounds(source.Sheet, source.FirstRow, source.FirstColumn, overlap.FirstRow - 1, source.LastColumn);
+                yield return Reference.FromBounds(source.Sheet, source.FirstRow, source.FirstColumn, overlap.FirstRow - 1, source.LastColumn, source.Workbook);
             if (overlap.LastRow < source.LastRow)
-                yield return Reference.FromBounds(source.Sheet, overlap.LastRow + 1, source.FirstColumn, source.LastRow, source.LastColumn);
+                yield return Reference.FromBounds(source.Sheet, overlap.LastRow + 1, source.FirstColumn, source.LastRow, source.LastColumn, source.Workbook);
             if (source.FirstColumn < overlap.FirstColumn)
-                yield return Reference.FromBounds(source.Sheet, overlap.FirstRow, source.FirstColumn, overlap.LastRow, overlap.FirstColumn - 1);
+                yield return Reference.FromBounds(source.Sheet, overlap.FirstRow, source.FirstColumn, overlap.LastRow, overlap.FirstColumn - 1, source.Workbook);
             if (overlap.LastColumn < source.LastColumn)
-                yield return Reference.FromBounds(source.Sheet, overlap.FirstRow, overlap.LastColumn + 1, overlap.LastRow, source.LastColumn);
+                yield return Reference.FromBounds(source.Sheet, overlap.FirstRow, overlap.LastColumn + 1, overlap.LastRow, source.LastColumn, source.Workbook);
         }
 
         static Reference[] BisectFill(Reference source)

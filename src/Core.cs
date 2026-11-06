@@ -13,6 +13,7 @@ namespace FormulaExplorer
         public string FormulaR1C1;
         public bool HasValidation;
         public int Row, Column;
+        internal Book Workbook;
         public bool IsFormula { get { return !String.IsNullOrEmpty(Formula); } }
         public string Key { get { return Book.Key(Sheet, Address); } }
         public string Location { get { return "'" + Sheet.Replace("'", "''") + "'!" + Address; } }
@@ -23,6 +24,7 @@ namespace FormulaExplorer
     {
         public string Name = "", FullName = "";
         public DateTime Captured = DateTime.Now;
+        internal readonly string TraceId = Guid.NewGuid().ToString("N");
         public readonly Dictionary<string, Cell> Cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<string> Sheets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, int> sheetIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -58,14 +60,14 @@ namespace FormulaExplorer
             return SheetOrder;
         }
         public static string Key(string sheet, string address) { return sheet + "\0" + address.ToUpperInvariant(); }
-        public void Add(Cell cell) { Sheets.Add(cell.Sheet); Cells[cell.Key] = cell; }
+        public void Add(Cell cell) { cell.Workbook = this; Sheets.Add(cell.Sheet); Cells[cell.Key] = cell; }
         public Cell Get(string sheet, string address)
         {
             Cell cell;
             if (Cells.TryGetValue(Key(sheet, address.Replace("$", "")), out cell)) return cell;
             int row, col;
             if (!Coordinates.TryCell(address, out row, out col)) throw new ArgumentException("Adresse A1 invalide : " + address);
-            return new Cell { Sheet = sheet, Address = Coordinates.Address(row, col), Row = row, Column = col, Value = "", Kind = "Vide" };
+            return new Cell { Workbook = this, Sheet = sheet, Address = Coordinates.Address(row, col), Row = row, Column = col, Value = "", Kind = "Vide" };
         }
     }
 
@@ -96,6 +98,7 @@ namespace FormulaExplorer
     public sealed class Reference
     {
         public string Sheet, Text;
+        internal Book Workbook;
         public int FirstRow, LastRow, FirstColumn, LastColumn;
         public bool Single { get { return FirstRow == LastRow && FirstColumn == LastColumn; } }
         internal string Address
@@ -106,9 +109,9 @@ namespace FormulaExplorer
                 return Single ? first : first + ":" + Coordinates.Address(LastRow, LastColumn);
             }
         }
-        internal static Reference FromBounds(string sheet, int firstRow, int firstColumn, int lastRow, int lastColumn)
+        internal static Reference FromBounds(string sheet, int firstRow, int firstColumn, int lastRow, int lastColumn, Book workbook = null)
         {
-            return new Reference { Sheet = sheet, FirstRow = firstRow, FirstColumn = firstColumn, LastRow = lastRow, LastColumn = lastColumn };
+            return new Reference { Workbook = workbook, Sheet = sheet, FirstRow = firstRow, FirstColumn = firstColumn, LastRow = lastRow, LastColumn = lastColumn };
         }
         public bool Contains(Cell c)
         {
@@ -148,24 +151,104 @@ namespace FormulaExplorer
         internal static readonly Regex AddressPattern = new Regex(@"\G(?:\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?::\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?|\$?[A-Za-z]{1,3}:\$?[A-Za-z]{1,3}|\$?[1-9][0-9]{0,6}:\$?[1-9][0-9]{0,6})(?![!\p{L}\p{N}_.\\])");
         static readonly Regex NamePattern = new Regex(@"\G[\p{L}_\\][\p{L}\p{N}_.\\]*");
         static readonly Regex NumberPattern = new Regex(@"\G(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?");
+        static readonly Regex ExternalQualifier = new Regex(@"\G(?:\[(?<book>[^\[\]]+)\](?<sheet>[\p{L}\p{N}_.\\]+(?::[\p{L}\p{N}_.\\]+)?)|'(?<quoted>(?:[^']|'')+)')!");
+        static readonly Regex LocalQualifier = new Regex(@"\G(?<sheet>'(?:[^']|'')+'|[\p{L}_\\][\p{L}\p{N}_.\\]*)!");
+        static readonly Regex RangeEndpoint = new Regex(@"\G(?:\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}|\$?[A-Za-z]{1,3}|\$?[1-9][0-9]{0,6})(?![!\p{L}\p{N}_.\\])");
         static bool NameChar(char c) { return Char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '\\'; }
         static int SkipSpace(string s, int i) { while (i < s.Length && Char.IsWhiteSpace(s[i])) i++; return i; }
         public static ParsedFormula Parse(string formula, string sheet, Book book)
         { return Parse(formula, sheet, book, null); }
 
-        internal static ParsedFormula Parse(string formula, string sheet, Book book, IList<string> worksheetOrder)
+        internal static ParsedFormula Parse(string formula, string sheet, Book book, IList<string> worksheetOrder,
+            Func<string, string, Book> resolveWorkbook = null)
         {
             ParsedFormula result = new ParsedFormula();
-            ParseInto(formula ?? "", sheet, book, result, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, ref worksheetOrder);
+            ParseInto(formula ?? "", sheet, book, result, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, ref worksheetOrder, resolveWorkbook);
             return result;
         }
+        sealed class ExternalSheet
+        {
+            internal readonly string Path, Workbook, Sheet;
+            internal readonly int AddressStart;
+            internal ExternalSheet(string path, string workbook, string sheet, int addressStart)
+            { Path = path; Workbook = workbook; Sheet = sheet; AddressStart = addressStart; }
+        }
+        static ExternalSheet ReadExternalSheet(string source, int start)
+        {
+            if (start >= source.Length || (source[start] != '[' && source[start] != '\'')) return null;
+            Match qualifier = ExternalQualifier.Match(source, start);
+            if (!qualifier.Success) return null;
+            if (qualifier.Groups["book"].Success)
+                return new ExternalSheet("", qualifier.Groups["book"].Value, qualifier.Groups["sheet"].Value, start + qualifier.Length);
+            string quoted = qualifier.Groups["quoted"].Value.Replace("''", "'");
+            int close = quoted.LastIndexOf(']');
+            int open = close < 0 ? -1 : quoted.LastIndexOf('[', close);
+            if (open < 0 || close == open + 1 || close == quoted.Length - 1) return null;
+            return new ExternalSheet(quoted.Substring(0, open), quoted.Substring(open + 1, close - open - 1),
+                quoted.Substring(close + 1), start + qualifier.Length);
+        }
+        static bool ReadRepeatedExternalRange(string source, int addressStart, ExternalSheet external, Book owner,
+            Book targetBook, string targetSheet, Func<string, string, Book> resolveWorkbook,
+            ref string address, ref int end, out bool sameTarget)
+        {
+            sameTarget = true;
+            Match first = RangeEndpoint.Match(source, addressStart);
+            int separator = addressStart + first.Length;
+            if (!first.Success || separator >= source.Length || source[separator] != ':') return false;
+            int endpointStart = separator + 1;
+            ExternalSheet second = ReadExternalSheet(source, endpointStart);
+            if (external == null && second == null) return false;
+            string endSheet;
+            Book endBook;
+            if (second != null)
+            {
+                endpointStart = second.AddressStart;
+                endSheet = second.Sheet;
+                endBook = resolveWorkbook(second.Path, second.Workbook);
+            }
+            else
+            {
+                Match qualifier = LocalQualifier.Match(source, endpointStart);
+                if (!qualifier.Success) return false;
+                endpointStart += qualifier.Length;
+                endSheet = qualifier.Groups["sheet"].Value;
+                if (endSheet[0] == '\'') endSheet = endSheet.Substring(1, endSheet.Length - 2).Replace("''", "'");
+                endBook = owner;
+            }
+            Match last = RangeEndpoint.Match(source, endpointStart);
+            if (!last.Success) return false;
+            address = first.Value + ":" + last.Value;
+            end = endpointStart + last.Length;
+            sameTarget = Object.ReferenceEquals(targetBook, endBook) && String.Equals(targetSheet, endSheet, StringComparison.OrdinalIgnoreCase);
+            return true;
+        }
+        static void AppendDirectReference(string source, int start, int end, Book owner, ParsedFormula result,
+            Reference reference, ref Reference previous, ref int previousEnd)
+        {
+            // A space between direct references is Excel's intersection operator.
+            if (previousEnd >= 0 && start > previousEnd && source.Substring(previousEnd, start - previousEnd).Trim().Length == 0)
+            {
+                if (previous != null) result.References.Remove(previous);
+                if (previous == null || reference == null || !Object.ReferenceEquals(previous.Workbook ?? owner, reference.Workbook ?? owner) ||
+                    !String.Equals(previous.Sheet, reference.Sheet, StringComparison.OrdinalIgnoreCase)) reference = null;
+                else
+                {
+                    reference.FirstRow = Math.Max(reference.FirstRow, previous.FirstRow); reference.LastRow = Math.Min(reference.LastRow, previous.LastRow);
+                    reference.FirstColumn = Math.Max(reference.FirstColumn, previous.FirstColumn); reference.LastColumn = Math.Min(reference.LastColumn, previous.LastColumn);
+                    if (reference.FirstRow > reference.LastRow || reference.FirstColumn > reference.LastColumn) reference = null;
+                }
+            }
+            if (reference != null) result.References.Add(reference);
+            previous = reference; previousEnd = end;
+        }
         static void ParseInto(string s, string sheet, Book book, ParsedFormula result, HashSet<string> names, int depth,
-            ref IList<string> worksheetOrder)
+            ref IList<string> worksheetOrder, Func<string, string, Book> resolveWorkbook)
         {
             if (depth > 16) { result.Warnings.Add("Imbrication des noms limitée à 16 niveaux."); return; }
             int lastReferenceEnd = -1;
             Reference previousReference = null;
             bool hasSheetQualifier = s.IndexOf('!') >= 0;
+            bool hasExternalQualifier = resolveWorkbook != null && hasSheetQualifier && s.IndexOf('[') >= 0;
             for (int i = 0; i < s.Length;)
             {
                 char ch = s[i];
@@ -175,25 +258,34 @@ namespace FormulaExplorer
                     while (i < s.Length) { if (s[i++] != '"') continue; if (i < s.Length && s[i] == '"') { i++; continue; } break; }
                     continue;
                 }
+                ExternalSheet external = hasExternalQualifier ? ReadExternalSheet(s, i) : null;
                 int spanEnd = i;
                 SheetSpanReference span = hasSheetQualifier ? SheetSpanReference.Read(s, i, out spanEnd) : null;
                 if (span != null)
                 {
                     string token = s.Substring(i, spanEnd - i);
-                    if (span.HasPath || (span.Workbook.Length != 0 && !String.Equals(span.Workbook, book.Name, StringComparison.OrdinalIgnoreCase)))
+                    Book spanBook = external == null ? book : resolveWorkbook(external.Path, external.Workbook);
+                    if (spanBook == null || (external == null && (span.HasPath ||
+                        (span.Workbook.Length != 0 && !String.Equals(span.Workbook, book.Name, StringComparison.OrdinalIgnoreCase)))))
                         result.Warnings.Add("Référence 3D vers un autre classeur non résolue : " + token);
                     else
                     {
-                        if (worksheetOrder == null) worksheetOrder = book.CapturedWorksheetOrder();
-                        string[] sheets = span.WorksheetsBetween(worksheetOrder).ToArray();
+                        bool local = Object.ReferenceEquals(spanBook, book);
+                        if (local && worksheetOrder == null) worksheetOrder = book.CapturedWorksheetOrder();
+                        string[] sheets = span.WorksheetsBetween(local ? worksheetOrder : spanBook.CapturedWorksheetOrder()).ToArray();
                         if (sheets.Length == 0) result.Warnings.Add("Référence 3D sans intervalle de feuilles établi : " + token);
-                        else foreach (string sourceSheet in sheets) result.References.Add(Reference.Parse(sourceSheet, span.Address));
+                        else foreach (string sourceSheet in sheets)
+                        {
+                            Reference source = Reference.Parse(sourceSheet, span.Address);
+                            if (!local) source.Workbook = spanBook;
+                            result.References.Add(source);
+                        }
                     }
                     // A 3D reference does not participate in the single-sheet intersection operator.
                     lastReferenceEnd = -1; previousReference = null; i = spanEnd;
                     continue;
                 }
-                if (ch == '[')
+                if (ch == '[' && external == null)
                 {
                     // An external workbook prefix or a structured table reference is not a local A1 address.
                     int start = i, nesting = 0;
@@ -202,10 +294,11 @@ namespace FormulaExplorer
                     result.Warnings.Add("Référence externe ou structurée non résolue : " + s.Substring(start, i - start));
                     continue;
                 }
-                string targetSheet = sheet;
-                int begin = i, addressStart = i;
-                bool qualified = false;
-                if (ch == '\'')
+                Book targetBook = external == null ? book : resolveWorkbook(external.Path, external.Workbook);
+                string targetSheet = external == null ? sheet : external.Sheet;
+                int begin = i, addressStart = external == null ? i : external.AddressStart;
+                bool qualified = external != null;
+                if (external == null && ch == '\'')
                 {
                     i++; string quoted = ""; bool closed = false;
                     while (i < s.Length)
@@ -218,7 +311,7 @@ namespace FormulaExplorer
                     if (!closed || i >= s.Length || s[i] != '!') { result.Warnings.Add("Identifiant entre apostrophes non résolu."); continue; }
                     targetSheet = quoted; addressStart = ++i; qualified = true;
                 }
-                else
+                else if (external == null)
                 {
                     Match prefix = NamePattern.Match(s, i);
                     if (prefix.Success)
@@ -233,16 +326,20 @@ namespace FormulaExplorer
                     }
                 }
                 Match address = AddressPattern.Match(s, addressStart);
+                string addressText = address.Value;
                 int after = addressStart + address.Length;
+                bool sameTarget = true;
+                bool repeated = hasExternalQualifier && ReadRepeatedExternalRange(s, addressStart, external, book, targetBook, targetSheet,
+                    resolveWorkbook, ref addressText, ref after, out sameTarget);
                 bool validEnd = after >= s.Length || !NameChar(s[after]);
                 int nextNonSpace = SkipSpace(s, after);
-                if (address.Success && validEnd && (nextNonSpace >= s.Length || s[nextNonSpace] != '('))
+                if ((address.Success || repeated) && validEnd && (nextNonSpace >= s.Length || s[nextNonSpace] != '('))
                 {
                     i = after;
                     if (targetSheet.IndexOfAny(new[] { '[', ']', ':' }) >= 0) { result.Warnings.Add("Référence externe ou 3D non résolue : " + s.Substring(begin, i - begin)); continue; }
-                    Reference reference = Reference.Parse(targetSheet, address.Value);
+                    Reference reference = Reference.Parse(targetSheet, addressText);
                     // Excel retains S!A1:S!A3 as well as S!A1:A3.
-                    if (reference != null && reference.Single && i < s.Length && s[i] == ':')
+                    if (!repeated && reference != null && reference.Single && i < s.Length && s[i] == ':')
                     {
                         Match endpoint = Regex.Match(s.Substring(i + 1), @"^(?:(?<sheet>'(?:[^']|'')+'|[\p{L}_\\][\p{L}\p{N}_.\\]*)!)?(?<cell>\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})(?![\p{L}\p{N}_.\\])");
                         if (endpoint.Success)
@@ -253,26 +350,18 @@ namespace FormulaExplorer
                             else { result.Warnings.Add("Plage entre feuilles non résolue : " + s.Substring(begin, i - begin)); reference = null; }
                         }
                     }
-                    if (reference == null) result.Warnings.Add("Adresse hors limites : " + address.Value);
-                    else if (!book.Sheets.Contains(targetSheet)) result.Warnings.Add("Feuille absente : " + targetSheet);
+                    Reference resolved = null;
+                    if (targetBook == null) result.Warnings.Add("Référence externe non résolue : " + s.Substring(begin, i - begin));
+                    else if (!sameTarget) result.Warnings.Add("Plage entre feuilles ou classeurs non résolue : " + s.Substring(begin, i - begin));
+                    else if (reference == null) result.Warnings.Add("Adresse hors limites : " + addressText);
+                    else if (!targetBook.Sheets.Contains(targetSheet)) result.Warnings.Add("Feuille absente : " + targetSheet);
                     else
                     {
-                        // A space between direct references is Excel's intersection operator.
-                        bool intersection = lastReferenceEnd >= 0 && begin > lastReferenceEnd && s.Substring(lastReferenceEnd, begin - lastReferenceEnd).Trim().Length == 0;
-                        if (intersection)
-                        {
-                            if (previousReference != null) result.References.Remove(previousReference);
-                            if (previousReference == null || !String.Equals(previousReference.Sheet, reference.Sheet, StringComparison.OrdinalIgnoreCase)) reference = null;
-                            else
-                            {
-                                reference.FirstRow = Math.Max(reference.FirstRow, previousReference.FirstRow); reference.LastRow = Math.Min(reference.LastRow, previousReference.LastRow);
-                                reference.FirstColumn = Math.Max(reference.FirstColumn, previousReference.FirstColumn); reference.LastColumn = Math.Min(reference.LastColumn, previousReference.LastColumn);
-                                if (reference.FirstRow > reference.LastRow || reference.FirstColumn > reference.LastColumn) reference = null;
-                            }
-                        }
-                        if (reference != null) result.References.Add(reference);
-                        previousReference = reference; lastReferenceEnd = i;
+                        if (!Object.ReferenceEquals(targetBook, book)) reference.Workbook = targetBook;
+                        resolved = reference;
                     }
+                    if (resolved != null || external != null || repeated)
+                        AppendDirectReference(s, begin, i, book, result, resolved, ref previousReference, ref lastReferenceEnd);
                     if (i < s.Length && s[i] == '#') { result.Warnings.Add("Plage déversée : seule la cellule d'origine est résolue."); i++; }
                     continue;
                 }
@@ -281,6 +370,7 @@ namespace FormulaExplorer
                 if (name.Success)
                 {
                     i += name.Length;
+                    if (external != null) { result.Warnings.Add("Nom externe non résolu : " + s.Substring(begin, i - begin)); continue; }
                     int next = SkipSpace(s, i);
                     if (next < s.Length && s[next] == '(')
                     {
@@ -298,7 +388,7 @@ namespace FormulaExplorer
                     if (book.RelativeNames.Contains(key)) { result.Warnings.Add("Nom relatif non résolu : " + name.Value); continue; }
                     if ((lastReferenceEnd >= 0 && begin > lastReferenceEnd && s.Substring(lastReferenceEnd, begin - lastReferenceEnd).Trim().Length == 0) || (i < s.Length && Char.IsWhiteSpace(s[i]) && next < s.Length && (Char.IsLetter(s[next]) || s[next] == '$' || s[next] == '\''))) result.Warnings.Add("Intersection avec nom défini : dépendances possiblement trop larges.");
                     if (!names.Add(key)) { result.Warnings.Add("Nom circulaire : " + name.Value); continue; }
-                    ParseInto(definition, targetSheet, book, result, names, depth + 1, ref worksheetOrder); names.Remove(key);
+                    ParseInto(definition, targetSheet, book, result, names, depth + 1, ref worksheetOrder, resolveWorkbook); names.Remove(key);
                     continue;
                 }
                 Match number = NumberPattern.Match(s, i);
@@ -312,40 +402,74 @@ namespace FormulaExplorer
     public sealed partial class DependencyEngine
     {
         public readonly Book Book;
-        readonly Dictionary<string, ParsedFormula> parsed = new Dictionary<string, ParsedFormula>(StringComparer.OrdinalIgnoreCase);
-        readonly Dictionary<string, List<Cell>> sheets = new Dictionary<string, List<Cell>>(StringComparer.OrdinalIgnoreCase);
-        public DependencyEngine(Book book)
+        readonly Book[] workbooks;
+        readonly bool traceWorkbooks;
+        readonly Dictionary<string, KeyValuePair<Cell, ParsedFormula>> parsed = new Dictionary<string, KeyValuePair<Cell, ParsedFormula>>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<WorkbookSheet, List<Cell>> sheets = new Dictionary<WorkbookSheet, List<Cell>>();
+        public DependencyEngine(Book book) : this(book, null) { }
+        internal DependencyEngine(Book book, IEnumerable<Book> peers)
         {
             Book = book;
-            IList<string> order = book.CapturedWorksheetOrder();
-            foreach (string sheet in book.Sheets) sheets[sheet] = new List<Cell>();
-            foreach (Cell cell in book.Cells.Values) { sheets[cell.Sheet].Add(cell); if (cell.IsFormula) parsed[cell.Key] = FormulaParser.Parse(cell.Formula, cell.Sheet, book, order); }
+            traceWorkbooks = peers != null;
+            workbooks = new[] { book }.Concat(peers ?? Enumerable.Empty<Book>()).Distinct().ToArray();
+            foreach (Book captured in workbooks)
+            {
+                IList<string> order = captured.CapturedWorksheetOrder();
+                Func<string, string, Book> resolve = !traceWorkbooks ? (Func<string, string, Book>)null :
+                    (path, name) => ResolveWorkbook(captured, path, name);
+                foreach (string sheet in captured.Sheets) sheets[new WorkbookSheet(captured, sheet)] = new List<Cell>();
+                foreach (Cell cell in captured.Cells.Values)
+                {
+                    WorkbookSheet location = new WorkbookSheet(captured, cell.Sheet);
+                    sheets[location].Add(cell);
+                    if (!cell.IsFormula) continue;
+                    ParsedFormula formula = FormulaParser.Parse(cell.Formula, cell.Sheet, captured, order, resolve);
+                    parsed.Add(location.CellKey(cell.Address), new KeyValuePair<Cell, ParsedFormula>(cell, formula));
+                }
+            }
         }
-        public ParsedFormula Parsed(Cell cell) { ParsedFormula p; return parsed.TryGetValue(cell.Key, out p) ? p : new ParsedFormula(); }
+        Book ResolveWorkbook(Book source, string path, string name)
+        {
+            Book[] matches = workbooks.Where(candidate => WorkbookLink.Matches(source, candidate, path, name)).Take(2).ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        }
+        internal WorkbookSheet SheetOf(Cell cell) { return new WorkbookSheet((traceWorkbooks ? cell.Workbook : null) ?? Book, cell.Sheet); }
+        internal WorkbookSheet SheetOf(Reference reference, Book origin = null)
+        { return new WorkbookSheet(reference.Workbook ?? origin ?? Book, reference.Sheet); }
+        public ParsedFormula Parsed(Cell cell)
+        {
+            KeyValuePair<Cell, ParsedFormula> entry;
+            return parsed.TryGetValue(SheetOf(cell).CellKey(cell.Address), out entry) ? entry.Value : new ParsedFormula();
+        }
         public IEnumerable<Cell> Precedents(Cell cell)
         {
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Book origin = SheetOf(cell).Workbook;
             foreach (Reference reference in Parsed(cell).References)
             {
-                IEnumerable<Cell> candidates = reference.Single ? new[] { Book.Get(reference.Sheet, Coordinates.Address(reference.FirstRow, reference.FirstColumn)) } : sheets[reference.Sheet].Where(reference.Contains);
-                foreach (Cell candidate in candidates) if (seen.Add(candidate.Key)) yield return candidate;
+                WorkbookSheet sheet = SheetOf(reference, origin);
+                IEnumerable<Cell> candidates = reference.Single ? new[] { sheet.Workbook.Get(sheet.Sheet, Coordinates.Address(reference.FirstRow, reference.FirstColumn)) } :
+                    sheets[sheet].Where(reference.Contains);
+                foreach (Cell candidate in candidates) if (seen.Add(sheet.CellKey(candidate.Address))) yield return candidate;
             }
         }
         public IEnumerable<Cell> Dependents(Cell cell)
         {
-            foreach (KeyValuePair<string, ParsedFormula> pair in parsed) if (pair.Value.References.Any(r => r.Contains(cell))) yield return Book.Cells[pair.Key];
+            WorkbookSheet target = SheetOf(cell);
+            foreach (var pair in parsed.Values)
+                if (pair.Value.References.Any(r => SheetOf(r, SheetOf(pair.Key).Workbook).Equals(target) && r.Contains(cell))) yield return pair.Key;
         }
         public IEnumerable<Cell> Related(Cell cell, bool dependents) { return dependents ? Dependents(cell) : Precedents(cell); }
         public List<Cell> Flow(Cell start, bool dependents, int limit, out bool truncated)
         {
-            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase); seen.Add(start.Key);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase); seen.Add(SheetOf(start).CellKey(start.Address));
             Queue<Cell> queue = new Queue<Cell>(); queue.Enqueue(start);
             List<Cell> result = new List<Cell>(); truncated = false;
             while (queue.Count > 0)
             {
                 foreach (Cell next in Related(queue.Dequeue(), dependents))
                 {
-                    if (!seen.Add(next.Key)) continue;
+                    if (!seen.Add(SheetOf(next).CellKey(next.Address))) continue;
                     if (result.Count >= limit) { truncated = true; return result; }
                     result.Add(next); queue.Enqueue(next);
                 }
@@ -354,7 +478,11 @@ namespace FormulaExplorer
         }
         public IEnumerable<string> Warnings
         {
-            get { return Book.Warnings.Concat(parsed.SelectMany(p => p.Value.Warnings.Select(w => Book.Cells[p.Key].Location + " : " + w))); }
+            get
+            {
+                return workbooks.SelectMany(b => b.Warnings).Concat(parsed.Values.SelectMany(p => p.Value.Warnings.Select(w =>
+                    "'" + SheetOf(p.Key).Label(Book).Replace("'", "''") + "'!" + p.Key.Address + " : " + w)));
+            }
         }
     }
 

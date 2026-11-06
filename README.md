@@ -15,7 +15,7 @@ Les travaux suivants remplacent les couleurs CF par des formats directs partagé
 ## Fonctions disponibles
 
 - Capture du classeur actif et de la cellule sélectionnée, avec lecture groupée des valeurs et formules.
-- Arbre d'antécédents et de dépendants, entre feuilles, avec détection des cycles et historique de navigation.
+- Arbre d'antécédents et de dépendants, entre feuilles et entre classeurs ouverts dans la même instance Excel, avec détection des cycles et historique de navigation. Les liens A1 vers des fichiers fermés signalent une recherche partielle.
 - Décomposition syntaxique des formules en fonctions, arguments, opérateurs, références et matrices ; sélection de la portion de formule correspondante.
 - Évaluation des sous-expressions par Excel dans le contexte de la cellule : fonctions anglaises indépendantes de la langue Windows, variables LET, noms relatifs, références structurées de la ligne courante. La sélection Excel est restaurée après calcul.
 - Édition de formule par F2, annulation propre à Clair avec contrôle des modifications externes et restauration du format numérique si celui-ci n'a pas changé. Une édition dans un tableau ne se propage pas à sa colonne.

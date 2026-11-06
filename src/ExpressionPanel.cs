@@ -19,6 +19,7 @@ namespace FormulaExplorer
         Dictionary<SheetSpanReference, ExpressionNode[]> shownSheetSpans = new Dictionary<SheetSpanReference, ExpressionNode[]>();
         ExpressionNode syntaxRoot;
         Cell expressionOwner;
+        Book ExpressionBook { get { return expressionOwner == null ? book : expressionOwner.Workbook ?? book; } }
         bool buildingExpressions;
         Font chosenExpressionFont;
 
@@ -197,7 +198,7 @@ namespace FormulaExplorer
             {
                 try
                 {
-                    bridge.ReadExpressionAnnotations(book, expressionOwner, syntaxRoot, out chosen, out expressionTargets, out criterionResults);
+                    bridge.ReadExpressionAnnotations(ExpressionBook, expressionOwner, syntaxRoot, out chosen, out expressionTargets, out criterionResults);
                     RebuildExpressionLayout();
                 }
                 catch (InvalidOperationException error) { warning = error.Message; }
@@ -220,7 +221,7 @@ namespace FormulaExplorer
         }
         void ShowExpressionTarget(TreeNode node, ExpressionNode expression, ExpressionTarget target)
         {
-            string text = (target == null || expression.SheetSpanOrigin != null ? "" : target.Display(book, expressionOwner) + " ← ") + ExpressionNodeText(expression);
+            string text = (target == null || expression.SheetSpanOrigin != null ? "" : target.Display(ExpressionBook, expressionOwner) + " ← ") + ExpressionNodeText(expression);
             if (node.Text != text) node.Text = text;
             var group = node.Parent == null ? null : node.Parent.Tag as CriterionGroup;
             string role = group == null ? "" : expression == group.Range ? "Plage du filtre · " : "Critère · ";
@@ -235,7 +236,7 @@ namespace FormulaExplorer
             CriterionGroup result;
             criterionResults.TryGetValue(group.Range, out result);
             ExpressionTarget target = result == null ? null : result.Target;
-            string text = (target == null ? "" : target.Display(book, expressionOwner) + " ← ") + group.Label;
+            string text = (target == null ? "" : target.Display(ExpressionBook, expressionOwner) + " ← ") + group.Label;
             if (node.Text != text) node.Text = text;
             node.ToolTipText = CriterionDetails(result);
         }
@@ -293,7 +294,7 @@ namespace FormulaExplorer
             ExpressionNode node = expressions.SelectedNode == null ? null : expressions.SelectedNode.Tag as ExpressionNode;
             if (node == null || expressionOwner == null || syntaxRoot == null) return;
             ExpressionValue value;
-            try { value = bridge.EvaluateExpressionNode(book, expressionOwner, syntaxRoot, node); }
+            try { value = bridge.EvaluateExpressionNode(ExpressionBook, expressionOwner, syntaxRoot, node); }
             catch { RefreshExpressionAnnotations(false); throw; }
             string warning = RefreshExpressionAnnotations(true);
             ExpressionTarget target;
@@ -302,7 +303,7 @@ namespace FormulaExplorer
             string location = target == null ? value.Reference : target.ExternalAddress;
             expressionValue.Text = (location == null ? "" : location + "\r\n") + value.Text +
                 (value.Truncated ? "\r\nAperçu limité à 10 lignes × 5 colonnes, 8 zones." : "") + (warning == null ? "" : "\r\n" + warning);
-            status.Text = "Expression calculée dans " + expressionOwner.Location + " · sélection Excel restaurée";
+            status.Text = "Expression calculée dans " + TraceCellLabel(expressionOwner) + " · sélection Excel restaurée";
         }
         bool CanNavigateSelectedExpression()
         {
@@ -320,7 +321,7 @@ namespace FormulaExplorer
                 CriterionGroup criterion = SelectedCriterion();
                 if (criterion != null)
                 {
-                    CriterionGroup result = bridge.NavigateCriterionGroup(book, expressionOwner, syntaxRoot, criterion);
+                    CriterionGroup result = bridge.NavigateCriterionGroup(ExpressionBook, expressionOwner, syntaxRoot, criterion);
                     if (result == null) criterionResults.Remove(criterion.Range);
                     else criterionResults[criterion.Range] = result;
                     ShowCriterionTarget(selected, criterion);
@@ -329,7 +330,7 @@ namespace FormulaExplorer
                     return;
                 }
                 var expression = (ExpressionNode)selected.Tag;
-                ExpressionTarget target = bridge.NavigateExpressionTarget(book, expressionOwner, syntaxRoot, expression);
+                ExpressionTarget target = bridge.NavigateExpressionTarget(ExpressionBook, expressionOwner, syntaxRoot, expression);
                 expressionTargets[expression] = target;
                 ShowExpressionTarget(selected, expression, target);
                 status.Text = "Cible sélectionnée dans Excel";
@@ -341,6 +342,11 @@ namespace FormulaExplorer
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour modifier une formule.");
             Cell cell = SelectedCell(); if (cell == null) return;
+            if (cell.Workbook != null && cell.Workbook != book)
+            {
+                status.Text = "Ouvrez Clair dans le classeur lié pour modifier cette formule.";
+                return;
+            }
             using (var dialog = new Form { Text = "Modifier " + cell.Location, Width = 720, Height = 330, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false })
             {
                 var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), RowCount = 4, ColumnCount = 1 };
@@ -365,7 +371,8 @@ namespace FormulaExplorer
                 dialog.Shown += delegate { editor.Focus(); editor.SelectionStart = editor.Text.Length; };
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                 {
-                    Book updated = bridge.Refresh(book, cell); SetBook(updated, cell.Sheet, cell.Address);
+                    Book updated = bridge.Refresh(book, cell);
+                    SetCapturedBook(updated, cell.Sheet, cell.Address, null, hasTracePeers ? bridge.CaptureDependencyPeers(updated) : null);
                     status.Text = "Formule modifiée dans " + cell.Location + ". Annulation disponible dans Clair.";
                 }
             }

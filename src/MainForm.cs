@@ -11,8 +11,10 @@ namespace FormulaExplorer
     public sealed partial class MainForm : Form
     {
         Book book, baseline;
-        DependencyEngine engine;
-        Cell root;
+        DependencyEngine engine, traceEngine;
+        Cell root, capturedRoot;
+        bool hasTracePeers;
+        int traceWarningCount;
         ExcelBridge bridge;
         bool reverse, updatingExplorer;
         readonly Stack<ExplorerHistory> history = new Stack<ExplorerHistory>();
@@ -212,6 +214,7 @@ namespace FormulaExplorer
             Book captured;
             Cell current;
             TraceLocation selection = null;
+            IReadOnlyList<Book> peers = null;
             try
             {
                 captured = bridge.CaptureActive(); current = bridge.ActiveCell(captured);
@@ -219,19 +222,23 @@ namespace FormulaExplorer
                 {
                     List<Reference> areas = bridge.ReadSelectionRanges(captured, true);
                     if (areas.Count > 1 || areas.Any(area => !area.Single)) selection = new TraceLocation(areas);
+                    peers = bridge.CaptureDependencyPeers(captured);
                 }
             }
             catch { RefreshTraceHighlights(); throw; }
-            SetCapturedBook(captured, current.Sheet, current.Address, selection);
+            SetCapturedBook(captured, current.Sheet, current.Address, selection, peers);
         }
         void SetBook(Book captured, string sheet, string address)
         { SetCapturedBook(captured, sheet, address, null); }
 
-        void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection)
+        void SetCapturedBook(Book captured, string sheet, string address, TraceLocation selection, IReadOnlyList<Book> peers = null)
         {
             DependencyEngine next = new DependencyEngine(captured);
             ClearTraceHighlightOwners();
             book = captured; engine = next; mapAnalysisOptions = mapPalette.AnalysisOptions;
+            capturedRoot = book.Get(sheet, address);
+            hasTracePeers = peers != null;
+            traceEngine = hasTracePeers ? new DependencyEngine(book, peers) : engine;
             mapAnalysis = FormulaMap.Analyze(captured, mapAnalysisOptions); history.Clear();
             highlightTraceCells.Enabled = bridge != null;
             title.Text = IsDocked ? book.Name : "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
@@ -239,12 +246,30 @@ namespace FormulaExplorer
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
             flow.Rows.Clear(); differences.DataSource = null;
-            string[] issues = engine.Warnings.Distinct().ToArray();
+            string[] issues = TraceWarnings();
             if (selection == null) status.Text = book.Cells.Count + " cellules · " + book.Cells.Values.Count(c => c.IsFormula) + " formules · " + issues.Length + " avertissements";
-            SetExplorerRoot(book.Get(sheet, address), false, selection, null);
+            SetExplorerRoot(capturedRoot, false, selection, null);
+        }
+
+        string[] TraceWarnings()
+        {
+            string[] issues = traceEngine.Warnings.Distinct().ToArray();
+            traceWarningCount = issues.Length;
             warnings.Text = "Analyse statique. Rechargez après modification Excel.\r\n" +
                 (issues.Length == 0 ? "Aucune référence non résolue détectée. Les branches conditionnelles sont toutes incluses." : String.Join("\r\n", issues.Take(200)) + (issues.Length > 200 ? "\r\n… " + (issues.Length - 200) + " autres avertissements (rapport complet disponible)." : ""));
+            return issues;
         }
+
+        bool EnsureTracePeers()
+        {
+            if (bridge == null || book == null || hasTracePeers) return false;
+            traceEngine = new DependencyEngine(book, bridge.CaptureDependencyPeers(book));
+            hasTracePeers = true;
+            TraceWarnings();
+            return true;
+        }
+
+        Cell FlowRoot { get { return root != null && root.Workbook != null && root.Workbook != book ? capturedRoot : root; } }
         void SetRoot(Cell cell, bool remember)
         { SetExplorerRoot(cell, remember, null, null); }
 
@@ -288,8 +313,8 @@ namespace FormulaExplorer
             {
                 switch (command)
                 {
-                    case "precedents": SelectExplorerTab(false); ShowTree(); break;
-                    case "dependents": SelectExplorerTab(true); ShowTree(); break;
+                    case "precedents": SelectExplorerTab(false); EnsureTracePeers(); ShowTree(); break;
+                    case "dependents": SelectExplorerTab(true); EnsureTracePeers(); ShowTree(); break;
                     case "back": Back(); break;
                     case "map": CloseMapPalette(); tabs.SelectedIndex = 1; break;
                     case "map-palette": ToggleMapPalette(); break;
@@ -302,13 +327,16 @@ namespace FormulaExplorer
         }
         TreeNode Node(Cell cell, TreeNode parent)
         {
+            string key = traceEngine.SheetOf(cell).CellKey(cell.Address);
             bool cycle = false;
-            for (TreeNode ancestor = parent; ancestor != null; ancestor = ancestor.Parent) if (ancestor.Tag is Cell && String.Equals(((Cell)ancestor.Tag).Key, cell.Key, StringComparison.OrdinalIgnoreCase)) { cycle = true; break; }
-            TreeNode node = new TreeNode(cell.Location + "   " + cell.Value + (cycle ? "  [cycle]" : "")) { Name = cell.Key, Tag = cell };
+            for (TreeNode ancestor = parent; ancestor != null; ancestor = ancestor.Parent) if (ancestor.Tag is Cell && String.Equals(ancestor.Name, key, StringComparison.OrdinalIgnoreCase)) { cycle = true; break; }
+            TreeNode node = new TreeNode(TraceCellLabel(cell) + "   " + cell.Value + (cycle ? "  [cycle]" : "")) { Name = key, Tag = cell };
             node.ForeColor = cycle ? Color.Firebrick : cell.IsFormula ? Color.FromArgb(29, 83, 153) : Color.FromArgb(24, 110, 76);
             if (!cycle && (reverse || cell.IsFormula)) node.Nodes.Add(new TreeNode("…"));
             return node;
         }
+        string TraceCellLabel(Cell cell)
+        { return "'" + traceEngine.SheetOf(cell).Label(book).Replace("'", "''") + "'!" + cell.Address; }
         void ShowTree()
         { ShowTreeSelection(null); }
 
@@ -334,6 +362,8 @@ namespace FormulaExplorer
             }
             finally { tree.EndUpdate(); updatingExplorer = false; }
             ShowRelationDetails();
+            if (traceSource == null && (reverse ? traceWarningCount != 0 : traceEngine.Parsed(root).Warnings.Count != 0))
+                status.Text = "Recherche partielle · consultez les avertissements.";
             RefreshTraceHighlights();
         }
         void ExpandNode(TreeNode node)
@@ -342,7 +372,7 @@ namespace FormulaExplorer
             node.Nodes.Clear();
             if (node.Level >= 32) { node.Nodes.Add("Profondeur limitée à 32 niveaux. Explorez ce nœud comme racine."); return; }
             Cell cell = node.Tag as Cell; if (cell == null) return;
-            List<Cell> children = engine.Related(cell, reverse).Take(501).ToList();
+            List<Cell> children = traceEngine.Related(cell, reverse).Take(501).ToList();
             foreach (Cell child in children.Take(500)) node.Nodes.Add(Node(child, node));
             if (children.Count > 500) node.Nodes.Add("Affichage limité à 500 relations directes.");
         }
@@ -350,20 +380,20 @@ namespace FormulaExplorer
         {
             TraceLocation selection = SelectedTraceLocation();
             if (selection == null) return null;
-            return selection.Ranges.Count == 1 && selection.Ranges[0].Single ? book.Get(selection.Sheet, selection.ExcelAddress) : null;
+            return selection.Ranges.Count == 1 && selection.Ranges[0].Single ? (selection.Workbook ?? book).Get(selection.Sheet, selection.ExcelAddress) : null;
         }
         void ShowDetails(Cell cell)
         {
             if (cell == null) return;
-            ParsedFormula parsed = engine.Parsed(cell);
+            ParsedFormula parsed = traceEngine.Parsed(cell);
             if (IsDocked)
             {
-                detail.Text = cell.Location + " · " + cell.Value + "\n" + cell.Kind + " · " + parsed.References.Count + " référence(s)" + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
+                detail.Text = TraceCellLabel(cell) + " · " + cell.Value + "\n" + cell.Kind + " · " + parsed.References.Count + " référence(s)" + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
                 formula.Text = cell.IsFormula ? cell.Formula : "(constante)";
             }
             else
             {
-                detail.Text = cell.Location + "\nValeur : " + cell.Value + " · " + (cell.IsFormula ? "Formule → " : "") + cell.Kind + "\nFonctions : " + String.Join(", ", parsed.Functions.Distinct()) + "\nRéférences : " + parsed.References.Count + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
+                detail.Text = TraceCellLabel(cell) + "\nValeur : " + cell.Value + " · " + (cell.IsFormula ? "Formule → " : "") + cell.Kind + "\nFonctions : " + String.Join(", ", parsed.Functions.Distinct()) + "\nRéférences : " + parsed.References.Count + (parsed.Warnings.Count > 0 ? " · résolution partielle" : "");
                 formula.Text = (cell.IsFormula ? cell.Formula : "(constante)") + "\r\n\r\n" + String.Join("\r\n", parsed.Warnings);
             }
             ShowExpression(cell);
@@ -372,7 +402,7 @@ namespace FormulaExplorer
         {
             if (bridge == null) { status.Text = "Démonstration : aucune connexion Excel."; return; }
             TraceLocation selection = NavigableRelationSelection();
-            if (selection != null) bridge.Navigate(book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress });
+            if (selection != null) bridge.NavigateDependency(selection.Workbook ?? book, new Cell { Sheet = selection.Sheet, Address = selection.ExcelAddress });
         }
         static void CellColumns(DataGridView grid)
         {
@@ -387,9 +417,9 @@ namespace FormulaExplorer
         }
         void ShowFlow(bool downstream)
         {
-            bool truncated; List<Cell> cells = engine.Flow(root, downstream, 2000, out truncated);
+            bool truncated; List<Cell> cells = engine.Flow(FlowRoot, downstream, 2000, out truncated);
             CellColumns(flow); foreach (Cell cell in cells) AddRow(flow, cell);
-            status.Text = (downstream ? "Impacts depuis " : "Entrées vers ") + root.Location + " : " + cells.Count + " cellules" + (truncated ? " · limite de 2 000 atteinte, résultat incomplet" : "") + " · dépendances statiques, consulter les avertissements";
+            status.Text = (downstream ? "Impacts depuis " : "Entrées vers ") + FlowRoot.Location + " : " + cells.Count + " cellules" + (truncated ? " · limite de 2 000 atteinte, résultat incomplet" : "") + " · dépendances statiques, consulter les avertissements";
         }
         void Remember()
         {
@@ -414,8 +444,8 @@ namespace FormulaExplorer
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 StringBuilder output = new StringBuilder();
-                output.AppendLine("Clair 0.6 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + root.Location).AppendLine("\nAVERTISSEMENTS");
-                foreach (string warning in engine.Warnings.Distinct()) output.AppendLine(warning);
+                output.AppendLine("Clair 0.6 — Analyse statique").AppendLine(book.Name).AppendLine(book.Captured.ToString("O")).AppendLine("Racine : " + TraceCellLabel(root)).AppendLine("\nAVERTISSEMENTS");
+                foreach (string warning in traceEngine.Warnings.Distinct()) output.AppendLine(warning);
                 output.AppendLine("\nCELLULES");
                 foreach (Cell c in book.Cells.Values.OrderBy(c => c.Sheet).ThenBy(c => c.Row).ThenBy(c => c.Column)) output.AppendLine(c.Location + "\t" + c.Kind + "\t" + c.Value + "\t" + c.Formula);
                 output.AppendLine("\nCOMPARAISON");
