@@ -186,11 +186,14 @@ public static class ExcelComparisonTests
                 try
                 {
                     keep(right.Range["F6"]).Formula2 = "=100";
-                    bool shifted = false;
-                    try { Invoke(targetView, "CopyComparisonSelection", true); }
-                    catch (InvalidOperationException error) { shifted = error.Message.Contains("plage comparée a changé"); }
-                    Equal(shifted, true, "a physically shifted comparator requires a fresh comparison");
+                    Invoke(targetView, "RerunComparison");
+                    Equal(Field<Label>(targetView, "status").Text.Contains("plage comparée a changé"), true,
+                        "rerun requires a new selection when the comparison scope changed");
+                    Invoke(targetView, "CopyComparisonSelection", true);
+                    Equal((string)keep(right.Range["F7"]).Formula2, "=E7+2", "copy follows the retained moved leaf");
                     Equal((string)keep(right.Range["F6"]).Formula2, "=100", "the old address is untouched after a comparator moves");
+                    Invoke(targetView, "UndoLastComparisonChange");
+                    Equal((string)keep(right.Range["F7"]).Formula2, "=E7+3", "undo restores the actual moved leaf");
                 }
                 finally { keep(right.Range["6:6"]).Delete(-4162); }
 

@@ -15,6 +15,7 @@ namespace FormulaExplorer
         FlowLayoutPanel comparisonEditBar;
         Button editComparison;
         EditTarget comparisonDraft;
+        bool comparisonDraftMoved;
         ComparisonRow comparisonDraftRow;
         ComparisonResult comparisonDraftResult;
         string comparisonDraftOriginal;
@@ -64,8 +65,9 @@ namespace FormulaExplorer
 
         static bool CanEditComparisonSide(ComparisonRow row, bool right)
         {
-            Reference area = right ? row.Right : row.Left;
+            Reference area = row.CurrentArea(right);
             if (area == null || area.FirstRow == 0) return false;
+            if (row.GeometryChanged(right)) return true;
             if (row.Children == null) return true;
             ComparisonPreview preview = DetailPreview(row, right, false);
             return preview.Text != null && !preview.Mixed;
@@ -77,20 +79,25 @@ namespace FormulaExplorer
         bool StartComparisonEdit(bool fromDetails)
         {
             ComparisonRow row = SelectedComparisonRow();
+            if (row != null) RefreshComparisonGeometry(new[] { row });
             if (!CanEditComparison(row)) return false;
             bool right = fromDetails ? ComparisonDetailRight() : comparisonRight;
             if (!CanEditComparisonSide(row, right))
             {
-                if (fromDetails) return false;
+                if (fromDetails || (row.GeometryChanged(right) && row.CurrentArea(right) == null)) return false;
                 right = !right;
             }
             try
             {
                 RequireFormulaEditWindow();
-                currentComparison.RequireReference();
-                Reference area = right ? row.Right : row.Left;
+                if (row.GeometryChangedOnEitherSide) currentComparison.RequireSession();
+                else currentComparison.RequireReference();
+                Reference area = row.CurrentArea(right);
                 FormulaDisplayStyle style = ReadExplorerFormulaStyle(ExplorerOption(LocalFormulaValue, true));
-                comparisonDraft = EditTarget.Open(bridge, area, style, DetailPreview(row, right, false).Mixed);
+                bool geometryChanged = row.GeometryChanged(right);
+                comparisonDraft = EditTarget.Open(bridge, area, style, !geometryChanged && DetailPreview(row, right, false).Mixed,
+                    verifyCaptured: !geometryChanged);
+                comparisonDraftMoved = row.GeometryChangedOnEitherSide;
                 comparisonDraftRow = row;
                 comparisonDraftResult = currentComparison;
                 comparisonDraftFocus = fromDetails ? (Control)comparisonDetails : comparisonTree;
@@ -169,7 +176,8 @@ namespace FormulaExplorer
                 RequireFormulaEditWindow();
                 if (!ReferenceEquals(currentComparison, before))
                     throw new InvalidOperationException("La comparaison a changé. Rouvrez l’édition.");
-                before.RequireReference();
+                if (comparisonDraftMoved) before.RequireSession();
+                else before.RequireReference();
                 FormulaDisplayStyle style = comparisonDraft.Style;
                 if (style.Local && !style.SameLanguage(bridge.ReadFormulaDisplayStyle(true)))
                     throw new InvalidOperationException("La syntaxe locale d’Excel a changé. Rouvrez l’édition.");
@@ -178,9 +186,10 @@ namespace FormulaExplorer
                 if (receipt == null) { CloseComparisonEdit("Formule inchangée."); return; }
                 PushComparisonUndo(new ComparisonUndo { Copies = new[] { receipt }, Edit = true });
                 ComparisonRow editedRow = comparisonDraftRow;
+                bool moved = comparisonDraftMoved;
                 Control focus = comparisonDraftFocus;
                 CloseComparisonEdit("Formule modifiée.", refresh: false);
-                if (editedRow.Left != null && editedRow.Right != null)
+                if (!moved && editedRow.Left != null && editedRow.Right != null)
                     RememberResolvedRanges(before, editedRow);
                 RefreshAfterComparison(before, "Formule modifiée", true);
                 if (focus != null && focus.CanFocus) focus.Focus();
@@ -205,6 +214,7 @@ namespace FormulaExplorer
         {
             if (comparisonDraft != null) comparisonDraft.Dispose();
             comparisonDraft = null;
+            comparisonDraftMoved = false;
             comparisonDraftRow = null;
             comparisonDraftResult = null;
             comparisonDraftFocus = null;

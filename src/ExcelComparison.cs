@@ -119,7 +119,8 @@ namespace FormulaExplorer
                 FullSheets = ReferenceScope != ComparisonScope.Range, Scope = ReferenceScope, Tolerance = tolerance,
                 LeftWorkbook = left, RightWorkbook = right,
                 LeftTabs = ComparisonWorksheetIdentities(left), RightTabs = ComparisonWorksheetIdentities(right),
-                RequireReference = () => RequireSameComparisonReference(savedReference) };
+                RequireSession = () => RequireSameComparisonReference(savedReference) };
+            result.RequireReference = result.RequireSession;
             if (ReferenceScope == ComparisonScope.Range)
             {
                 Reference source = ReadRetainedDependencyRange(left, comparisonRange);

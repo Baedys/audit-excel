@@ -43,7 +43,7 @@ namespace FormulaExplorer
         static Reference ComparisonTraceArea(ComparisonRow row, bool right)
         {
             if (row == null || row.Alignment != null) return null;
-            Reference area = right ? row.Right : row.Left;
+            Reference area = row.CurrentArea(right);
             return area != null && area.FirstRow != 0 ? area : null;
         }
 
@@ -66,11 +66,13 @@ namespace FormulaExplorer
             try
             {
                 RequireFormulaEditWindow();
-                currentComparison.RequireReference();
                 ComparisonRow selected = SelectedComparisonRow();
                 bool right = fromDetails ? ComparisonDetailRight() : comparisonRight;
                 ComparisonRow[] rows = currentOnly ? new ComparisonRow[0] : CheckedComparisonRows(comparisonTree.Nodes).ToArray();
                 if (rows.Length == 0) rows = new[] { selected };
+                RefreshComparisonGeometry(rows);
+                if (rows.Any(row => row != null && row.GeometryChangedOnEitherSide)) currentComparison.RequireSession();
+                else currentComparison.RequireReference();
                 var areas = new List<Reference>();
                 ComparisonRow launchRow = null;
                 foreach (ComparisonRow row in rows)
@@ -101,7 +103,7 @@ namespace FormulaExplorer
                 TraceLocation location = sources.Count == 1 && rootArea.Single ? null :
                     new TraceLocation(sources, sources.Count > 1 ? rootArea.Sheet : null, captured);
                 var frame = new ComparisonTraceSession { Row = launchRow, Right = right, Run = comparisonRun,
-                    Workbook = bridge.DependencyWorkbookIdentity(captured), Sheet = CurrentComparisonSheetIdentity(right, first.Sheet),
+                    Workbook = bridge.DependencyWorkbookIdentity(captured), Sheet = bridge.DependencyWorksheetIdentity(first.Workbook, first.Sheet),
                     Address = rootAddress, Focus = fromDetails ? (Control)comparisonDetails : comparisonTree };
                 child = new MainForm(bridge, true, explorerWindow);
                 frame.Child = child;
@@ -119,7 +121,7 @@ namespace FormulaExplorer
                 frame.DisplayStyle = child.formulaCellStyle;
                 bool selectedFormula = ReferenceEquals(selected, launchRow) && !downstream && location == null && anchor.IsFormula;
                 string shown = right ? comparisonRightPayload : comparisonLeftPayload;
-                frame.Delegates = selectedFormula && !launchRow.Interrupted && !currentComparison.ValuesOnly &&
+                frame.Delegates = selectedFormula && !launchRow.GeometryChangedOnEitherSide && !launchRow.Interrupted && !currentComparison.ValuesOnly &&
                     String.Equals(child.formulaDisplayContent, NormalizeComparisonTraceText(shown), StringComparison.Ordinal);
                 if (frame.Delegates && !launchRow.Resolved)
                     CaptureComparisonCounterpart(frame);
@@ -152,9 +154,6 @@ namespace FormulaExplorer
                 status.Text = "Exploration indisponible · " + message;
             }
         }
-
-        long CurrentComparisonSheetIdentity(bool right, string sheet)
-        { return (right ? currentComparison.RightTabs : currentComparison.LeftTabs)[sheet]; }
 
         static string NormalizeComparisonTraceText(string text)
         { return text == null ? null : text.Replace("\r\n", "\n").Replace('\r', '\n'); }

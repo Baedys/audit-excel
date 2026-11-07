@@ -191,6 +191,7 @@ static class Tests
             Check("Excel comparison workbook report", ExcelComparisonReportTests.Run);
             Check("Excel comparison worksheet shortcuts", ExcelComparisonShortcutTests.Run);
             Check("Excel comparison interruption and progress", ExcelComparisonProgressTests.Run);
+            Check("Excel comparison live geometry", ExcelComparisonGeometryTests.Run);
             Check("Excel conditional formula branch rendering", delegate { ExcelFormulaBranchesTests.Run(); });
             Check("Excel 3D worksheet spans and expression pane", delegate { ExcelSheetSpanTests.Run(); });
             Check("Excel multi-area direct dependency traces", delegate { ExcelDependencyRangesTests.Run(); });

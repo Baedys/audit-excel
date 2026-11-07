@@ -32,6 +32,7 @@ namespace FormulaExplorer
         internal Func<ComparisonResult> Recompare;
         internal Func<ComparisonRun, ComparisonResult> Rerun;
         internal Action RequireReference;
+        internal Action RequireSession;
         internal ExcelBridge.ComparisonRangeTargets RangeTargets;
 
         internal ComparisonTask AddTask(Reference left, Reference right, bool ignored = false)
@@ -68,6 +69,7 @@ namespace FormulaExplorer
     internal sealed class ComparisonTask
     {
         internal Reference Left, Right;
+        internal ExcelBridge.ComparisonGeometry.Position LeftPosition, RightPosition;
         internal bool Ignored;
         internal bool Interrupted, BlockInterrupted;
         internal string Failure;
@@ -75,6 +77,12 @@ namespace FormulaExplorer
 
         internal ComparisonTask(Reference left, Reference right)
         { Left = left; Right = right; }
+
+        internal Reference CurrentArea(bool right)
+        {
+            var position = right ? RightPosition : LeftPosition;
+            return position == null ? (right ? Right : Left) : position.Current;
+        }
     }
 
     internal sealed class ComparisonRow
@@ -85,6 +93,7 @@ namespace FormulaExplorer
         public string Avant { get; internal set; }
         public string Après { get; internal set; }
         internal Reference Left, Right;
+        internal ExcelBridge.ComparisonGeometry.Position LeftPosition, RightPosition;
         internal ComparisonTask Task;
         internal Book MissingSheetWorkbook;
         internal long MissingSheetIdentity;
@@ -92,6 +101,40 @@ namespace FormulaExplorer
         internal ComparisonAlignmentGap Alignment;
         internal bool Resolved, HistoryGroup, Interrupted;
         internal ComparisonPreview LeftPreview, RightPreview;
+
+        internal Reference CurrentArea(bool right)
+        {
+            var position = right ? RightPosition : LeftPosition;
+            return position == null ? (right ? Right : Left) : position.Current;
+        }
+
+        internal bool GeometryChanged(bool right)
+        {
+            var position = right ? RightPosition : LeftPosition;
+            return position != null && position.Changed;
+        }
+
+        internal bool GeometryChangedOnEitherSide
+        { get { return GeometryChanged(false) || GeometryChanged(true); } }
+
+        internal ComparisonRow WithCurrentAreas()
+        {
+            var row = (ComparisonRow)MemberwiseClone();
+            row.Left = CurrentArea(false);
+            row.Right = CurrentArea(true);
+            row.LeftPosition = row.RightPosition = null;
+            row.Référence = Label(row.Left);
+            row.Comparateur = Label(row.Right);
+            return row;
+        }
+
+        internal string CurrentLabel(bool right)
+        {
+            Reference area = CurrentArea(right);
+            if (area != null) return Label(area);
+            Reference original = right ? Right : Left;
+            return original == null ? "" : Label(original) + " · indisponible";
+        }
 
         internal ComparisonRow WithResolution(Reference left, Reference right, string before, string after)
         {
@@ -108,6 +151,7 @@ namespace FormulaExplorer
             group.Référence = Label(group.Left);
             group.Comparateur = Label(group.Right);
             group.Children = children;
+            group.LeftPosition = group.RightPosition = null;
             group.Task = children[0].Task;
             group.Resolved = children.All(row => row.Resolved);
             group.HistoryGroup = true;

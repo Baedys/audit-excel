@@ -36,7 +36,8 @@ namespace FormulaExplorer
                     this.range = range; this.original = original; Style = style; Text = text; Mixed = mixed;
                 }
 
-                internal static EditTarget Open(ExcelBridge bridge, Reference area, FormulaDisplayStyle style, bool mixed)
+                internal static EditTarget Open(ExcelBridge bridge, Reference area, FormulaDisplayStyle style, bool mixed,
+                    bool verifyCaptured = true)
                 {
                     return bridge.AtDirectCell(area.Workbook, area.Sheet, area.Address, (worksheet, range) =>
                     {
@@ -47,7 +48,7 @@ namespace FormulaExplorer
                             snapshot.Arrays[0].Bounds.FirstColumn != 1 || snapshot.Arrays[0].Bounds.LastRow != snapshot.Rows ||
                             snapshot.Arrays[0].Bounds.LastColumn != snapshot.Columns))
                             throw new InvalidOperationException("Sélectionnez exactement le bloc matriciel entier.");
-                        RequireCapturedEditContent(bridge, area, worksheet, snapshot);
+                        if (verifyCaptured) RequireCapturedEditContent(bridge, area, worksheet, snapshot);
                         string text = "";
                         if (!mixed)
                         {

@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Coordonnées des résultats après une modification Excel
+
+Dans Arixcel, 272836 matérialise les objets `Range` des tâches, blocs et écarts. 273040 relit leurs rectangles au retour. Il adopte les déplacements et redimensionnements et écarte le côté inaccessible. Les données du relevé restent en mémoire. 372428 exige des tailles égales pour la copie et 231944 utilise le côté actif pour F2. La validité du périmètre de plage contrôlée par 264688 et Common 54176 reste distincte.
+
+Clair conserve les coordonnées capturées et les plages physiques sur deux couches. Le retour au volet rafraîchit les adresses de navigation et de rapport. Le témoin Excel masqué couvre insertion avant et dans un bloc, renommage, suppression d’une cellule, remplacement par une feuille homonyme, tracé à l’adresse déplacée, F2 et annulation sur un bloc redimensionné. La suite de comparaison vérifie aussi la copie et son annulation sur une cellule déplacée. Lorsqu’un ancien périmètre de plage ne permet plus de relancer le relevé après une écriture, le volet conserve la capture précédente jusqu’à une nouvelle comparaison. Le tracé lancé sur une géométrie modifiée lit les cellules courantes et son édition reste au niveau du tracé.
+
 ## Progression et interruptions du comparateur
 
 Arixcel déclenche son moniteur après 2 000 ms via Explorer 252212 et Common 73848. 245603 ignore l’unité active. 273620 remplace cette unité pour chaque tâche et chaque bloc. 245464 annule pendant la préparation ou après une demande d’arrêt. Durant l’alignement et le scan, le premier arrêt conserve les résultats produits. Common 75764 vide les rectangles ouverts avant de rendre un résultat partiel. 266068 exporte les tâches interrompues et les bornes inférieures.
@@ -12,7 +18,7 @@ Le témoin Excel masqué vérifie 48 résultats, dont l’omission d’une tâch
 
 Dans Arixcel, `ModelessForm.GoBackToExcel` 58303 rend le focus à Excel. `History.GoBack` 64192 réactive une vue disponible. Le retour redessine la comparaison et synchronise les coordonnées de ses plages par 233522 et 273040. Alt+R suit un autre chemin. `CompareForm.Recompare` 223744 vérifie le périmètre, reconstruit le modèle avec ses options, conserve les côtés et tente de retrouver les nœuds dans la même phase. Un changement de phase vide l’annulation locale. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
 
-Clair inscrit le comparateur dans l’historique partagé, y compris quand aucune formule n’a été explorée dans le volet. Le retour conserve le modèle et la sélection de la grille. Alt+R repart des classeurs et plages capturés avec les mêmes options. Le volet retrouve les lignes, coches et groupes ouverts encore présents et conserve l’annulation dans la même phase. Les nœuds gris sont retirés lors du nouveau relevé. Un changement de phase réinitialise la sélection et l’annulation locale. La synchronisation de la géométrie des sous-écarts déplacés et l’essai de frappe physique restent ouverts.
+Clair inscrit le comparateur dans l’historique partagé, y compris quand aucune formule n’a été explorée dans le volet. Le retour conserve le modèle et la sélection de la grille. Alt+R repart des classeurs et plages capturés avec les mêmes options. Le volet retrouve les lignes, coches et groupes ouverts encore présents et conserve l’annulation dans la même phase. Les nœuds gris sont retirés lors du nouveau relevé. Un changement de phase réinitialise la sélection et l’annulation locale. L’essai de frappe physique reste ouvert.
 
 Le témoin Excel masqué vérifie 41 résultats. Il passe par les gestionnaires clavier du volet et par l’historique du complément. Il couvre deux fenêtres Excel, la sélection de grille, le retour au contrôle de détail, la recapture des formules et la conservation des options, de la sélection et de l’annulation. Il couvre aussi un brouillon actif et une référence remplacée.
 

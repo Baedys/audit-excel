@@ -62,13 +62,13 @@ namespace FormulaExplorer
                 object taskCount = task.Failure == null && !task.Interrupted ? (object)counts[task] : AtLeast(counts[task]);
                 foreach (ComparisonRow block in byTask[task])
                 {
-                    string blockName = Location(block.Left, block.Right, block.Resolved);
+                    string blockName = Location(block.CurrentArea(false), block.CurrentArea(true), block.Resolved);
                     int countInBlock = OpenCount(block);
                     object blockCount = block.Interrupted ? (object)AtLeast(countInBlock) : countInBlock;
                     if (block.Interrupted && block.Children.Count == 0)
                         AddRow(label, taskCount, blockName, blockCount, "Bloc interrompu", null, null);
                     foreach (ComparisonRow row in (IEnumerable<ComparisonRow>)block.Children ?? Enumerable.Repeat(block, 1))
-                        AddRow(label, taskCount, blockName, blockCount, Location(row.Left, row.Right, row.Resolved),
+                        AddRow(label, taskCount, blockName, blockCount, Location(row.CurrentArea(false), row.CurrentArea(true), row.Resolved),
                             Payload(row, false, display), Payload(row, true, display));
                 }
             }
@@ -81,8 +81,10 @@ namespace FormulaExplorer
             }
             foreach (ComparisonRow row in unmatched.OrderBy(row => row.Left == null))
             {
-                Reference present = row.Left ?? row.Right;
-                AddRow(present.Sheet, "Onglet présent seulement dans " + present.Workbook.Name, null, null, null, null, null);
+                Reference present = row.CurrentArea(false) ?? row.CurrentArea(true);
+                Reference original = row.Left ?? row.Right;
+                AddRow(present == null ? original.Sheet : present.Sheet, present == null ? "Onglet indisponible" :
+                    "Onglet présent seulement dans " + present.Workbook.Name, null, null, null, null, null);
             }
             foreach (ComparisonTask task in result.Tasks.Where(task => task.Ignored ||
                 (counts[task] == 0 && !task.Incomplete && copied.Contains(task.Right.Sheet))))
@@ -96,7 +98,7 @@ namespace FormulaExplorer
             if (result.Scope != ComparisonScope.Workbook && result.Tasks.Count != 0 &&
                 (!right || result.Tasks.Count == 1))
             {
-                Reference area = right ? result.Tasks[0].Right : result.Tasks[0].Left;
+                Reference area = result.Tasks[0].CurrentArea(right) ?? (right ? result.Tasks[0].Right : result.Tasks[0].Left);
                 return result.Scope == ComparisonScope.Range ? ComparisonRow.Label(area) : area.Workbook.Name + " · " + area.Sheet;
             }
             return (right ? result.RightWorkbook : result.LeftWorkbook).Name;
@@ -109,8 +111,9 @@ namespace FormulaExplorer
 
         string TaskLabel(ComparisonScope scope, ComparisonTask task)
         {
-            return scope == ComparisonScope.Range ? Location(task.Left, task.Right, false) :
-                JoinSides(task.Left.Sheet, task.Right.Sheet, " / ");
+            Reference left = task.CurrentArea(false), right = task.CurrentArea(true);
+            return scope == ComparisonScope.Range ? Location(left, right, false) :
+                JoinSides(left == null ? "#REF!" : left.Sheet, right == null ? "#REF!" : right.Sheet, " / ");
         }
 
         string Location(Reference left, Reference right, bool resolved)
@@ -121,6 +124,7 @@ namespace FormulaExplorer
 
         string Address(Reference area)
         {
+            if (area == null) return "#REF!";
             if (!r1c1) return area.Address;
             string first = style.RowLetter + area.FirstRow + style.ColumnLetter + area.FirstColumn;
             return area.Single ? first : first + ":" + style.RowLetter + area.LastRow + style.ColumnLetter + area.LastColumn;

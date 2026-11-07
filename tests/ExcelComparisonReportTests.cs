@@ -196,7 +196,8 @@ public static class ExcelComparisonReportTests
                 if (report != null) try { CloseReport(ref report); } catch (COMException) { }
                 if (target != null) ((dynamic)target).Close(false);
                 if (source != null) ((dynamic)source).Close(false);
-                ((dynamic)application).Quit();
+                try { ((dynamic)application).Quit(); }
+                catch (COMException error) { if ((uint)error.ErrorCode != 0x80010108) throw; }
             }
             for (int index = retained.Count - 1; index >= 0; index--) ExcelBridge.Release(retained[index]);
             ExcelBridge.Release(target); ExcelBridge.Release(source); ExcelBridge.Release(application);

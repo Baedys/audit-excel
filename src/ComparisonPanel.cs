@@ -100,7 +100,12 @@ namespace FormulaExplorer
                     RemoveTraceHighlightOwner(comparisonHighlightOwner);
                 }
             };
-            comparisonTree.AfterSelect += delegate { if (!loadingComparisonRows) UpdateComparisonSelection(); };
+            comparisonTree.AfterSelect += delegate
+            {
+                if (loadingComparisonRows) return;
+                RefreshFocusedComparisonGeometry();
+                UpdateComparisonSelection();
+            };
             comparisonTree.BeforeCheck += delegate(object sender, TreeViewCancelEventArgs e)
             {
                 var row = e.Node.Tag as ComparisonRow;
@@ -171,7 +176,12 @@ namespace FormulaExplorer
         {
             if (activeComparisonRun != null) return;
             if (comparisonTrace != null) { comparisonTrace.Child.RefreshFormulaDisplayStyle(true); return; }
-            if (tabs.SelectedIndex == 3) { ShowComparisonReference(); UpdateComparisonSelection(); }
+            if (tabs.SelectedIndex == 3)
+            {
+                ShowComparisonReference();
+                RefreshFocusedComparisonGeometry(true);
+                UpdateComparisonSelection();
+            }
         }
 
         void ChangeComparisonOption(Action<ComparisonSettings> change)
@@ -232,6 +242,7 @@ namespace FormulaExplorer
 
         void SetCurrentComparison(ComparisonResult next)
         {
+            if (next == null) TrackComparisonGeometry(null);
             if (next == null || (currentComparison != null && (next.ValuesOnly != currentComparison.ValuesOnly ||
                 next.Relative != currentComparison.Relative || next.IgnoreInputs != currentComparison.IgnoreInputs)))
                 ResetComparisonHistory();
@@ -335,6 +346,7 @@ namespace FormulaExplorer
                 Enumerable.Empty<Tuple<string, string>>());
             renderedComparisonRun = comparisonRun;
             comparisonRows = rows;
+            TrackComparisonGeometry(rows);
             loadingComparisonRows = true;
             comparisonTree.BeginUpdate();
             try
@@ -391,8 +403,10 @@ namespace FormulaExplorer
 
         string ComparisonNodeText(ComparisonRow row)
         {
-            Reference area = (comparisonSwapped ? row.Left : row.Right) ?? row.Left ?? row.Right;
+            Reference area = row.CurrentArea(!comparisonSwapped) ?? row.CurrentArea(comparisonSwapped) ?? row.Left ?? row.Right;
             string location = area.Sheet + (area.FirstRow == 0 ? "" : "!" + area.Address);
+            if ((row.Left != null && row.CurrentArea(false) == null) || (row.Right != null && row.CurrentArea(true) == null))
+                location += " · côté indisponible";
             if (row.Children == null)
                 return location + " · " + (row.Resolved ? (area.FirstRow == 0 ? "Onglet copié" : "Résolu") : row.Écart);
             int resolved = row.Children.Count(child => child.Resolved);
@@ -418,11 +432,15 @@ namespace FormulaExplorer
             }
             try
             {
-                Reference left = row.Left != null && row.Left.FirstRow > 0 ? row.Left : null;
-                Reference right = row.Right != null && row.Right.FirstRow > 0 ? row.Right : null;
-                if (left == null || right == null) { RemoveTraceHighlightOwner(comparisonHighlightOwner); return; }
+                Reference left = row.CurrentArea(false), right = row.CurrentArea(true);
+                if (left == null || right == null || left.FirstRow == 0 || right.FirstRow == 0)
+                { RemoveTraceHighlightOwner(comparisonHighlightOwner); return; }
                 if (bridge.DependencyWorkbookIdentity(left.Workbook) == bridge.DependencyWorkbookIdentity(right.Workbook))
-                    right = Reference.FromBounds(right.Sheet, right.FirstRow, right.FirstColumn, right.LastRow, right.LastColumn, left.Workbook);
+                {
+                    Book live = row.GeometryChanged(true) ? right.Workbook : left.Workbook;
+                    left = Reference.FromBounds(left.Sheet, left.FirstRow, left.FirstColumn, left.LastRow, left.LastColumn, live);
+                    right = Reference.FromBounds(right.Sheet, right.FirstRow, right.FirstColumn, right.LastRow, right.LastColumn, live);
+                }
                 TrackDirectConnection(bridge);
                 traceHighlightConnections[comparisonHighlightOwner] = bridge;
                 Book primary = bridge.DependencyBookIsOpen(right.Workbook) ? right.Workbook : left.Workbook;
@@ -436,9 +454,17 @@ namespace FormulaExplorer
 
         void NavigateComparison(ComparisonRow row, bool right)
         {
-            Reference area = row == null ? null : (right ? row.Right : row.Left) ?? row.Left ?? row.Right;
-            if (area == null || bridge == null) return;
-            comparisonRight = ReferenceEquals(area, row.Right);
+            if (row == null || bridge == null) return;
+            RefreshComparisonGeometry(new[] { row });
+            Reference area = row.CurrentArea(right);
+            if (area == null && (right ? row.Right : row.Left) == null) area = row.CurrentArea(!right);
+            if (area == null)
+            {
+                UpdateComparisonSelection();
+                status.Text = "La plage comparée n’est plus accessible dans Excel.";
+                return;
+            }
+            comparisonRight = ReferenceEquals(area, row.CurrentArea(true));
             UpdateComparisonSelection();
             if (area.FirstRow == 0) bridge.NavigateComparisonSheet(area);
             else bridge.NavigateDependency(area.Workbook, new Cell { Sheet = area.Sheet, Address = area.Address });
@@ -532,6 +558,7 @@ namespace FormulaExplorer
             if (!CanExportComparisonResults()) return;
             try
             {
+                if (comparisonGeometry != null && comparisonGeometry.RefreshAll()) RefreshComparisonGeometryLabels();
                 var style = explorerFormulaStyle.WithNotation(currentComparison.Relative);
                 var report = new ComparisonReport(currentComparison, comparisonRows, style, comparisonSwapped, ComparisonReportText);
                 bool frozen = bridge.ExportComparisonReport(report);
@@ -544,7 +571,7 @@ namespace FormulaExplorer
         string ComparisonReportText(ComparisonRow row, bool right, FormulaDisplayStyle style)
         {
             ComparisonPreview preview = right ? row.RightPreview : row.LeftPreview;
-            if (style.Local)
+            if (style.Local && !row.GeometryChanged(right))
             {
                 try
                 {

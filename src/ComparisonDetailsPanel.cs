@@ -30,8 +30,8 @@ namespace FormulaExplorer
             {
                 try
                 {
-                    string localBefore = LocalComparisonFormula(row.Left, left, style) ?? before;
-                    string localAfter = LocalComparisonFormula(row.Right, right, style) ?? after;
+                    string localBefore = row.GeometryChanged(false) ? before : LocalComparisonFormula(row.Left, left, style) ?? before;
+                    string localAfter = row.GeometryChanged(true) ? after : LocalComparisonFormula(row.Right, right, style) ?? after;
                     before = localBefore;
                     after = localAfter;
                 }
@@ -123,7 +123,7 @@ namespace FormulaExplorer
 
         int AppendComparisonSide(StringBuilder text, ComparisonRow row, bool right, string preview, bool mixed)
         {
-            string label = right ? row.Comparateur : row.Référence;
+            string label = row.CurrentLabel(right);
             if (comparisonRight == right) text.Append("● ");
             text.Append(right ? "Comparateur" : "Référence");
             if (!String.IsNullOrEmpty(label)) text.Append(" · ").Append(label.Replace("\r\n", "\n").Replace('\r', '\n'));

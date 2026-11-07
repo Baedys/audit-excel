@@ -20,8 +20,12 @@ namespace FormulaExplorer
 
         static bool CanCopyComparisonRow(ComparisonRow row)
         {
-            return row != null && !row.Resolved && !row.Interrupted && row.Alignment == null && (row.MissingSheetWorkbook != null ||
-                (row.Left != null && row.Right != null && row.Left.FirstRow > 0 && row.Right.FirstRow > 0));
+            if (row == null || row.Resolved || row.Interrupted || row.Alignment != null) return false;
+            Reference left = row.CurrentArea(false), right = row.CurrentArea(true);
+            if (row.MissingSheetWorkbook != null) return left != null || right != null;
+            return left != null && right != null && left.FirstRow > 0 && right.FirstRow > 0 &&
+                left.LastRow - left.FirstRow == right.LastRow - right.FirstRow &&
+                left.LastColumn - left.FirstColumn == right.LastColumn - right.FirstColumn;
         }
 
         static IEnumerable<ComparisonRow> CheckedComparisonRows(TreeNodeCollection nodes)
@@ -55,8 +59,13 @@ namespace FormulaExplorer
         bool CanCopyComparisonSelection(bool toRight)
         {
             return bridge != null && currentComparison != null && !currentComparison.ValuesOnly &&
-                !valuesOnly.Checked && !ShowingAlignment && CopyableComparisonSelection(toRight).Length != 0;
+                !valuesOnly.Checked && !ShowingAlignment &&
+                !ComparisonTreeRows().Any(node => node.Checked && CopyGeometryUnavailable((ComparisonRow)node.Tag)) &&
+                CopyableComparisonSelection(toRight).Length != 0;
         }
+
+        static bool CopyGeometryUnavailable(ComparisonRow row)
+        { return row.GeometryChangedOnEitherSide && !CanCopyComparisonRow(row); }
 
         static Tuple<string, string> ComparisonCopyKey(ComparisonRow row)
         { return Tuple.Create(row.Référence, row.Comparateur); }
@@ -85,21 +94,43 @@ namespace FormulaExplorer
 
         void CopyComparisonSelection(bool toRight)
         {
+            if (currentComparison == null) return;
+            ComparisonRow[] intended = ComparisonTreeRows().Where(node => node.Checked)
+                .Select(node => (ComparisonRow)node.Tag).ToArray();
+            if (intended.Length == 0 && SelectedComparisonRow() != null) intended = new[] { SelectedComparisonRow() };
+            RefreshComparisonGeometry(intended);
+            if (intended.Any(CopyGeometryUnavailable))
+            {
+                RefreshComparisonCopy();
+                status.Text = "Une plage a disparu ou les deux côtés ont des tailles différentes. Relancez la comparaison.";
+                return;
+            }
             if (!CanCopyComparisonSelection(toRight)) return;
             RequireFormulaEditWindow();
             ComparisonRow[] selected = CopyableComparisonSelection(toRight);
 
-            ComparisonResult fresh = currentComparison.Recompare();
-            List<ComparisonRow> roots = fresh.ReadDifferences();
-            var differences = roots.SelectMany(row => new[] { row }.Concat(row.Children ?? Enumerable.Empty<ComparisonRow>()))
-                .Where(CanCopyComparisonRow).ToLookup(ComparisonCopyKey);
-            var plan = selected.Select(row => RevalidateComparisonCopy(row, differences, roots)).ToArray();
-            if (fresh.ValuesOnly || fresh.Relative != currentComparison.Relative || fresh.IgnoreInputs != currentComparison.IgnoreInputs ||
-                plan.Any(row => row == null))
+            bool moved = selected.Any(row => row.GeometryChangedOnEitherSide);
+            ComparisonResult fresh = currentComparison;
+            ComparisonRow[] plan;
+            if (moved)
             {
-                ShowComparisonResult(fresh);
-                status.Text = "Les écarts ont changé. Sélectionnez les plages actualisées.";
-                return;
+                currentComparison.RequireSession();
+                plan = selected.Select(row => row.WithCurrentAreas()).ToArray();
+            }
+            else
+            {
+                fresh = currentComparison.Recompare();
+                List<ComparisonRow> roots = fresh.ReadDifferences();
+                var differences = roots.SelectMany(row => new[] { row }.Concat(row.Children ?? Enumerable.Empty<ComparisonRow>()))
+                    .Where(CanCopyComparisonRow).ToLookup(ComparisonCopyKey);
+                plan = selected.Select(row => RevalidateComparisonCopy(row, differences, roots)).ToArray();
+                if (fresh.ValuesOnly || fresh.Relative != currentComparison.Relative || fresh.IgnoreInputs != currentComparison.IgnoreInputs ||
+                    plan.Any(row => row == null))
+                {
+                    ShowComparisonResult(fresh);
+                    status.Text = "Les écarts ont changé. Sélectionnez les plages actualisées.";
+                    return;
+                }
             }
 
             ClearComparisonHighlights();
@@ -143,7 +174,7 @@ namespace FormulaExplorer
                     {
                         var receipt = connection.CopyComparisonContent(row, toRight, fresh.Relative, connection.ComparisonOptions.CopyFormats);
                         applied.Add(receipt);
-                        RememberResolvedRanges(fresh, row);
+                        if (!moved) RememberResolvedRanges(fresh, row);
                         if (receipt.FormatWarning != null) { formatWarnings++; firstError = firstError ?? receipt.FormatWarning; }
                         destinations.Add(key);
                     }

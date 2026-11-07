@@ -189,9 +189,14 @@ namespace FormulaExplorer
             }
             catch (Exception error)
             {
-                SetCurrentComparison(null);
-                skipComparisonAlignment.Enabled = false;
-                ShowComparisonRows(null);
+                if (ReferenceEquals(previous, currentComparison) && comparisonGeometry != null && comparisonGeometry.HasChanges)
+                    UpdateComparisonSelection();
+                else
+                {
+                    SetCurrentComparison(null);
+                    skipComparisonAlignment.Enabled = false;
+                    ShowComparisonRows(null);
+                }
                 summary += " · Actualisation impossible · " + error.Message;
             }
             status.Text = summary;
