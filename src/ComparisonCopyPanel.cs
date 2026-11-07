@@ -12,14 +12,17 @@ namespace FormulaExplorer
 
         void ConfigureComparisonCopy(FlowLayoutPanel bar)
         {
-            copyComparison = ActionButton("Copier", () => CopyComparisonSelection(!comparisonRight));
+            copyComparison = ActionButton("Copier", () => CopyComparisonSelection(DefaultComparisonCopyDirection()));
             bar.Controls.Add(copyComparison);
             RefreshComparisonCopy();
             Disposed += delegate { ClearComparisonUndo(); };
         }
 
         static bool CanCopyComparisonRow(ComparisonRow row)
-        { return row != null && row.Alignment == null && row.Left != null && row.Right != null && row.Left.FirstRow > 0 && row.Right.FirstRow > 0; }
+        {
+            return row != null && row.Alignment == null && (row.MissingSheetWorkbook != null ||
+                (row.Left != null && row.Right != null && row.Left.FirstRow > 0 && row.Right.FirstRow > 0));
+        }
 
         static IEnumerable<ComparisonRow> CheckedComparisonRows(TreeNodeCollection nodes)
         {
@@ -34,10 +37,25 @@ namespace FormulaExplorer
         void RefreshComparisonCopy()
         {
             if (copyComparison == null) return;
-            copyComparison.Text = !comparisonRight != comparisonSwapped ? "Copier →" : "← Copier";
-            copyComparison.Enabled = bridge != null && currentComparison != null && !currentComparison.ValuesOnly &&
-                !valuesOnly.Checked && !ShowingAlignment &&
-                (CanCopyComparisonRow(SelectedComparisonRow()) || CheckedComparisonRows(comparisonTree.Nodes).Any());
+            bool toRight = DefaultComparisonCopyDirection();
+            copyComparison.Text = toRight != comparisonSwapped ? "Copier →" : "← Copier";
+            copyComparison.Enabled = CanCopyComparisonSelection(toRight);
+        }
+
+        bool DefaultComparisonCopyDirection()
+        { return CanCopyComparisonSelection(!comparisonRight) ? !comparisonRight : comparisonRight; }
+
+        ComparisonRow[] CopyableComparisonSelection(bool toRight)
+        {
+            var rows = CheckedComparisonRows(comparisonTree.Nodes).ToArray();
+            if (rows.Length == 0) rows = new[] { SelectedComparisonRow() };
+            return rows.Where(row => CanCopyComparisonRow(row) && (toRight ? row.Left : row.Right) != null).ToArray();
+        }
+
+        bool CanCopyComparisonSelection(bool toRight)
+        {
+            return bridge != null && currentComparison != null && !currentComparison.ValuesOnly &&
+                !valuesOnly.Checked && !ShowingAlignment && CopyableComparisonSelection(toRight).Length != 0;
         }
 
         static Tuple<string, string> ComparisonCopyKey(ComparisonRow row)
@@ -45,15 +63,15 @@ namespace FormulaExplorer
 
         void CopyComparisonSelection(bool toRight)
         {
-            if (copyComparison == null || !copyComparison.Enabled) return;
+            if (!CanCopyComparisonSelection(toRight)) return;
             RequireFormulaEditWindow();
-            ComparisonRow[] selected = CheckedComparisonRows(comparisonTree.Nodes).ToArray();
-            if (selected.Length == 0) selected = new[] { SelectedComparisonRow() };
+            ComparisonRow[] selected = CopyableComparisonSelection(toRight);
 
             ComparisonResult fresh = currentComparison.Recompare();
             var differences = fresh.ReadDifferences().SelectMany(row => new[] { row }.Concat(row.Children ?? Enumerable.Empty<ComparisonRow>()))
                 .Where(CanCopyComparisonRow).ToLookup(ComparisonCopyKey);
-            var plan = selected.Select(row => differences[ComparisonCopyKey(row)].FirstOrDefault()).ToArray();
+            var plan = selected.Select(row => differences[ComparisonCopyKey(row)]
+                .FirstOrDefault(candidate => candidate.MissingSheetIdentity == row.MissingSheetIdentity)).ToArray();
             if (fresh.ValuesOnly || fresh.Relative != currentComparison.Relative || plan.Any(row => row == null))
             {
                 ShowComparisonResult(fresh);
@@ -63,13 +81,33 @@ namespace FormulaExplorer
 
             ClearComparisonHighlights();
             var applied = new List<ExcelBridge.ComparisonCopyReceipt>();
+            var sheets = new List<ExcelBridge.ComparisonSheetReceipt>();
             var destinations = new HashSet<Tuple<long, string, string>>();
             string firstError = null;
-            int failed = 0;
+            int failed = 0, linkWarnings = 0;
             ExcelBridge connection = bridge;
             try
             {
-                foreach (ComparisonRow row in plan)
+                if (plan.Any(row => row.MissingSheetWorkbook != null))
+                    connection.CopyComparisonSheets(() =>
+                    {
+                        foreach (ComparisonRow row in plan.Where(item => item.MissingSheetWorkbook != null))
+                            try { connection.CopyComparisonSheet(row, toRight, sheets); }
+                            catch (Exception error)
+                            {
+                                if (!(error is COMException) && !(error is InvalidOperationException)) throw;
+                                failed++; firstError = firstError ?? error.Message;
+                            }
+                        // A formula can link to a second tab copied later in this gesture.
+                        foreach (var sheet in sheets)
+                            try { connection.LocalizeComparisonSheet(sheet); }
+                            catch (Exception error)
+                            {
+                                if (!(error is COMException) && !(error is InvalidOperationException) && !(error is ArgumentException)) throw;
+                                linkWarnings++; firstError = firstError ?? error.Message;
+                            }
+                    });
+                foreach (ComparisonRow row in plan.Where(item => item.MissingSheetWorkbook == null))
                 {
                     Reference target = toRight ? row.Right : row.Left;
                     var key = Tuple.Create(connection.DependencyWorkbookIdentity(target.Workbook), target.Sheet, target.Address);
@@ -87,16 +125,20 @@ namespace FormulaExplorer
                     }
                 }
             }
+            catch (Exception error) { failed++; firstError = firstError ?? error.Message; }
             finally
             {
-                if (applied.Count != 0)
+                if (applied.Count != 0 || sheets.Count != 0)
                 {
                     applied.Reverse();
-                    PushComparisonUndo(new ComparisonUndo { Copies = applied.ToArray() });
+                    PushComparisonUndo(new ComparisonUndo { Copies = applied.ToArray(), Sheets = sheets.Count == 0 ? null : sheets });
                 }
             }
-            RefreshAfterComparison(fresh, "Plages copiées · " + applied.Count +
-                (failed == 0 ? "" : " · Échecs · " + failed + " · " + firstError), true);
+            string summary = "Plages copiées · " + applied.Count;
+            if (sheets.Count != 0) summary += " · Onglets copiés · " + sheets.Count;
+            if (failed != 0) summary += " · Échecs · " + failed;
+            if (linkWarnings != 0) summary += " · Réécriture des liens incomplète · " + linkWarnings;
+            RefreshAfterComparison(fresh, summary + (firstError == null ? "" : " · " + firstError), true);
         }
     }
 }

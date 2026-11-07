@@ -309,7 +309,8 @@ namespace FormulaExplorer
             if (area == null || bridge == null) return;
             comparisonRight = ReferenceEquals(area, row.Right);
             UpdateComparisonSelection();
-            bridge.NavigateDependency(area.Workbook, new Cell { Sheet = area.Sheet, Address = area.FirstRow == 0 ? "A1" : area.Address });
+            if (area.FirstRow == 0) bridge.NavigateComparisonSheet(area);
+            else bridge.NavigateDependency(area.Workbook, new Cell { Sheet = area.Sheet, Address = area.Address });
         }
 
         bool HandleComparisonKey(Keys keyData)
@@ -334,8 +335,9 @@ namespace FormulaExplorer
             }
             else if (keyData == (Keys.Control | Keys.R) || keyData == (Keys.Control | Keys.L))
             {
-                if (!copyComparison.Enabled) return false;
-                Safe(() => CopyComparisonSelection((keyData == (Keys.Control | Keys.R)) != comparisonSwapped));
+                bool toRight = (keyData == (Keys.Control | Keys.R)) != comparisonSwapped;
+                if (!CanCopyComparisonSelection(toRight)) return false;
+                Safe(() => CopyComparisonSelection(toRight));
             }
             else if (keyData == Keys.Enter) Safe(delegate { NavigateComparison(SelectedComparisonRow(), comparisonRight); });
             else return false;

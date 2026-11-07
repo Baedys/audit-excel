@@ -11,10 +11,14 @@ namespace FormulaExplorer
         {
             internal AlignmentReceipt[] Alignment;
             internal ExcelBridge.ComparisonCopyReceipt[] Copies;
-            internal bool IsCopy { get { return Copies != null; } }
-            internal int Count { get { return IsCopy ? Copies.Length : Alignment.Length; } }
+            internal List<ExcelBridge.ComparisonSheetReceipt> Sheets;
+            internal bool IsCopy { get { return Alignment == null; } }
+            internal int Count { get { return IsCopy ? Copies.Length + (Sheets == null ? 0 : Sheets.Count) : Alignment.Length; } }
             internal void Release()
-            { if (IsCopy) foreach (var copy in Copies) copy.Dispose(); }
+            {
+                if (IsCopy) foreach (var copy in Copies) copy.Dispose();
+                if (Sheets != null) foreach (var sheet in Sheets) sheet.Dispose();
+            }
         }
 
         readonly Stack<ComparisonUndo> comparisonUndo = new Stack<ComparisonUndo>();
@@ -92,12 +96,21 @@ namespace FormulaExplorer
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             bool fresh = session == null || (ReferenceEquals(comparisonUndoOwner, session) && comparisonUndoRevision == session.Revision);
             ComparisonUndo entry = comparisonUndo.Peek();
-            if (entry.IsCopy) ExcelBridge.UndoComparisonCopies(entry.Copies);
-            else bridge.UndoComparisonAlignment(entry.Alignment);
+            UndoComparisonEntry(bridge, entry);
             comparisonUndo.Pop();
             entry.Release();
             RecordComparisonChange(session, fresh);
             RefreshAfterComparison(currentComparison, entry.IsCopy ? "Dernière copie annulée" : "Dernier alignement annulé", entry.IsCopy);
+        }
+
+        static void UndoComparisonEntry(ExcelBridge connection, ComparisonUndo entry)
+        {
+            if (!entry.IsCopy) { connection.UndoComparisonAlignment(entry.Alignment); return; }
+            if (entry.Sheets != null) connection.ValidateComparisonSheetUndo(entry.Sheets);
+            ExcelBridge.UndoComparisonCopies(entry.Copies);
+            foreach (var copy in entry.Copies) copy.Dispose();
+            entry.Copies = new ExcelBridge.ComparisonCopyReceipt[0];
+            if (entry.Sheets != null) connection.UndoComparisonSheets(entry.Sheets);
         }
 
         void RemoveWorkbookComparisonAlignment()
@@ -198,9 +211,15 @@ namespace FormulaExplorer
                             if (!IsDisposed && !Disposing) ClearComparisonHighlights();
                             while (completed < batch.Length)
                             {
+                                if (batch[completed].Sheets != null)
+                                {
+                                    UndoComparisonEntry(connection, batch[completed]);
+                                    completed++;
+                                    continue;
+                                }
                                 bool isCopy = batch[completed].IsCopy;
                                 int end = completed + 1;
-                                while (end < batch.Length && batch[end].IsCopy == isCopy) end++;
+                                while (end < batch.Length && batch[end].IsCopy == isCopy && batch[end].Sheets == null) end++;
                                 var group = batch.Skip(completed).Take(end - completed);
                                 if (isCopy) ExcelBridge.UndoComparisonCopies(group.SelectMany(entry => entry.Copies).ToArray());
                                 else connection.UndoComparisonAlignment(group.SelectMany(entry => entry.Alignment));

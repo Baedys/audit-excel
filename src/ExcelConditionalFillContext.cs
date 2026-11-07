@@ -32,6 +32,28 @@ namespace FormulaExplorer
         // Excel exposes distinct IUnknown proxies for the same native window.
         static long WindowIdentity(object window)
         { return Convert.ToInt64(Get(window, "Hwnd"), CultureInfo.InvariantCulture); }
+
+        static bool IsActiveWindow(object app, object window)
+        {
+            object active = Get(app, "ActiveWindow");
+            try { return active != null && WindowIdentity(active) == WindowIdentity(window); }
+            finally { ExcelBridge.Release(active); }
+        }
+
+        static void ActivateWindow(object app, object window)
+        {
+            Call(window, "Activate");
+            if (IsActiveWindow(app, window)) return;
+            // Excel can defer a window switch while redraw is suspended.
+            bool screen = (bool)Get(app, "ScreenUpdating");
+            try
+            {
+                Set(app, "ScreenUpdating", true);
+                Call(window, "Activate");
+                if (!IsActiveWindow(app, window)) throw new InvalidOperationException("La fenêtre du classeur cible n'a pas pu être activée.");
+            }
+            finally { Set(app, "ScreenUpdating", screen); }
+        }
         static bool IsRange(object value)
         {
             if (value == null || !Marshal.IsComObject(value)) return false;
@@ -167,7 +189,7 @@ namespace FormulaExplorer
             }
             public void Restore(object app)
             {
-                Call(Window, "Activate");
+                ActivateWindow(app, Window);
                 Call(Sheet, "Select", true);
                 // Restore the real selection before grouping protected sheets.
                 // Selecting a locked range after regrouping can itself fail.
@@ -230,8 +252,7 @@ namespace FormulaExplorer
                     if (WindowIdentity(targetWindow) == WindowIdentity(original.Window)) target = original;
                     else
                     {
-                        Call(targetWindow, "Activate"); target = Frame.Capture(app);
-                        if (WindowIdentity(target.Window) != WindowIdentity(targetWindow)) throw new InvalidOperationException("La fenêtre du classeur cible n'a pas pu être activée.");
+                        ActivateWindow(app, targetWindow); target = Frame.Capture(app);
                     }
                     Call(sheet, "Select", true);
                     action();

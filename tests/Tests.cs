@@ -181,6 +181,7 @@ static class Tests
         Check("Formula presentation spans across Excel styles", delegate { Console.WriteLine("FORMULA_PRESENTATION_ASSERTIONS " + ExcelFormulaStyleTests.RunMapping()); });
         Check("Sparse comparison block geometry", ExcelComparisonTests.RunGeometry);
         Check("Comparison alignment and matching", ComparisonAlignmentTests.Run);
+        Check("Comparison sheet formula relinking", ExcelComparisonSheetTests.RunLocalization);
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
@@ -197,6 +198,7 @@ static class Tests
             Check("Excel worksheet shortcut locations", WorksheetShortcutTests.RunExcel);
             Check("Excel worksheet formula undo transfer", ExcelWorksheetFormulaUndoTests.Run);
             Check("Excel live comparison scopes and offsets", ExcelComparisonTests.Run);
+            Check("Excel comparison sheet copy, relinking and undo", ExcelComparisonSheetTests.Run);
             Check("Excel alignment insertion, undo and persistent removal", ExcelAlignmentEditsTests.Run);
             Check("Excel explorer exit shortcuts", ExcelExplorerExitTests.Run);
             Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });

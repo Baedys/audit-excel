@@ -45,6 +45,8 @@ namespace FormulaExplorer
         public string Avant { get; internal set; }
         public string Après { get; internal set; }
         internal Reference Left, Right;
+        internal Book MissingSheetWorkbook;
+        internal long MissingSheetIdentity;
         internal List<ComparisonRow> Children;
         internal ComparisonAlignmentGap Alignment;
 

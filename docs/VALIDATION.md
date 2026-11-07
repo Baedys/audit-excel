@@ -1,5 +1,15 @@
 # Revue et validation
 
+## Copier un onglet manquant — 7 novembre 2026
+
+Le CIL `JobItem` 247420 examine les onglets Excel par nom et ne compare les cellules que si les deux objets correspondants sont des feuilles de calcul. Common 46828 accepte aussi les onglets graphiques parmi les onglets manquants. `CopyExtraSheets` 253616 copie avant le prochain onglet commun, après le précédent ou en fin de classeur. Les nouveaux onglets servent de repères aux suivants. `UndoCopySheet` 215696 supprime l’onglet physique copié. [Worksheet.Copy](https://learn.microsoft.com/en-us/office/vba/api/Excel.Worksheet.Copy) · [Chart.Copy](https://learn.microsoft.com/en-us/office/vba/api/excel.chart.copy)
+
+Arixcel fait un remplacement littéral du qualificateur source sur chaque feuille. Clair réécrit seulement les références de cellules résolues après l’arrivée du lot. Les chaînes littérales, les noms définis, les références 3D et les liens encore externes conservent leur texte. Les noms et liens au niveau du classeur qui résultent de la copie native restent gérés par Excel. Le reçu d’annulation suit l’identité physique, même après renommage. Un homonyme de remplacement est écarté.
+
+Les bases des fonds conditionnels sont appliquées à la source pendant la copie puis le masque source est rétabli. Le journal CF peut être chargé lors de la copie si le classeur vient d’être rouvert. Le reçu est enregistré dès la création de l’onglet afin de couvrir aussi une erreur lors de la restauration du contexte. Le volet annule d’abord les cellules d’un lot mixte, puis les onglets.
+
+Le témoin Excel masqué couvre la copie dans les deux sens, la feuille masquée, l’onglet graphique, le groupe de feuilles actif, le lien vers un onglet copié plus tard, le maintien d’un lien externe et le fond conditionnel après réouverture. Il vérifie aussi l’annulation après renommage, le refus sur un homonyme de remplacement et la reprise après protection de la structure.
+
 ## Copie directionnelle — 7 novembre 2026
 
 Le CIL de `CompareForm.CopyData` 229328 limite la copie au mode formules. `KeyDownHandler` 229608 traduit les côtés affichés pour Ctrl+L et Ctrl+R. `Model.CopyData` 253168 trie la sélection par position et écarte les descendants déjà couverts. 255092 et 374268 copient le rectangle entier du bloc, dont les cellules vides, en appliquant le format numérique et le contenu A1 ou R1C1. Common 90940 et 91544 traitent les préfixes et les matrices CSE. 277840 restaure les propriétés stockées lors de l’annulation. Les formats supplémentaires et les feuilles manquantes suivent des chemins distincts. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

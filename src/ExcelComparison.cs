@@ -168,16 +168,18 @@ namespace FormulaExplorer
             {
                 if (DependencyWorkbookIdentity(left) == DependencyWorkbookIdentity(right))
                     throw new InvalidOperationException("Activez un autre classeur à comparer.");
-                var beforeSheets = ComparisonWorksheetNames(left);
-                var afterSheets = ComparisonWorksheetNames(right);
-                foreach (string sheet in beforeSheets)
+                var beforeSheets = WithDirectSnapshotWorkbook(left, workbook => ComparisonTabs(workbook, RequireDependencySnapshot(left)));
+                var afterSheets = WithDirectSnapshotWorkbook(right, workbook => ComparisonTabs(workbook, RequireDependencySnapshot(right)));
+                var beforeNames = new HashSet<string>(beforeSheets.Select(tab => tab.Name), StringComparer.OrdinalIgnoreCase);
+                var afterNames = afterSheets.ToDictionary(tab => tab.Name, StringComparer.OrdinalIgnoreCase);
+                foreach (ComparisonTab tab in beforeSheets.Where(tab => tab.IsSupported))
                 {
-                    string match = afterSheets.FirstOrDefault(name => String.Equals(sheet, name, StringComparison.OrdinalIgnoreCase));
-                    if (match != null) pairs.Add(SheetPair(left, sheet, right, match));
-                    else result.Differences.Add(UnmatchedSheet(SheetLocation(left, sheet), null));
+                    ComparisonTab match;
+                    if (!afterNames.TryGetValue(tab.Name, out match)) result.Differences.Add(UnmatchedSheet(SheetLocation(left, tab.Name), null, right, tab.Identity));
+                    else if (tab.IsWorksheet && match.IsWorksheet) pairs.Add(SheetPair(left, tab.Name, right, match.Name));
                 }
-                foreach (string sheet in afterSheets.Except(beforeSheets, StringComparer.OrdinalIgnoreCase))
-                    result.Differences.Add(UnmatchedSheet(null, SheetLocation(right, sheet)));
+                foreach (ComparisonTab tab in afterSheets.Where(tab => tab.IsSupported && !beforeNames.Contains(tab.Name)))
+                    result.Differences.Add(UnmatchedSheet(null, SheetLocation(right, tab.Name), left, tab.Identity));
             }
             CaptureComparisonAreas(left, pairs.Select(pair => pair.Key));
             CaptureComparisonAreas(right, pairs.Select(pair => pair.Value));
@@ -243,10 +245,11 @@ namespace FormulaExplorer
         static Reference SheetLocation(Book book, string sheet)
         { return Reference.FromBounds(sheet, 0, 0, 0, 0, book); }
 
-        static ComparisonRow UnmatchedSheet(Reference left, Reference right)
+        static ComparisonRow UnmatchedSheet(Reference left, Reference right, Book destination, long identity)
         {
             return new ComparisonRow {
-                Left = left, Right = right, Référence = ComparisonRow.Label(left), Comparateur = ComparisonRow.Label(right),
+                Left = left, Right = right, MissingSheetWorkbook = destination, MissingSheetIdentity = identity,
+                Référence = ComparisonRow.Label(left), Comparateur = ComparisonRow.Label(right),
                 Écart = left == null ? "Feuille ajoutée" : "Feuille absente"
             };
         }
@@ -267,27 +270,6 @@ namespace FormulaExplorer
                 return names;
             }
             finally { foreach (object sheet in sheets) Release(sheet); Release(current); }
-        }
-
-        string[] ComparisonWorksheetNames(Book book)
-        {
-            return WithDirectSnapshotWorkbook(book, delegate(object workbook)
-            {
-                object sheets = null;
-                try
-                {
-                    sheets = ((dynamic)workbook).Worksheets;
-                    var names = new string[(int)((dynamic)sheets).Count];
-                    for (int i = 0; i < names.Length; i++)
-                    {
-                        object sheet = null;
-                        try { sheet = ((dynamic)sheets).Item[i + 1]; names[i] = (string)((dynamic)sheet).Name; }
-                        finally { Release(sheet); }
-                    }
-                    return names;
-                }
-                finally { Release(sheets); }
-            });
         }
 
         Reference ComparisonUsedRange(Book book, string sheet, Reference selection = null)

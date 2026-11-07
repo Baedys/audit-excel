@@ -23,12 +23,15 @@ namespace FormulaExplorer
         {
             public IntPtr Workbook;
             public readonly Dictionary<string, IntPtr> Sheets = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
+            public readonly HashSet<IntPtr> ComparisonCharts = new HashSet<IntPtr>();
             ~DirectSnapshot() { Dispose(); }
             public void Dispose()
             {
                 IntPtr book = Workbook; Workbook = IntPtr.Zero;
                 if (book != IntPtr.Zero) Marshal.Release(book);
                 foreach (IntPtr sheet in Sheets.Values) Marshal.Release(sheet);
+                foreach (IntPtr chart in ComparisonCharts) Marshal.Release(chart);
+                ComparisonCharts.Clear();
                 Sheets.Clear(); GC.SuppressFinalize(this);
             }
         }
