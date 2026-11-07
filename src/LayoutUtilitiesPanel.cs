@@ -45,6 +45,7 @@ namespace FormulaExplorer
                 layoutHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal), 0);
                 formatUtilityHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal - 26), 0);
                 utilityClipboardHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal - 26), 0);
+                utilityDuplicateHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal - 26), 0);
             };
             tab.SizeChanged += delegate { fit(); }; panel.SizeChanged += delegate { fit(); }; fit();
             layoutAction.SelectedIndexChanged += delegate { ShowLayoutOptions(); };
@@ -135,6 +136,7 @@ namespace FormulaExplorer
 
         void RunLayoutUtility()
         {
+            if (utilityClipboardBusy) return;
             if (bridge == null) { status.Text = "Ouvrez Clair dans Excel pour appliquer un utilitaire."; return; }
             if (!SaveLayoutOptions()) return;
             try
@@ -170,6 +172,7 @@ namespace FormulaExplorer
 
         void UndoLayoutUtility()
         {
+            if (utilityClipboardBusy) return;
             if (layoutUndo.Count == 0) return;
             try
             {

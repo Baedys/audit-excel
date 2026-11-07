@@ -186,7 +186,7 @@ namespace FormulaExplorer
         }
 
         static ComparedContent ReadComparedContent(object range, FormulaDisplayStyle style = null, bool visual = false,
-            bool protection = true, bool preserveRuns = true, bool localFormats = false)
+            bool protection = true, bool preserveRuns = true, bool localFormats = false, Action checkpoint = null)
         {
             var bounds = Reference.Parse(null, (string)((dynamic)range).Address);
             if (bounds == null) throw new InvalidOperationException("La plage comparée n’est plus accessible.");
@@ -204,6 +204,7 @@ namespace FormulaExplorer
                 bool checkMerges = !Object.Equals(((dynamic)range).MergeCells, false);
                 for (int index = 0; index < state.Cells.Length; index++)
                 {
+                    if (checkpoint != null) checkpoint();
                     int row = index / columns, column = index % columns;
                     object cell = ((dynamic)cells).Item[row + 1, column + 1];
                     object group = null, arrayCells = null, arrayAnchor = null;
@@ -367,7 +368,7 @@ namespace FormulaExplorer
         }
 
         void WriteComparedContent(object range, ComparedContent current, ComparedContent desired, FormulaDisplayStyle style, bool incoming = false,
-            bool localFormats = false)
+            bool localFormats = false, Action checkpoint = null)
         {
             object cells = ((dynamic)range).Cells;
             object worksheet = null;
@@ -386,6 +387,7 @@ namespace FormulaExplorer
                 if (uniform) RestoreFormulaNumberFormat(range, desired.Formats[0], localFormats);
                 for (int index = 0; index < desired.Cells.Length; index++)
                 {
+                    if (checkpoint != null) checkpoint();
                     FormulaCellContent content = desired.Cells[index];
                     if (uniform && (content == null || content.Value == null)) continue;
                     object cell = ((dynamic)cells).Item[index / desired.Columns + 1, index % desired.Columns + 1];
@@ -399,6 +401,7 @@ namespace FormulaExplorer
                 }
                 foreach (CopiedArray array in desired.Arrays)
                 {
+                    if (checkpoint != null) checkpoint();
                     var bounds = array.Bounds;
                     object first = null, last = null, block = null;
                     try
@@ -417,6 +420,7 @@ namespace FormulaExplorer
                 }
                 for (int index = 0; index < desired.Cells.Length; index++)
                 {
+                    if (checkpoint != null) checkpoint();
                     FormulaCellContent content = desired.Cells[index];
                     if (content == null || content.Formula == null) continue;
                     object cell = ((dynamic)cells).Item[index / desired.Columns + 1, index % desired.Columns + 1];

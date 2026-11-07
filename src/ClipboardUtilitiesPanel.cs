@@ -15,6 +15,8 @@ namespace FormulaExplorer
         Button utilityPasteButton;
         CancellationTokenSource utilitySumCancellation;
         bool utilityClipboardBusy;
+        bool utilityUndoTransferPending;
+        bool utilityClosePending;
         internal IUtilityClipboard utilityClipboard;
         internal Func<int> utilityCopyMode = null;
         internal Action<int> utilityPasteAction = null;
@@ -39,6 +41,7 @@ namespace FormulaExplorer
             var pasteBar = CommandBar(false);
             utilityPasteButton = ActionButton("Coller la propriété", RunPasteSpecialUtility);
             pasteBar.Controls.Add(utilityPasteButton); body.Controls.Add(pasteBar);
+            ConfigureDuplicateUtilities(body);
             Disposed += delegate { if (utilitySumCancellation != null) utilitySumCancellation.Cancel(); };
         }
 
@@ -47,7 +50,7 @@ namespace FormulaExplorer
             if (utilityClipboardBusy) return;
             if (bridge == null) { status.Text = "Ouvrez Clair dans Excel pour copier une somme."; return; }
             utilityClipboardBusy = true;
-            utilitySumButton.Enabled = utilityPasteButton.Enabled = false; utilitySumCancel.Visible = true;
+            SetClipboardUtilityBusy(true); utilitySumCancel.Visible = true;
             utilitySumCancellation = new CancellationTokenSource();
             var watch = Stopwatch.StartNew();
             long nextUpdate = 3000;
@@ -73,8 +76,7 @@ namespace FormulaExplorer
             finally
             {
                 utilitySumCancellation.Dispose(); utilitySumCancellation = null;
-                utilityClipboardBusy = false;
-                if (!IsDisposed) { utilitySumButton.Enabled = utilityPasteButton.Enabled = true; utilitySumCancel.Visible = false; }
+                FinishClipboardUtility();
             }
         }
 
@@ -84,7 +86,7 @@ namespace FormulaExplorer
             if (bridge == null) { status.Text = "Ouvrez Clair dans Excel pour coller."; return; }
             object source = null;
             utilityClipboardBusy = true;
-            utilitySumButton.Enabled = utilityPasteButton.Enabled = false;
+            SetClipboardUtilityBusy(true);
             try
             {
                 RequireFormulaEditWindow();
@@ -105,8 +107,7 @@ namespace FormulaExplorer
             catch (Exception error) { status.Text = "Collage interrompu · " + UtilityFailureMessage(error); }
             finally
             {
-                ExcelBridge.Release(source); utilityClipboardBusy = false;
-                if (!IsDisposed) utilitySumButton.Enabled = utilityPasteButton.Enabled = true;
+                ExcelBridge.Release(source); FinishClipboardUtility();
             }
         }
     }

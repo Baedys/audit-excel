@@ -85,6 +85,10 @@ public static class FormulaSyntaxTests
         root = Parse("=A1,B2:C3 D1:E2");
         Equal(root.Kind, "Union"); Equal(root.Children[1].Kind, "Intersection");
         Equal(Parse("='O''Brien'!$A$1").Text, "'O''Brien'!$A$1");
+        Equal(Parse("='A1'").Kind, "Name");
+        Equal(Parse("=S!'A1'").Kind, "Reference");
+        root = Parse("='Sheet'+A1");
+        Equal(root.Children[0].Kind, "Name"); Equal(root.Children[1].Kind, "Reference");
         Equal(Parse("='C:\\Reports\\[Book.xlsx]Sheet 1'!A1").Kind, "Reference");
         Equal(Parse("=[Book.xlsx]Sheet1!A1").Kind, "Reference");
         Equal(Parse("=2026!A1+2026Expenses!A2").Kind, "Operator +");
@@ -127,7 +131,7 @@ public static class FormulaSyntaxTests
         root = Parse("=SUM(,1)"); CannotEvaluate(root, root.Children[0]);
         root = Parse("={1,2}"); CannotEvaluate(root, root.Children[0]);
 
-        foreach (string invalid in new[] { "", "=", "=1+", "=(1+2", "=SUM(1", "=A1(2)", "=1 2", "=\"unclosed", "='unclosed!A1", "='Sheet'", "=Sheet!", "=Table[[x]", "=1|2", "=R[-1]C[2]", "=A1;B2", "=SUM(A1;B1,C1)", "={1,2;3}", "={1+2}", "={A1}", "={}", "={1,}", "=1#", "=1E+", "=SUM(A1,,", "=()", "=A1,,B2", "=A1:\"x\"", "=1..2", "=1e3a", "=Sheet!!A1" }) Reject(invalid);
+        foreach (string invalid in new[] { "", "=", "=1+", "=(1+2", "=SUM(1", "=A1(2)", "=1 2", "=\"unclosed", "='unclosed!A1", "=Sheet!", "=Table[[x]", "=1|2", "=R[-1]C[2]", "=A1;B2", "=SUM(A1;B1,C1)", "={1,2;3}", "={1+2}", "={A1}", "={}", "={1,}", "=1#", "=1E+", "=SUM(A1,,", "=()", "=A1,,B2", "=A1:\"x\"", "=1..2", "=1e3a", "=Sheet!!A1" }) Reject(invalid);
         Reject("=" + new String('(', 260) + "1" + new String(')', 260));
         Console.WriteLine("PASS FormulaSyntax: " + assertions + " assertions");
         return assertions;

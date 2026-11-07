@@ -246,15 +246,18 @@ namespace FormulaExplorer
                             throw new InvalidOperationException("La cellule active initiale n’a pas pu être rétablie.");
                     }
                 }
-                if (restoreGroup)
+                // Selecting the saved range/active cell can alter the group
+                // even if it matched when this restoration started.
+                if (restoreGroup || !DependencySheetGroupMatches(window, group))
                 {
+                    ((dynamic)sheet).Select(true);
                     long sheetId = DirectSession.Identity(sheet);
                     foreach (object grouped in group)
                         if (DirectSession.Identity(grouped) != sheetId) ((dynamic)grouped).Select(false);
                     ((dynamic)sheet).Activate();
-                    if (!DependencySheetGroupMatches(window, group))
-                        throw new InvalidOperationException("Le groupe de feuilles Excel initial n’a pas pu être rétabli.");
                 }
+                if (!DependencySheetGroupMatches(window, group))
+                    throw new InvalidOperationException("Le groupe de feuilles Excel initial n’a pas pu être rétabli.");
             }
             finally { Release(currentActive); Release(currentSelection); Release(currentSheet); }
         }

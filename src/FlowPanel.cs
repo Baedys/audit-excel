@@ -283,6 +283,13 @@ namespace FormulaExplorer
         {
             base.OnFormClosing(e);
             if (e.Cancel) return;
+            if (utilityClipboardBusy && !hostIsClosing && e.CloseReason != CloseReason.WindowsShutDown &&
+                e.CloseReason != CloseReason.ApplicationExitCall)
+            {
+                e.Cancel = true; utilityClosePending = utilityUndoTransferPending = true;
+                if (utilitySumCancellation != null) utilitySumCancellation.Cancel();
+                return;
+            }
             if (activeComparisonRun != null) activeComparisonRun.Cancel();
             try
             {

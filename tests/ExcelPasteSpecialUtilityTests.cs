@@ -162,6 +162,9 @@ public static class ExcelPasteSpecialUtilityTests
         int copies = f.Copies;
         using (var receipt = f.Paste(4, "B2:C3", "F4:H6", type => { throw new InvalidOperationException("Number format mode must not call PasteSpecial."); }, true))
         {
+            object launch = receipt.GetType().GetField("Selection", Members).GetValue(receipt);
+            int savedGroup = ((System.Collections.ICollection)launch.GetType().GetField("Group", Members).GetValue(launch)).Count;
+            Console.WriteLine("PASTE_NUMBER_GROUP afterApply=" + f.Keep(f.Keep(f.App.ActiveWindow).SelectedSheets).Count + " saved=" + savedGroup + " screen=" + f.App.ScreenUpdating);
             foreach (object sheet in new object[] { f.First, f.Second })
             {
                 Equal((string)f.Range(sheet, "F4").NumberFormatLocal, "0", "first tile uses source top-left");
@@ -175,12 +178,17 @@ public static class ExcelPasteSpecialUtilityTests
             Equal((string)f.Range(f.Spare, "F4").NumberFormatLocal, "0,0000", "unselected worksheet untouched");
             Equal(f.Copies, copies + 1, "number formats requests source copy after applying");
             f.Font(f.First, "F4").Bold = true;
+            f.Range(f.First, "A1").Select(); f.First.Select(true); f.Second.Select(false);
+            Equal((int)f.Keep(f.Keep(f.App.ActiveWindow).SelectedSheets).Count, 2, "the user can change selection while keeping the group before undo");
+            Console.WriteLine("PASTE_NUMBER_GROUP beforeUndo=" + f.Keep(f.Keep(f.App.ActiveWindow).SelectedSheets).Count);
             Fixture.Undo(receipt);
+            Console.WriteLine("PASTE_NUMBER_GROUP afterUndo=" + f.Keep(f.Keep(f.App.ActiveWindow).SelectedSheets).Count + " screen=" + f.App.ScreenUpdating);
             Equal((string)f.Range(f.First, "F4:H6").NumberFormatLocal, "0,0000", "undo restores first grouped destination formats");
             Equal((string)f.Range(f.Second, "F4:H6").NumberFormatLocal, "0,0000", "undo restores second grouped destination formats");
             Equal((bool)f.Font(f.First, "F4").Bold, true, "number-format undo preserves unrelated font edit");
             Equal(f.Copies, copies + 2, "undo requests source copy again");
             Equal((int)f.Keep(f.Keep(f.App.ActiveWindow).SelectedSheets).Count, 2, "number-format undo preserves grouped sheets");
+            Equal((string)f.Keep(f.App.Selection).Address, "$F$4:$H$6", "number-format undo restores its saved selection within the group");
         }
         f.First.Select(true);
         f.Range(f.First, "F4:H6").NumberFormatLocal = "0,0000";

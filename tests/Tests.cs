@@ -26,6 +26,7 @@ static class Tests
         Check("utility undo cleanup retry", UtilityUndoReleaseTests.Run);
         Check("utility duplicate formula contracts", delegate { Console.WriteLine("UTILITY_DUPLICATE_FORMULA_ASSERTIONS " + UtilityDuplicateFormulasTests.Run()); });
         Check("utility clipboard contracts", delegate { Console.WriteLine("UTILITY_CLIPBOARD_ASSERTIONS " + UtilityClipboardTests.Run()); });
+        Check("utility duplicate geometry", delegate { Console.WriteLine("UTILITY_DUPLICATE_GEOMETRY_ASSERTIONS " + UtilityDuplicateGeometryTests.Run()); });
         Check("absolute and mixed references", delegate { var p = Parse("=$B$1+B$2+$B3"); Equal(p.References.Count, 3); Equal(p.References[0].FirstRow, 1); });
         Check("cross-sheet quoted apostrophe", delegate { var p = Parse("='O''Brien'!B2"); Equal(p.References[0].Sheet, "O'Brien"); });
         Check("cross-sheet unquoted unicode", delegate { Equal(Parse("=Hypothèses!B2").References[0].Sheet, "Hypothèses"); });
@@ -189,11 +190,14 @@ static class Tests
         Check("Comparison alignment and matching", ComparisonAlignmentTests.Run);
         Check("Comparison sheet formula relinking", ExcelComparisonSheetTests.RunLocalization);
         Check("Layout utility settings", ExcelLayoutUtilityTests.RunSettings);
+        Check("Invariant A1 to R1C1 data notation", delegate { UtilityFormulaNotationTests.Run(); });
         if (args.Contains("--excel"))
         {
             Check("Excel layout utilities", ExcelLayoutUtilityTests.Run);
             Check("Excel format utilities", ExcelFormatUtilityTests.Run);
             Check("Excel paste property utilities", ExcelPasteSpecialUtilityTests.Run);
+            Check("Excel duplicate copied cells", ExcelDuplicateUtilityTests.Run);
+            Check("Excel duplicate side pane and undo handoff", ExcelDuplicatePanelTests.Run);
             Check("Excel new window view preservation", ExcelUtilityWindowTests.Run);
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
             Check("Excel comparison formula editing", ExcelComparisonEditingTests.Run);

@@ -441,6 +441,8 @@ namespace FormulaExplorer
 
         internal void TransferFormulaUndo()
         {
+            if (utilityClipboardBusy) { utilityUndoTransferPending = true; return; }
+            utilityUndoTransferPending = false;
             if (activeComparisonRun != null) return;
             if (comparisonDraft != null || comparisonTraceOwner != null ||
                 (comparisonTrace != null && comparisonTrace.Child.formulaEditCell != null)) return;

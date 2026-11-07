@@ -162,6 +162,7 @@ namespace FormulaExplorer
 
         void RunCellFormatUtility()
         {
+            if (utilityClipboardBusy) return;
             if (bridge == null) { status.Text = "Ouvrez Clair dans Excel pour appliquer un format."; return; }
             if (!SaveFormatUtilities(displayedFormatUtility)) return;
             try

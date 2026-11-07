@@ -114,8 +114,9 @@ namespace FormulaExplorer
             finally { Release(first); Release(cells); }
         }
 
-        static void CaptureUtilityNodes(object range, CellFormatUtilityOptions options, List<UtilityFormatNode> result)
+        static void CaptureUtilityNodes(object range, CellFormatUtilityOptions options, List<UtilityFormatNode> result, Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             UtilityFormatState state = CaptureUtilityFormat(range, options.Utility, options.Mode);
             Rectangle bounds = MapSelectionRectangle(range);
             if (state != null)
@@ -133,7 +134,7 @@ namespace FormulaExplorer
                 first = UtilitySubrange(range, 1, 1, rows ? half : bounds.Height, rows ? bounds.Width : half);
                 second = UtilitySubrange(range, rows ? half + 1 : 1, rows ? 1 : half + 1,
                     rows ? count - half : bounds.Height, rows ? bounds.Width : count - half);
-                CaptureUtilityNodes(first, options, result); CaptureUtilityNodes(second, options, result);
+                CaptureUtilityNodes(first, options, result, checkpoint); CaptureUtilityNodes(second, options, result, checkpoint);
             }
             finally { Release(second); Release(first); }
         }

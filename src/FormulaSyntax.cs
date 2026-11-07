@@ -514,20 +514,16 @@ namespace FormulaExplorer
                 if (TryScanStyledGrid(ref p)) return;
                 if (source[p] == '\'')
                 {
-                    p++; bool closed = false;
-                    while (p < source.Length)
-                    {
-                        if (source[p++] != '\'') continue;
-                        if (p < source.Length && source[p] == '\'') { p++; continue; }
-                        closed = true; break;
-                    }
-                    if (!closed) throw Error("Unclosed quoted sheet or workbook name", start);
-                    if (p >= source.Length || source[p] != '!') throw Error("Quoted sheet or workbook name must be followed by '!'", p);
+                    ScanQuotedIdentifier(ref p);
+                    // Excel can render a name from R1C1 as an A1 quoted
+                    // identifier, e.g. ='A1'. It is not a sheet qualifier.
+                    if (p >= source.Length || source[p] != '!') return;
                     p++; qualified = true;
                     if (TryScanStyledGrid(ref p)) return;
                 }
                 while (p < source.Length)
                 {
+                    if (qualified && source[p] == '\'') { ScanQuotedIdentifier(ref p); break; }
                     if (IsStyledSymbol(source[p])) break;
                     if (IsNameCharacter(source[p])) { p++; continue; }
                     if (source[p] == '!')
@@ -551,6 +547,18 @@ namespace FormulaExplorer
                     if (brackets != 0) throw Error("Unclosed structured or external reference", bracketStart);
                 }
                 if (p == start || (source[p - 1] == '!' && !source.Substring(start, p - start).EndsWith("#REF!", StringComparison.OrdinalIgnoreCase))) throw Error("Incomplete reference", start);
+            }
+
+            void ScanQuotedIdentifier(ref int p)
+            {
+                int start = p++;
+                while (p < source.Length)
+                {
+                    if (source[p++] != '\'') continue;
+                    if (p < source.Length && source[p] == '\'') { p++; continue; }
+                    return;
+                }
+                throw Error("Unclosed quoted sheet or workbook name", start);
             }
         }
     }

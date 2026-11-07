@@ -11,7 +11,7 @@ namespace FormulaExplorer
     public sealed partial class ExcelBridge
     {
         // Numeric values are part of the observed Arixcel command contract.
-        internal enum UtilityPasteKind { Formulas, Values, Formats, Validation, NumberFormats }
+        internal enum UtilityPasteKind { Formulas, Values, Formats, Validation, NumberFormats, Duplicate }
         enum UtilityPasteExtra { Fill, Pattern, Protection, RowHeight, ColumnWidth, Validation }
 
         sealed class UtilityPasteExtraNode : IDisposable
@@ -185,8 +185,9 @@ namespace FormulaExplorer
             finally { Release(owner); }
         }
 
-        static void CaptureUtilityPasteExtras(object range, UtilityPasteExtra kind, List<UtilityPasteExtraNode> output)
+        static void CaptureUtilityPasteExtras(object range, UtilityPasteExtra kind, List<UtilityPasteExtraNode> output, Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             UtilityPasteExtraNode node = ReadUtilityPasteExtra(range, kind);
             if (node != null) { output.Add(node); return; }
             Rectangle bounds = MapSelectionRectangle(range);
@@ -204,35 +205,35 @@ namespace FormulaExplorer
                 first = UtilitySubrange(range, 1, 1, rows ? half : bounds.Height, rows ? bounds.Width : half);
                 second = UtilitySubrange(range, rows ? half + 1 : 1, rows ? 1 : half + 1,
                     rows ? count - half : bounds.Height, rows ? bounds.Width : count - half);
-                CaptureUtilityPasteExtras(first, kind, output); CaptureUtilityPasteExtras(second, kind, output);
+                CaptureUtilityPasteExtras(first, kind, output, checkpoint); CaptureUtilityPasteExtras(second, kind, output, checkpoint);
             }
             finally { Release(second); Release(first); }
         }
 
-        UtilityPasteState CaptureUtilityPasteState(UtilityPasteTarget target, UtilityPasteKind kind, bool rows, bool columns)
+        UtilityPasteState CaptureUtilityPasteState(UtilityPasteTarget target, UtilityPasteKind kind, bool rows, bool columns, Action checkpoint = null)
         {
             var state = new UtilityPasteState();
             try
             {
                 ExcelConditionalFillContext.RunWorksheet(target.Sheet, () =>
                 {
-                    if (kind == UtilityPasteKind.Formulas || kind == UtilityPasteKind.Values)
-                        state.Contents = ReadComparedContent(target.Range, localFormats: true);
-                    if (kind == UtilityPasteKind.Formulas || kind == UtilityPasteKind.Values || kind == UtilityPasteKind.Formats)
-                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.TextColor }, state.Formats);
-                    if (kind == UtilityPasteKind.Formats || kind == UtilityPasteKind.NumberFormats)
-                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.NumberFormat }, state.Formats);
-                    if (kind == UtilityPasteKind.Formats)
+                    if (kind == UtilityPasteKind.Formulas || kind == UtilityPasteKind.Values || kind == UtilityPasteKind.Duplicate)
+                        state.Contents = ReadComparedContent(target.Range, localFormats: true, checkpoint: checkpoint);
+                    if (kind == UtilityPasteKind.Formulas || kind == UtilityPasteKind.Values || kind == UtilityPasteKind.Formats || kind == UtilityPasteKind.Duplicate)
+                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.TextColor }, state.Formats, checkpoint);
+                    if (kind == UtilityPasteKind.Formats || kind == UtilityPasteKind.NumberFormats || kind == UtilityPasteKind.Duplicate)
+                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.NumberFormat }, state.Formats, checkpoint);
+                    if (kind == UtilityPasteKind.Formats || kind == UtilityPasteKind.Duplicate)
                     {
-                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.TextControl }, state.Formats);
-                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.Border }, state.Formats);
-                        CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Fill, state.Extras);
-                        CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Pattern, state.Extras);
-                        CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Protection, state.Extras);
+                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.TextControl }, state.Formats, checkpoint);
+                        CaptureUtilityNodes(target.Range, new CellFormatUtilityOptions { Utility = CellFormatUtility.Border }, state.Formats, checkpoint);
+                        CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Fill, state.Extras, checkpoint);
+                        CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Pattern, state.Extras, checkpoint);
+                        CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Protection, state.Extras, checkpoint);
                         if (rows) CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.RowHeight, state.Extras);
                         if (columns) CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.ColumnWidth, state.Extras);
                     }
-                    if (kind == UtilityPasteKind.Validation) CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Validation, state.Extras);
+                    if (kind == UtilityPasteKind.Validation || kind == UtilityPasteKind.Duplicate) CaptureUtilityPasteExtras(target.Range, UtilityPasteExtra.Validation, state.Extras, checkpoint);
                 });
                 return state;
             }
