@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace FormulaExplorer
 {
@@ -12,6 +13,7 @@ namespace FormulaExplorer
         Action<int, string> completed;
         string label;
         bool running, disposed;
+        readonly List<Action> deferredReleases = new List<Action>();
 
         internal WorksheetFormulaUndo(ExcelBridge bridge, Action<string> register, Action<string> unregister)
         { this.bridge = bridge; this.register = register; this.unregister = unregister; }
@@ -45,6 +47,7 @@ namespace FormulaExplorer
         bool PublishAction(long revision, string nextLabel, int count, Action undo, Action release, Action<int, string> report)
         {
             if (disposed || running || revision != Revision || count == 0) return false;
+            RetryDeferredReleases();
             register(nextLabel);
             ReleasePending();
             pending = undo; pendingRelease = release; pendingCount = count;
@@ -72,7 +75,8 @@ namespace FormulaExplorer
             {
                 running = false;
                 Revision++;
-                if (release != null) release();
+                ReleaseOrDefer(release);
+                RetryDeferredReleases();
             }
             if (report != null) report(count, failure);
         }
@@ -81,7 +85,24 @@ namespace FormulaExplorer
         {
             Action release = pendingRelease;
             pending = null; pendingRelease = null; pendingCount = 0; completed = null; label = null;
-            if (release != null) release();
+            ReleaseOrDefer(release);
+        }
+
+        void ReleaseOrDefer(Action release)
+        {
+            if (release == null) return;
+            try { release(); }
+            catch (Exception error)
+            {
+                deferredReleases.Add(release);
+                Trace.WriteLine("Clair · Libération de l’historique différée · " + error.Message);
+            }
+        }
+
+        void RetryDeferredReleases()
+        {
+            Action[] releases = deferredReleases.ToArray(); deferredReleases.Clear();
+            foreach (Action release in releases) ReleaseOrDefer(release);
         }
 
         public void Dispose()
@@ -89,7 +110,7 @@ namespace FormulaExplorer
             if (disposed) return;
             disposed = true;
             try { if (label != null) unregister(label); }
-            finally { ReleasePending(); }
+            finally { ReleasePending(); RetryDeferredReleases(); }
         }
     }
 }

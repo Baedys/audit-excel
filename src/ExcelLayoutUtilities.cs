@@ -86,12 +86,15 @@ namespace FormulaExplorer
             }
         }
 
-        internal sealed class LayoutReceipt : IDisposable
+        internal sealed class LayoutReceipt : IExcelUtilityReceipt
         {
             readonly ExcelBridge bridge;
             internal readonly List<LayoutTarget> targets = new List<LayoutTarget>();
             internal ExcelExplorerLaunchSelection selection;
             internal string Label;
+
+            string IExcelUtilityReceipt.Label { get { return Label; } set { Label = value; } }
+            void IExcelUtilityReceipt.Undo() { Undo(); }
 
             internal LayoutReceipt(ExcelBridge bridge, string label) { this.bridge = bridge; Label = label; }
 

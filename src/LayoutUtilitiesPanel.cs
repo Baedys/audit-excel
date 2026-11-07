@@ -14,7 +14,7 @@ namespace FormulaExplorer
         readonly ComboBox layoutAxis = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
         readonly TextBox layoutZoom = new TextBox { Dock = DockStyle.Top };
         readonly Label layoutHint = new Label { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 8, 0, 12) };
-        readonly Stack<ExcelBridge.LayoutReceipt> layoutUndo = new Stack<ExcelBridge.LayoutReceipt>();
+        readonly Stack<IExcelUtilityReceipt> layoutUndo = new Stack<IExcelUtilityReceipt>();
         Button layoutUndoButton;
         LayoutUtilitySettings layoutOptions = new LayoutUtilitySettings();
         WorksheetFormulaUndo layoutUndoOwner;
@@ -24,8 +24,9 @@ namespace FormulaExplorer
 
         void ConfigureLayoutUtilities()
         {
-            var tab = new TabPage("Utilitaires"); tabs.TabPages.Add(tab);
+            var tab = new TabPage("Utilitaires") { AutoScroll = true }; tabs.TabPages.Add(tab);
             var panel = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, Padding = new Padding(10) };
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             tab.Controls.Add(panel);
             layoutAction.Items.AddRange(LayoutLabels);
             layoutScope.Items.AddRange(new object[] { "Feuilles sélectionnées", "Toutes les feuilles" });
@@ -35,6 +36,15 @@ namespace FormulaExplorer
             bar.Controls.Add(ActionButton("Appliquer", RunLayoutUtility));
             layoutUndoButton = ActionButton("Annuler l’utilitaire", UndoLayoutUtility); layoutUndoButton.Enabled = false;
             bar.Controls.Add(layoutUndoButton); panel.Controls.Add(bar);
+            ConfigureFormatUtilities(panel);
+            Action fit = () =>
+            {
+                int width = Math.Max(1, tab.ClientSize.Width - (tab.VerticalScroll.Visible ? SystemInformation.VerticalScrollBarWidth : 0));
+                panel.MaximumSize = new System.Drawing.Size(width, 0);
+                layoutHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal), 0);
+                formatUtilityHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal - 26), 0);
+            };
+            tab.SizeChanged += delegate { fit(); }; panel.SizeChanged += delegate { fit(); }; fit();
             layoutAction.SelectedIndexChanged += delegate { ShowLayoutOptions(); };
             layoutScope.SelectedIndexChanged += delegate { SaveLayoutOptions(); };
             layoutAxis.SelectedIndexChanged += delegate { SaveLayoutOptions(); };
@@ -102,8 +112,8 @@ namespace FormulaExplorer
 
         void ClearLayoutUndo()
         {
-            foreach (var receipt in layoutUndo) receipt.Dispose();
-            layoutUndo.Clear(); layoutUndoOwner = null;
+            while (layoutUndo.Count != 0) { layoutUndo.Peek().Dispose(); layoutUndo.Pop(); }
+            layoutUndoOwner = null;
             RefreshLayoutUndoButton();
         }
 
@@ -112,6 +122,13 @@ namespace FormulaExplorer
             if (layoutUndoButton == null || layoutUndoButton.IsDisposed) return;
             layoutUndoButton.Enabled = layoutUndo.Count != 0;
             layoutUndoButton.Text = layoutUndo.Count == 0 ? "Annuler l’utilitaire" : "Annuler · " + layoutUndo.Peek().Label;
+        }
+
+        static string UtilityFailureMessage(Exception error)
+        {
+            while (error is AggregateException && ((AggregateException)error).InnerExceptions.Count != 0)
+                error = ((AggregateException)error).InnerExceptions[0];
+            return error.Message;
         }
 
         void RunLayoutUtility()
@@ -131,7 +148,22 @@ namespace FormulaExplorer
                 RefreshLayoutUndoButton();
                 status.Text = LayoutLabels[layoutAction.SelectedIndex] + " · appliqué";
             }
-            catch (Exception error) { status.Text = "Utilitaire interrompu · " + error.Message; }
+            catch (Exception error) { status.Text = "Utilitaire interrompu · " + UtilityFailureMessage(error); }
+        }
+
+        void PrepareUtilityUndo()
+        {
+            WorksheetFormulaUndo session = CurrentFormulaUndoSession();
+            if (session != null && (!ReferenceEquals(session, layoutUndoOwner) || layoutUndoRevision != session.Revision)) ClearLayoutUndo();
+        }
+
+        void PushUtilityReceipt(IExcelUtilityReceipt receipt, string label)
+        {
+            if (receipt != null) { receipt.Label = label; layoutUndo.Push(receipt); }
+            WorksheetFormulaUndo session = CurrentFormulaUndoSession();
+            if (session != null) session.SheetChanged();
+            layoutUndoOwner = session; layoutUndoRevision = session == null ? 0 : session.Revision;
+            RefreshLayoutUndoButton();
         }
 
         void UndoLayoutUtility()
@@ -145,7 +177,7 @@ namespace FormulaExplorer
                 layoutUndoRevision = session == null ? 0 : session.Revision;
                 RefreshLayoutUndoButton(); status.Text = "Dernier utilitaire annulé";
             }
-            catch (Exception error) { status.Text = "Annulation de l’utilitaire interrompue · " + error.Message; }
+            catch (Exception error) { status.Text = "Annulation de l’utilitaire interrompue · " + UtilityFailureMessage(error); }
         }
 
         void TransferLayoutUndo()

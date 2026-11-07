@@ -186,7 +186,7 @@ namespace FormulaExplorer
         }
 
         static ComparedContent ReadComparedContent(object range, FormulaDisplayStyle style = null, bool visual = false,
-            bool protection = true, bool preserveRuns = true)
+            bool protection = true, bool preserveRuns = true, bool localFormats = false)
         {
             var bounds = Reference.Parse(null, (string)((dynamic)range).Address);
             if (bounds == null) throw new InvalidOperationException("La plage comparée n’est plus accessible.");
@@ -194,7 +194,7 @@ namespace FormulaExplorer
             if ((long)rows * columns > 250000) throw new InvalidOperationException("La plage à copier dépasse 250 000 cellules.");
             var state = new ComparedContent { Rows = rows, Columns = columns,
                 Cells = new FormulaCellContent[rows * columns], Formats = new string[rows * columns] };
-            string uniform = OfficeCall(range, "NumberFormat", BindingFlags.GetProperty) as string;
+            string uniform = FormulaNumberFormat(range, localFormats);
             object cells = ((dynamic)range).Cells;
             var arrayMembers = new bool[state.Cells.Length];
             var mergeChildren = new bool[state.Cells.Length];
@@ -209,7 +209,7 @@ namespace FormulaExplorer
                     object group = null, arrayCells = null, arrayAnchor = null;
                     try
                     {
-                        state.Formats[index] = uniform ?? FormulaNumberFormat(cell);
+                        state.Formats[index] = uniform ?? FormulaNumberFormat(cell, localFormats);
                         if (arrayMembers[index] || mergeChildren[index]) continue;
                         if (checkMerges && Object.Equals(((dynamic)cell).MergeCells, true))
                         {
@@ -366,7 +366,8 @@ namespace FormulaExplorer
             }
         }
 
-        void WriteComparedContent(object range, ComparedContent current, ComparedContent desired, FormulaDisplayStyle style, bool incoming = false)
+        void WriteComparedContent(object range, ComparedContent current, ComparedContent desired, FormulaDisplayStyle style, bool incoming = false,
+            bool localFormats = false)
         {
             object cells = ((dynamic)range).Cells;
             object worksheet = null;
@@ -382,8 +383,7 @@ namespace FormulaExplorer
                 }
                 ((dynamic)range).ClearContents();
                 bool uniform = desired.Formats.All(format => format == desired.Formats[0]);
-                if (uniform && (OfficeCall(range, "NumberFormat", BindingFlags.GetProperty) as string) != desired.Formats[0])
-                    OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, desired.Formats[0]);
+                if (uniform) RestoreFormulaNumberFormat(range, desired.Formats[0], localFormats);
                 for (int index = 0; index < desired.Cells.Length; index++)
                 {
                     FormulaCellContent content = desired.Cells[index];
@@ -392,8 +392,8 @@ namespace FormulaExplorer
                     try
                     {
                         if (content != null && content.Formula == null && content.Value != null)
-                            RestoreFormulaContent(cell, content, desired.Formats[index]);
-                        else if (!uniform) RestoreFormulaNumberFormat(cell, desired.Formats[index]);
+                            RestoreFormulaContent(cell, content, desired.Formats[index], localFormats);
+                        else if (!uniform) RestoreFormulaNumberFormat(cell, desired.Formats[index], localFormats);
                     }
                     finally { Release(cell); }
                 }
@@ -423,7 +423,7 @@ namespace FormulaExplorer
                     try
                     {
                         WriteFormula(cell, content.Formula, true, style);
-                        RestoreFormulaNumberFormat(cell, desired.Formats[index]);
+                        RestoreFormulaNumberFormat(cell, desired.Formats[index], localFormats);
                     }
                     finally { Release(cell); }
                 }

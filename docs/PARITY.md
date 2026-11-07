@@ -227,9 +227,11 @@ P06 couvre la copie directionnelle des plages comparées et des onglets manquant
 
 W6 décrit des utilitaires paramétrables, plusieurs variantes d'une action, raccourcis partagés formant des cycles, visibilité au ruban et sauvegarde/restauration. E3 `Utilities.Actions` fournit l'inventaire ci-dessous. Chaque nom observé nécessite encore un test comportemental et des valeurs de paramètres observées ; il ne suffit pas d'ajouter un bouton.
 
-Tous les groupes suivants sont **absents** de la base inspectée :
+Dans la base initialement inspectée, tous les groupes suivants étaient absents. Les raccords de développement sont décrits ci-dessous.
 
 La branche de développement ajoute les six actions U01 dans le volet Utilitaires, ouvert depuis le ruban. Les scopes de feuilles, axes et valeurs de zoom sont persistants. Les dimensions, le zoom et le quadrillage disposent de reçus d’annulation. La nouvelle fenêtre reprend les vues de feuilles et le groupe. Le relevé natif des largeurs peut uniformiser une bande hétérogène sur le poste de validation. La reconstruction conserve ce comportement dans l’attente du choix de l’utilisateur. La configuration de variantes, l’import/export et les cycles U06 restent ouverts. [Validation des utilitaires](VALIDATION.md)
+
+Le développement U02 raccorde huit commandes au même volet : fond et texte, couleur du texte, style, format numérique, décimales, bordures, soulignement et disposition du texte. `ConvertNumberFormat` est un helper de conversion entre locales, utilisé par le format numérique, et non une neuvième commande. Les paramètres de chaque action sont mémorisés séparément. La pile du volet regroupe mise en page et formats puis se transmet au rappel d’annulation d’Excel. Le témoin x64 masqué passe 843 contrôles de formats et un lot U01/U02 est effectivement annulé par la commande native et le XLL. Les limites des captures complètes, des validations déplacées et des grandes sélections maintiennent U02 ouvert. [Validation](VALIDATION.md)
 
 | ID | Famille / méthodes observées E3 | Acceptation requise |
 | --- | --- | --- |

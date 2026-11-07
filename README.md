@@ -16,6 +16,7 @@ Les travaux suivants remplacent les couleurs CF par des formats directs partagé
 
 ## Fonctions disponibles
 
+- Dans **Utilitaires**, réglages de mise en page et huit commandes de formats sur la sélection des feuilles groupées. Formats numériques et décimales, couleurs, styles, bordures, soulignement et disposition du texte partagent la pile d’annulation du volet et son rappel natif Excel. Le [relevé U02](docs/VALIDATION.md) décrit les contrats, les témoins x64 et les limites, notamment la perte de contenu lors de la fusion centrée.
 - Capture du classeur actif et de la cellule sélectionnée, avec lecture groupée des valeurs et formules.
 - Arbre d'antécédents et de dépendants, entre feuilles et entre classeurs ouverts dans la même instance Excel, avec détection des cycles et historique de navigation. Le volet peut proposer d'ouvrir un classeur fermé quand la référence sélectionnée contient son chemin. Les références non résolues signalent une recherche partielle.
 - Décomposition syntaxique des formules en fonctions, arguments, opérateurs, références et matrices. Le curseur retrouve son composant dans l'arbre. Ctrl et Maj permettent de sélectionner plusieurs composants, soulignés dans le texte et surlignés dans Excel quand leurs plages sont résolues.

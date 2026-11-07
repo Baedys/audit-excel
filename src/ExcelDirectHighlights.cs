@@ -15,6 +15,7 @@ namespace FormulaExplorer
         public string LayerId;
         public DirectColorProperty? Property;
         public int? FillColor, FontColor;
+        internal DirectColorValue FillValue, FontValue;
         public bool BringToTop, ExistingOnly;
     }
     public sealed class DirectHighlightChange : EventArgs
@@ -122,7 +123,8 @@ namespace FormulaExplorer
                         if (request.Property.HasValue && request.Property.Value != property) continue;
                         if (request.ExistingOnly && !before.HasLayer(reference.Key, property, layer)) continue;
                         int? color = property == DirectColorProperty.Fill ? request.FillColor : request.FontColor;
-                        desired.Add(new DirectDesired(reference, property, layer, color.HasValue ? DirectColorValue.Rgb(color.Value) : DirectColorValue.Transparent, request.BringToTop));
+                        DirectColorValue explicitValue = property == DirectColorProperty.Fill ? request.FillValue : request.FontValue;
+                        desired.Add(new DirectDesired(reference, property, layer, explicitValue ?? (color.HasValue ? DirectColorValue.Rgb(color.Value) : DirectColorValue.Transparent), request.BringToTop));
                     }
                 }
                 foreach (var group in desired.GroupBy(d => new { d.Target, d.Layer }))
@@ -180,7 +182,7 @@ namespace FormulaExplorer
             finally { session.Exit(); }
         }
         static void CheckDirectFamily(string family)
-        { if (family != "flow" && family != "map" && family != "trace") throw new ArgumentException("Famille de couleurs invalide.", "family"); }
+        { if (family != "flow" && family != "map" && family != "trace" && family != "utility") throw new ArgumentException("Famille de couleurs invalide.", "family"); }
         public void RemoveAllDirectHighlights(string family, bool makePermanent = false)
         { CheckDirectFamily(family); RemoveDirectHighlights(DirectColors.Owners(family), makePermanent); }
         public void DetachDirectHighlightOwner(string ownerId, bool keepColors)

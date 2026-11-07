@@ -600,13 +600,17 @@ namespace FormulaExplorer
             else RestoreFormulaContent(range, original ? change.Before : change.After, format);
         }
 
-        static string FormulaNumberFormat(object range)
-        { return (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty); }
+        static string FormulaNumberFormat(object range, bool local = false)
+        { return (local ? OfficeCallWithCulture(range, "NumberFormatLocal", BindingFlags.GetProperty, CultureInfo.CurrentCulture) :
+            OfficeCall(range, "NumberFormat", BindingFlags.GetProperty)) as string; }
 
-        static void RestoreFormulaNumberFormat(object range, string format)
+        static void RestoreFormulaNumberFormat(object range, string format, bool local = false)
         {
-            if (!String.Equals(FormulaNumberFormat(range), format, StringComparison.Ordinal))
-                OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, format);
+            if (!String.Equals(FormulaNumberFormat(range, local), format, StringComparison.Ordinal))
+            {
+                if (local) OfficeCallWithCulture(range, "NumberFormatLocal", BindingFlags.SetProperty, CultureInfo.CurrentCulture, format);
+                else OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, format);
+            }
         }
 
         static FormulaCellContent ReadFormulaContent(object range, FormulaDisplayStyle style = null)
@@ -635,7 +639,7 @@ namespace FormulaExplorer
                 Object.Equals(ComparableFormulaValue(current.Value), ComparableFormulaValue(expected.Value));
         }
 
-        static void RestoreFormulaContent(object range, FormulaCellContent content, string format)
+        static void RestoreFormulaContent(object range, FormulaCellContent content, string format, bool localNumberFormat = false)
         {
             if (!SameFormulaContent(ReadFormulaContent(range), content))
             {
@@ -646,7 +650,7 @@ namespace FormulaExplorer
                     if (content.TextPrefix == "'") ((dynamic)range).Value2 = "'" + (string)content.Value;
                     else
                     {
-                        RestoreFormulaNumberFormat(range, "@");
+                        RestoreFormulaNumberFormat(range, "@", localNumberFormat);
                         ((dynamic)range).Value2 = (string)content.Value;
                     }
                 }
@@ -654,7 +658,7 @@ namespace FormulaExplorer
                     OfficeCall(range, "Value2", BindingFlags.SetProperty, new ErrorWrapper((int)ComparableFormulaValue(content.Value)));
                 else ((dynamic)range).Value2 = content.Value;
             }
-            RestoreFormulaNumberFormat(range, format);
+            RestoreFormulaNumberFormat(range, format, localNumberFormat);
             if (!SameFormulaContent(ReadFormulaContent(range), content))
                 throw new InvalidOperationException("Excel n’a pas restitué le contenu initial à l’identique.");
         }
