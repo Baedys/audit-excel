@@ -1,5 +1,13 @@
 # Revue et validation
 
+## Segments du détail de comparaison
+
+`CompareForm.UpdateSides` 224148 appelle `StringMatch.GetUnmatchedParts` 79260 avec une distance maximale de 2 000. `FormulaString` 244396 et 244640 considère deux caractères de mot égaux à la même position d’une suite complète et identique de lettres, chiffres ou signes dollar. La ponctuation se compare caractère par caractère. La casse compte. Les indices sont UTF-16. 273948 utilise le style d’affichage, séparé du style de comparaison. 224148 colore en rouge les segments et décale leur début lorsqu’il ajoute des guillemets autour d’une entrée littérale égale au libellé des données hétérogènes. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Le témoin isolé appelle les DLL livrées, sans Excel, sur 3 029 paires. Les plages des deux côtés concordent, y compris quand plusieurs alignements sont possibles et aux distances 2 000 et 2 001. Les contrôles WinForms couvrent les retours ligne, le texte inchangé, les libellés, le marqueur des données hétérogènes, l’inversion des côtés et les lignes résolues. Excel masqué vérifie le passage A1/R1C1 avec une comparaison R1C1 déjà ouverte.
+
+Le volet utilise le texte de la capture. Pour une formule locale, il vérifie la formule actuelle avant de demander le texte à Excel. Si la présentation locale échoue, les deux formules utilisent leur texte invariant. Le rapport garde le texte capturé pour le mode de comparaison. Les valeurs typées comme les dates, devises, booléens et erreurs continuent de suivre la capture `Value2` de Clair.
+
 ## Affichage des écarts résolus
 
 Le CIL de `DiffItem.UpdateFormula` 271184 conserve le nœud, relit le côté écrit et reporte la variation du compteur aux ancêtres. `TreeView_DrawControl` 234668 grise les nœuds à zéro. 373684 écarte ces nœuds de la copie, tandis que 225176 autorise leur sélection et leur surbrillance. 374268 fixe à zéro les sous-écarts d’un bloc copié. 277840 force à un les sous-écarts après annulation. `SheetItem.UpdateLabels` 215484 donne zéro aux onglets désormais appariés. `Recompare` 223744 construit un nouvel arbre. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

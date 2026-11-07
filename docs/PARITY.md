@@ -207,7 +207,7 @@ W5 décrit référence classeur/feuille/plage, plusieurs comparateurs, modes for
 
 P01 et P02 progressent dans le volet. La référence physique est partagée entre les fenêtres et ses données sont lues au lancement. Les plages comparent par décalage. Les feuilles comparent aux mêmes adresses, et les classeurs apparient leurs feuilles par nom. Les options couvrent R1C1, A1, valeurs calculées et ignorance des entrées. Le mode Instantané conserve la comparaison d’états enregistrés. Les témoins Excel et les écarts connus sont décrits dans la [validation](VALIDATION.md).
 
-P05 ajoute deux passes de regroupement, un arbre de blocs et sous-écarts, la sélection des rectangles sur les deux côtés et des fonds temporaires réversibles. Le scanner livré dans Arixcel et celui de Clair concordent sur 40 000 grilles synthétiques. Le surlignage des segments de texte dans les formules et l’arbre complet des tâches restent ouverts. [Validation](VALIDATION.md)
+P05 ajoute deux passes de regroupement, un arbre de blocs et sous-écarts, la sélection des rectangles sur les deux côtés et des fonds temporaires réversibles. Le scanner livré dans Arixcel et celui de Clair concordent sur 40 000 grilles synthétiques. Le volet colore les segments textuels des deux côtés. Le découpage concorde sur 3 029 paires du témoin natif. L’arbre complet des tâches et le format des valeurs typées restent ouverts. [Validation](VALIDATION.md)
 
 P03 ajoute la phase de détection avant les écarts des feuilles et classeurs. Clair recherche les correspondances de colonnes puis de lignes et montre le côté excédentaire, la position et le nombre d’axes proposés. P04 couvre l’insertion des propositions sélectionnées ou affichées, la reprise des dimensions, le retrait des axes Clair après réouverture et l’annulation du lot dans le volet ou depuis Excel. Le volet utilise des cases à cocher pour choisir un sous-ensemble. [Validation](VALIDATION.md)
 
@@ -219,7 +219,7 @@ P06 couvre la copie directionnelle des plages comparées et des onglets manquant
 | P02 | Formules/valeurs, tolérance, ignorance des entrées. | Partiel : deux modes et tolérance absolue. | Nombres proches, booléens, erreurs, vide/chaîne vide, entrées changées ; établir sémantique exacte de tolérance. |
 | P03 | Détection des lignes/colonnes insérées et alignement. | Absent. | Insertion/suppression en début/milieu/fin, doublons de libellés et formules déplacées ; éviter milliers de faux écarts. |
 | P04 | Appliquer puis retirer un alignement, avec undo. | Absent. | Copies jetables : formules, noms, tailles et formats restent cohérents ; annulation restaure toutes les propriétés touchées. |
-| P05 | Regrouper différences voisines, mettre en évidence segments. | Absent : lignes par cellule. | Blocs contigus/disjoints, côté actif, navigation des deux côtés et surlignage des parties modifiées. |
+| P05 | Regrouper différences voisines, mettre en évidence segments. | Blocs, sous-écarts, navigation et coloration des segments dans le volet. | Les tâches complètes et le format des valeurs typées restent à comparer. |
 | P06 | Fusion directionnelle et copie de formats/feuilles. | Absent ; seulement lecture. | Copier gauche/droite puis re-comparer ; protection, collision et undo. Les détails de copie de formats sont à confirmer runtime. |
 | P07 | Édition, exploration, échange de côtés et rapport. | Partiel : rapport texte et navigation vers cellule. | Ctrl+Tab/Ctrl+S, F2, Ctrl+Z, exploration depuis résultat ; rapport reproductible avec périmètre, options, écarts et état incomplet. |
 

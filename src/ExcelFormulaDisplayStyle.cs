@@ -104,6 +104,16 @@ namespace FormulaExplorer
             return OfficeCall(range, property, BindingFlags.GetProperty);
         }
 
+        internal string ReadComparisonFormulaPreview(Reference location, Cell cell, FormulaDisplayStyle style)
+        {
+            return AtDirectCell(location.Workbook, location.Sheet, cell.Address, (sheet, range) =>
+            {
+                RequireCurrentFormula(range, cell);
+                string property;
+                return (string)ReadFormulaInStyle(range, style, out property);
+            });
+        }
+
         internal DisplayedExcelFormula ReadDisplayedFormula(Book book, Cell cell, FormulaDisplayStyle style)
         {
             return AtDirectCell(book, cell.Sheet, cell.Address, delegate(object worksheet, object range)

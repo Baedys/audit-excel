@@ -54,6 +54,7 @@ namespace FormulaExplorer
         internal List<ComparisonRow> Children;
         internal ComparisonAlignmentGap Alignment;
         internal bool Resolved, HistoryGroup;
+        internal ComparisonPreview LeftPreview, RightPreview;
 
         internal ComparisonRow WithResolution(Reference left, Reference right, string before, string after)
         {
@@ -82,6 +83,19 @@ namespace FormulaExplorer
         }
     }
 
+    internal struct ComparisonPreview
+    {
+        internal const string MixedLabel = "<données>";
+        internal readonly string Text;
+        internal readonly Cell Cell;
+        internal readonly bool Mixed;
+
+        internal ComparisonPreview(string text, Cell cell, bool mixed = false)
+        { Text = text; Cell = cell; Mixed = mixed; }
+
+        internal static ComparisonPreview MixedData { get { return new ComparisonPreview(MixedLabel, null, true); } }
+    }
+
     internal static class LiveComparison
     {
         internal static Func<ComparisonRow, ComparisonRow> ResolvedReader(Reference left, Reference right, bool relative, bool ignoreInputs)
@@ -93,8 +107,9 @@ namespace FormulaExplorer
                     previous.Left.LastColumn - previous.Left.FirstColumn + 1, previous.Left.LastRow - previous.Left.FirstRow + 1);
                 if (cells.Points(rect).Any(point => Different(cells.Read(point), false, relative, ignoreInputs, 0) == true)) return null;
                 CellPair anchor = cells.Read(rect.Location);
-                return previous.WithResolution(AtOffset(left, rect), AtOffset(right, rect),
-                    Preview(cells, rect, anchor.Left, false, false, relative), Preview(cells, rect, anchor.Right, true, false, relative));
+                ComparisonRow row = previous.WithResolution(AtOffset(left, rect), AtOffset(right, rect), null, null);
+                SetPreviews(row, cells, rect, anchor, false, relative);
+                return row;
             };
         }
 
@@ -114,8 +129,7 @@ namespace FormulaExplorer
                 {
                     CellPair anchor = cells.Read(part.Location);
                     var row = CreateRow(left, right, part, valuesOnly ? "Valeur" : anchor.HasFormula ? "Formule" : "Entrée");
-                    row.Avant = Preview(cells, part, anchor.Left, false, valuesOnly, relative);
-                    row.Après = Preview(cells, part, anchor.Right, true, valuesOnly, relative);
+                    SetPreviews(row, cells, part, anchor, valuesOnly, relative);
                     children.Add(row);
                 }
                 if (children.Count == 1) result.Add(children[0]);
@@ -182,20 +196,29 @@ namespace FormulaExplorer
                 area.FirstRow + rect.Bottom - 1, area.FirstColumn + rect.Right - 1, area.Workbook);
         }
 
-        static string Preview(PairedCells cells, Rectangle rect, Cell anchor, bool right, bool values, bool relative)
+        static void SetPreviews(ComparisonRow row, PairedCells cells, Rectangle rect, CellPair anchor, bool values, bool relative)
         {
-            if (values) return anchor == null ? "" : anchor.Value;
+            row.LeftPreview = Preview(cells, rect, anchor.Left, false, values, relative);
+            row.RightPreview = Preview(cells, rect, anchor.Right, true, values, relative);
+            row.Avant = row.LeftPreview.Text;
+            row.Après = row.RightPreview.Text;
+        }
+
+        static ComparisonPreview Preview(PairedCells cells, Rectangle rect, Cell anchor, bool right, bool values, bool relative)
+        {
+            if (values) return new ComparisonPreview(anchor == null ? "" : anchor.Value, anchor);
             string text = FormulaText(anchor, relative);
-            if ((long)rect.Width * rect.Height == 1 || (anchor != null && anchor.IsFormula)) return text;
+            if ((long)rect.Width * rect.Height == 1 || (anchor != null && anchor.IsFormula)) return new ComparisonPreview(text, anchor);
             int occupied = 0;
             foreach (Point point in cells.Points(rect))
             {
                 CellPair pair = cells.Read(point);
                 Cell cell = right ? pair.Right : pair.Left;
-                if (FormulaText(cell, true) != text) return "<données>";
+                if (FormulaText(cell, true) != text) return ComparisonPreview.MixedData;
                 occupied++;
             }
-            return text.Length != 0 && occupied < (long)rect.Width * rect.Height ? "<données>" : text;
+            return text.Length != 0 && occupied < (long)rect.Width * rect.Height
+                ? ComparisonPreview.MixedData : new ComparisonPreview(text, anchor);
         }
 
         struct CellPair

@@ -132,7 +132,9 @@ namespace FormulaExplorer
         {
             if (formulaEditCell != null || updatingFormulaDisplay) return;
             FormulaDisplayStyle next = ReadExplorerFormulaStyle(ExplorerOption(LocalFormulaValue, true));
+            bool comparisonStyleChanged = !next.SameAs(explorerFormulaStyle);
             explorerFormulaStyle = next;
+            if (redraw && comparisonStyleChanged && tabs.SelectedIndex == 3) RenderComparisonDetails(SelectedComparisonRow());
             if (!redraw || formulaDisplayCell == null || next.SameAs(formulaCellStyle)) return;
             ShowFormulaEditSource(formulaDisplayCell, true);
             foreach (TreeNode node in ExpressionNodes())

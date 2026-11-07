@@ -21,7 +21,9 @@ namespace FormulaExplorer
         readonly CheckBox checkComparisonAlignment = new CheckBox { Text = "Détecter les décalages", Checked = true, AutoSize = true };
         readonly CheckBox copyComparisonFormats = new CheckBox { Text = "Copier les formats", Checked = true, AutoSize = true };
         readonly TreeView comparisonTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false };
-        readonly TextBox comparisonDetails = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical };
+        readonly RichTextBox comparisonDetails = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true,
+            ScrollBars = RichTextBoxScrollBars.Vertical, DetectUrls = false, BackColor = SystemColors.Window,
+            AccessibleName = "Détails de la comparaison Excel" };
         readonly string comparisonHighlightOwner = "compare-" + Guid.NewGuid().ToString("N");
         TableLayoutPanel comparisonResults;
         List<ComparisonRow> comparisonRows;
@@ -80,7 +82,7 @@ namespace FormulaExplorer
             copyComparisonFormats.CheckedChanged += delegate { ChangeComparisonOption(options => options.CopyFormats = copyComparisonFormats.Checked); };
             tabs.SelectedIndexChanged += delegate
             {
-                if (tabs.SelectedTab == tab) { ShowComparisonReference(); UpdateComparisonSelection(); }
+                if (tabs.SelectedTab == tab) { RefreshFormulaDisplayStyle(false); ShowComparisonReference(); UpdateComparisonSelection(); }
                 else RemoveTraceHighlightOwner(comparisonHighlightOwner);
             };
             comparisonTree.AfterSelect += delegate { if (!loadingComparisonRows) UpdateComparisonSelection(); };
@@ -192,6 +194,7 @@ namespace FormulaExplorer
                 return;
             }
             if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
+            RefreshFormulaDisplayStyle(false);
             ShowComparisonReference();
             ComparisonResult next = bridge.CompareSelection();
             ResetComparisonHistory();
@@ -319,9 +322,7 @@ namespace FormulaExplorer
             ComparisonRow row = SelectedComparisonRow();
             RefreshAlignmentActions(row);
             RefreshComparisonCopy();
-            comparisonDetails.Text = row == null ? "" : String.Join(Environment.NewLine + Environment.NewLine,
-                comparisonSwapped ? new[] { SideDetail(row, true), SideDetail(row, false) } :
-                    new[] { SideDetail(row, false), SideDetail(row, true) });
+            RenderComparisonDetails(row);
             if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 || bridge == null)
             {
                 RemoveTraceHighlightOwner(comparisonHighlightOwner);
@@ -343,15 +344,6 @@ namespace FormulaExplorer
                 })) status.Text = "Surbrillance partielle · un classeur comparé a été fermé.";
             }
             catch (Exception error) { status.Text = "Surbrillance Excel indisponible · " + error.Message; }
-        }
-
-        string SideDetail(ComparisonRow row, bool right)
-        {
-            string label = right ? row.Comparateur : row.Référence;
-            string value = right ? row.Après : row.Avant;
-            return (comparisonRight == right ? "● " : "") + (right ? "Comparateur" : "Référence") +
-                (String.IsNullOrEmpty(label) ? "" : " · " + label) +
-                (String.IsNullOrEmpty(value) ? "" : Environment.NewLine + value);
         }
 
         void NavigateComparison(ComparisonRow row, bool right)

@@ -66,12 +66,15 @@ public static class ExcelComparisonTests
         var retained = new List<object>();
         Func<object, dynamic> keep = value => { retained.Add(value); return value; };
         object application = null, before = null, after = null;
+        int? originalNotation = null;
         ExcelBridge bridge = null;
         try
         {
             application = Activator.CreateInstance(Type.GetTypeFromProgID("Excel.Application", true));
             dynamic app = application;
             app.Visible = false; app.DisplayAlerts = false;
+            originalNotation = (int)app.ReferenceStyle;
+            app.ReferenceStyle = 1;
             before = keep(app.Workbooks).Add(-4167);
             dynamic left = keep(keep(((dynamic)before).Worksheets).Item[1]);
             left.Name = "Audit";
@@ -130,7 +133,25 @@ public static class ExcelComparisonTests
                 Equal(Text(rows[0], "Comparateur").EndsWith("Audit!F6"), true, "target address is shifted");
                 Equal(Text(rows[0], "Écart"), "Formule", "changed formula is identified");
                 Equal(tree.Nodes.Count, 1, "the result tree shows the single mismatch");
-                Equal(Field<TextBox>(targetView, "comparisonDetails").Text.Contains("Audit!F6"), true, "the normal pane shows both addresses and contents");
+                var details = Field<RichTextBox>(targetView, "comparisonDetails");
+                Equal(details.Text.Contains("Audit!F6"), true, "the normal pane shows both addresses and contents");
+                Equal(details.Text.Contains("=B3+2") && details.Text.Contains("=E6+3"), true, "the detail follows Excel A1 independently of the R1C1 comparison");
+                app.ReferenceStyle = -4150;
+                Invoke(targetPane, "OnEnter", EventArgs.Empty);
+                object presentation = Field<object>(targetView, "explorerFormulaStyle");
+                string shownLeft = Field<bool>(presentation, "Local") ? (string)keep(left.Range["C3"]).Formula2R1C1Local :
+                    (string)keep(left.Range["C3"]).Formula2R1C1;
+                string shownRight = Field<bool>(presentation, "Local") ? (string)keep(right.Range["F6"]).Formula2R1C1Local :
+                    (string)keep(right.Range["F6"]).Formula2R1C1;
+                int shownStart = details.Text.IndexOf(shownRight, StringComparison.Ordinal);
+                Equal(details.Text.Contains(shownLeft) && shownStart >= 0, true, "return of focus re-renders in Excel R1C1 without comparing again");
+                details.Select(shownStart, shownRight.Length - 1);
+                Equal(details.SelectionColor.ToArgb(), SystemColors.WindowText.ToArgb(), "an equal relative reference remains uncolored");
+                details.Select(shownStart + shownRight.Length - 1, 1);
+                Equal(details.SelectionColor.ToArgb(), (SystemInformation.HighContrast ? SystemColors.HotTrack : Color.Red).ToArgb(), "the actual edited term is colored");
+                Equal(tree.Nodes.Count, 1, "display style changes leave the current comparison intact");
+                app.ReferenceStyle = 1;
+                Invoke(targetPane, "OnEnter", EventArgs.Empty);
                 Invoke(targetView, "NavigateComparison", rows[0], false);
                 Equal((string)keep(app.ActiveCell).Address, "$C$3", "navigation activates the reference");
                 Invoke(targetView, "NavigateComparison", rows[0], true);
@@ -439,6 +460,8 @@ public static class ExcelComparisonTests
             if (bridge != null) Invoke(bridge, "ClearComparisonReference");
             if (after != null) try { ((dynamic)after).Close(false); } catch { }
             if (before != null) try { ((dynamic)before).Close(false); } catch { }
+            if (application != null && originalNotation.HasValue)
+                try { ((dynamic)application).ReferenceStyle = originalNotation.Value; } catch { }
             if (application != null) try { ((dynamic)application).Quit(); } catch { }
             for (int i = retained.Count - 1; i >= 0; i--) ExcelBridge.Release(retained[i]);
             ExcelBridge.Release(after); ExcelBridge.Release(before); ExcelBridge.Release(application);
