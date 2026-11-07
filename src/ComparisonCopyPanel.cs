@@ -21,8 +21,8 @@ namespace FormulaExplorer
         static bool CanCopyComparisonRow(ComparisonRow row)
         {
             if (row == null || row.Resolved || row.Interrupted || row.Alignment != null) return false;
+            if (row.MissingSheetWorkbook != null) return row.Left != null || row.Right != null;
             Reference left = row.CurrentArea(false), right = row.CurrentArea(true);
-            if (row.MissingSheetWorkbook != null) return left != null || right != null;
             return left != null && right != null && left.FirstRow > 0 && right.FirstRow > 0 &&
                 left.LastRow - left.FirstRow == right.LastRow - right.FirstRow &&
                 left.LastColumn - left.FirstColumn == right.LastColumn - right.FirstColumn;
@@ -65,7 +65,10 @@ namespace FormulaExplorer
         }
 
         static bool CopyGeometryUnavailable(ComparisonRow row)
-        { return row.GeometryChangedOnEitherSide && !CanCopyComparisonRow(row); }
+        {
+            return !row.Resolved && !row.Interrupted && row.Alignment == null &&
+                row.GeometryChangedOnEitherSide && !CanCopyComparisonRow(row);
+        }
 
         static Tuple<string, string> ComparisonCopyKey(ComparisonRow row)
         { return Tuple.Create(row.Référence, row.Comparateur); }
@@ -99,6 +102,13 @@ namespace FormulaExplorer
                 .Select(node => (ComparisonRow)node.Tag).ToArray();
             if (intended.Length == 0 && SelectedComparisonRow() != null) intended = new[] { SelectedComparisonRow() };
             RefreshComparisonGeometry(intended);
+            if (intended.Any(row => row.MissingSheetWorkbook != null && CanCopyComparisonRow(row) &&
+                row.CurrentArea(false) == null && row.CurrentArea(true) == null))
+            {
+                RequireFormulaEditWindow();
+                ShowChangedComparison(currentComparison.Recompare());
+                return;
+            }
             if (intended.Any(CopyGeometryUnavailable))
             {
                 RefreshComparisonCopy();
@@ -127,8 +137,7 @@ namespace FormulaExplorer
                 if (fresh.ValuesOnly || fresh.Relative != currentComparison.Relative || fresh.IgnoreInputs != currentComparison.IgnoreInputs ||
                     plan.Any(row => row == null))
                 {
-                    ShowComparisonResult(fresh);
-                    status.Text = "Les écarts ont changé. Sélectionnez les plages actualisées.";
+                    ShowChangedComparison(fresh);
                     return;
                 }
             }
@@ -201,6 +210,12 @@ namespace FormulaExplorer
             if (linkWarnings != 0) summary += " · Réécriture des liens incomplète · " + linkWarnings;
             if (formatWarnings != 0) summary += " · Formats non copiés · " + formatWarnings;
             RefreshAfterComparison(fresh, summary + (firstError == null ? "" : " · " + firstError), true);
+        }
+
+        void ShowChangedComparison(ComparisonResult fresh)
+        {
+            ShowComparisonResult(fresh);
+            status.Text = "Les écarts ont changé. Sélectionnez les plages actualisées.";
         }
     }
 }

@@ -194,8 +194,10 @@ public static class ExcelComparisonReportTests
             if (owned)
             {
                 if (report != null) try { CloseReport(ref report); } catch (COMException) { }
-                if (target != null) ((dynamic)target).Close(false);
-                if (source != null) ((dynamic)source).Close(false);
+                foreach (object book in new[] { target, source })
+                    if (book != null)
+                        try { ((dynamic)book).Close(false); }
+                        catch (COMException error) { if ((uint)error.ErrorCode != 0x80010108) throw; }
                 try { ((dynamic)application).Quit(); }
                 catch (COMException error) { if ((uint)error.ErrorCode != 0x80010108) throw; }
             }

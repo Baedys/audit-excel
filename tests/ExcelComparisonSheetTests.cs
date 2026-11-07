@@ -220,9 +220,18 @@ public static class ExcelComparisonSheetTests
                 chart.Delete();
                 dynamic replacementChart = keep(keep(source.Charts).Add(Type.Missing, sibling)); replacementChart.Name = "Graphique";
                 app.Goto(keep(rightStart.Range["F8"]), false);
+                Invoke(view, "RefreshComparisonOnFocus");
+                Equal(Field<Button>(view, "copyComparison").Enabled, true, "a replaced source tab can request a fresh choice from the pane");
                 Invoke(view, "CopyComparisonSelection", true);
                 Equal((int)keep(target.Charts).Count, 0, "copy refuses a replaced source chart with the same name");
                 Equal(Field<Label>(view, "status").Text.Contains("Les écarts ont changé"), true, "source replacement requests a fresh choice");
+                IntPtr replacementIdentity = Marshal.GetIUnknownForObject((object)replacementChart);
+                try
+                {
+                    Equal(Field<long>(Find(tree, "Graphique").Tag, "MissingSheetIdentity"), replacementIdentity.ToInt64(),
+                        "the pane offers the replacement tab only after refreshing the comparison");
+                }
+                finally { Marshal.Release(replacementIdentity); }
             }
 
             Equal(bridge.MaskMapConditionalFills(snapshot, "saved-sheet-copy-map", bridge.GetDirectHighlightSheetIdentity(snapshot, "Analyse")), 1,
