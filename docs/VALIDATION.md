@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Affichage des écarts résolus
+
+Le CIL de `DiffItem.UpdateFormula` 271184 conserve le nœud, relit le côté écrit et reporte la variation du compteur aux ancêtres. `TreeView_DrawControl` 234668 grise les nœuds à zéro. 373684 écarte ces nœuds de la copie, tandis que 225176 autorise leur sélection et leur surbrillance. 374268 fixe à zéro les sous-écarts d’un bloc copié. 277840 force à un les sous-écarts après annulation. `SheetItem.UpdateLabels` 215484 donne zéro aux onglets désormais appariés. `Recompare` 223744 construit un nouvel arbre. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Clair vérifie l’état résolu avec les cellules de la paire physique et les règles actives de comparaison. Un bloc mixte conserve ses sous-écarts et sa plage de copie entière, y compris ses cellules intermédiaires. Après annulation, un sous-écart qui était déjà égal reste résolu. Un onglet est marqué copié lorsque les deux identités physiques attendues sont présentes. Le rapport sépare les écarts ouverts et résolus. Le témoin Excel masqué couvre les couleurs du volet, les boutons, la navigation, la copie de bloc, le renouvellement de la comparaison, un conflit d’annulation et les onglets.
+
 ## Copie des formats directs — 7 novembre 2026
 
 Dans Explorer, 247276 active la copie des formats par défaut. 257996 désactive l’option en mode valeurs. 253168 et 374616 appliquent les formats après le contenu et le format numérique. Common 86492 et 87044 traitent fusions et alignement. 89588 et 89724 traitent la police. 81172 découpe les caractères dont le format est hétérogène. 87816 traite les bordures, 92100 et 92800 la couleur et le motif du fond, et 88284 la protection. 21760 et 22544 transmettent le RVB effectif ou les index Automatique et Aucun. [Polices Excel](https://learn.microsoft.com/en-us/office/vba/api/Excel.Font%28object%29) · [Bordures Excel](https://learn.microsoft.com/en-us/office/vba/api/excel.borders)
@@ -20,7 +26,7 @@ Le témoin Excel masqué couvre la copie dans les deux sens, la feuille masquée
 
 Le CIL de `CompareForm.CopyData` 229328 limite la copie au mode formules. `KeyDownHandler` 229608 traduit les côtés affichés pour Ctrl+L et Ctrl+R. `Model.CopyData` 253168 trie la sélection par position et écarte les descendants déjà couverts. 255092 et 374268 copient le rectangle entier du bloc, dont les cellules vides, en appliquant le format numérique et le contenu A1 ou R1C1. Common 90940 et 91544 traitent les préfixes et les matrices CSE. 277840 restaure les propriétés stockées lors de l’annulation. Les formats supplémentaires et les feuilles manquantes suivent des chemins distincts. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
 
-Clair applique le contenu typé et les formats numériques. Le bouton copie depuis le côté actif et les raccourcis ciblent le côté affiché. Le recalcul garde les blocs comparateurs initiaux même si la sélection Excel change. Si une insertion déplace un bloc comparateur, Clair demande une nouvelle comparaison. Une destination répétée est écartée. Une annulation protège les modifications ultérieures du contenu ou des formats numériques et rétablit les copies déjà annulées si un conflit interrompt le lot de copie. Après une annulation mixte partielle, le volet garde les opérations restantes. Le volet recalcule sa liste après la copie. Arixcel conserve et grise les écarts résolus.
+Clair applique le contenu typé et les formats numériques. Le bouton copie depuis le côté actif et les raccourcis ciblent le côté affiché. Le recalcul garde les blocs comparateurs initiaux même si la sélection Excel change. Si une insertion déplace un bloc comparateur, Clair demande une nouvelle comparaison. Une destination répétée est écartée. Une annulation protège les modifications ultérieures du contenu ou des formats numériques et rétablit les copies déjà annulées si un conflit interrompt le lot de copie. Après une annulation mixte partielle, le volet garde les opérations restantes.
 
 ## Alignement groupé — 7 novembre 2026
 

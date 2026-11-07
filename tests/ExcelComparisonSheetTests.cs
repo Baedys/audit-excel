@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -181,7 +182,12 @@ public static class ExcelComparisonSheetTests
                 Equal(ReadFill(sourceRules), baselineFill, "the original rule can still be restored after the copy");
                 Equal((int)keep(targetSheets.Item["Masquée"]).Visible, 0, "copied hidden worksheet stays hidden");
                 Equal((string)keep(keep(target.Charts).Item["Graphique"]).Name, "Graphique", "standalone chart is copied");
-                Equal(tree.Nodes.Cast<TreeNode>().Any(node => node.Text.StartsWith("Analyse · ", StringComparison.Ordinal)), false, "copied tab disappears from missing results");
+                var resolvedTab = tree.Nodes.Cast<TreeNode>().Single(node => node.Text == "Analyse · Onglet copié");
+                Equal(resolvedTab.ForeColor, SystemColors.GrayText, "the copied worksheet remains visible in gray");
+                Equal(tree.Nodes.Cast<TreeNode>().Any(node => node.Text == "Graphique · Onglet copié"), true, "a copied chart tab also stays visible");
+                Equal(Field<bool>(resolvedTab.Tag, "Resolved"), true, "the copied worksheet is no longer a missing tab");
+                tree.SelectedNode = resolvedTab;
+                Equal(Field<Button>(view, "copyComparison").Enabled, false, "a resolved worksheet cannot be copied again");
                 pasted.Name = "Renommée";
                 target.Protect(Type.Missing, true, Type.Missing);
                 bool refused = false;
@@ -193,6 +199,8 @@ public static class ExcelComparisonSheetTests
                 Invoke(view, "UndoLastComparisonChange");
                 Equal(TabOrder(target, keep), "Début|Fin|Retour", "one undo removes all copied tabs, including the renamed tab");
                 Equal((double)keep(rightStart.Range["A1"]).Value2, 70d, "the same undo restores the copied cell");
+                Equal(tree.Nodes.Cast<TreeNode>().Any(node => node.Text == "Analyse · Onglet copié"), false, "undo removes the resolved worksheet marker");
+                Equal(tree.Nodes.Cast<TreeNode>().Any(node => node.Text == "Analyse · Feuille absente"), true, "undo restores the missing worksheet row");
 
                 tree.SelectedNode = Find(tree, "Retour");
                 Invoke(view, "CopyComparisonSelection", false);

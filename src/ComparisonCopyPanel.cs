@@ -20,7 +20,7 @@ namespace FormulaExplorer
 
         static bool CanCopyComparisonRow(ComparisonRow row)
         {
-            return row != null && row.Alignment == null && (row.MissingSheetWorkbook != null ||
+            return row != null && !row.Resolved && row.Alignment == null && (row.MissingSheetWorkbook != null ||
                 (row.Left != null && row.Right != null && row.Left.FirstRow > 0 && row.Right.FirstRow > 0));
         }
 
@@ -61,6 +61,28 @@ namespace FormulaExplorer
         static Tuple<string, string> ComparisonCopyKey(ComparisonRow row)
         { return Tuple.Create(row.Référence, row.Comparateur); }
 
+        static ComparisonRow RevalidateComparisonCopy(ComparisonRow row, ILookup<Tuple<string, string>, ComparisonRow> differences,
+            List<ComparisonRow> roots)
+        {
+            if (!row.HistoryGroup)
+                return differences[ComparisonCopyKey(row)].FirstOrDefault(candidate => candidate.MissingSheetIdentity == row.MissingSheetIdentity);
+
+            var children = row.Children.Where(child => !child.Resolved)
+                .Select(child => differences[ComparisonCopyKey(child)].FirstOrDefault(candidate => candidate.Children == null)).ToList();
+            if (children.Count == 0 || children.Any(child => child == null)) return null;
+            var overlapping = roots.SelectMany(root => root.Children == null ? Enumerable.Repeat(root, 1) : root.Children)
+                .Where(child => ComparisonAreasOverlap(row.Left, child.Left) && ComparisonAreasOverlap(row.Right, child.Right));
+            if (!new HashSet<ComparisonRow>(children).SetEquals(overlapping)) return null;
+            return row.WithHistoryChildren(children);
+        }
+
+        static bool ComparisonAreasOverlap(Reference first, Reference second)
+        {
+            return second != null && second.FirstRow > 0 && first.Sheet == second.Sheet &&
+                first.FirstRow <= second.LastRow && second.FirstRow <= first.LastRow &&
+                first.FirstColumn <= second.LastColumn && second.FirstColumn <= first.LastColumn;
+        }
+
         void CopyComparisonSelection(bool toRight)
         {
             if (!CanCopyComparisonSelection(toRight)) return;
@@ -68,11 +90,12 @@ namespace FormulaExplorer
             ComparisonRow[] selected = CopyableComparisonSelection(toRight);
 
             ComparisonResult fresh = currentComparison.Recompare();
-            var differences = fresh.ReadDifferences().SelectMany(row => new[] { row }.Concat(row.Children ?? Enumerable.Empty<ComparisonRow>()))
+            List<ComparisonRow> roots = fresh.ReadDifferences();
+            var differences = roots.SelectMany(row => new[] { row }.Concat(row.Children ?? Enumerable.Empty<ComparisonRow>()))
                 .Where(CanCopyComparisonRow).ToLookup(ComparisonCopyKey);
-            var plan = selected.Select(row => differences[ComparisonCopyKey(row)]
-                .FirstOrDefault(candidate => candidate.MissingSheetIdentity == row.MissingSheetIdentity)).ToArray();
-            if (fresh.ValuesOnly || fresh.Relative != currentComparison.Relative || plan.Any(row => row == null))
+            var plan = selected.Select(row => RevalidateComparisonCopy(row, differences, roots)).ToArray();
+            if (fresh.ValuesOnly || fresh.Relative != currentComparison.Relative || fresh.IgnoreInputs != currentComparison.IgnoreInputs ||
+                plan.Any(row => row == null))
             {
                 ShowComparisonResult(fresh);
                 status.Text = "Les écarts ont changé. Sélectionnez les plages actualisées.";
@@ -92,7 +115,11 @@ namespace FormulaExplorer
                     connection.CopyComparisonSheets(() =>
                     {
                         foreach (ComparisonRow row in plan.Where(item => item.MissingSheetWorkbook != null))
-                            try { connection.CopyComparisonSheet(row, toRight, sheets); }
+                            try
+                            {
+                                connection.CopyComparisonSheet(row, toRight, sheets);
+                                RememberResolvedTab(row, toRight, sheets[sheets.Count - 1]);
+                            }
                             catch (Exception error)
                             {
                                 if (!(error is COMException) && !(error is InvalidOperationException)) throw;
@@ -116,6 +143,7 @@ namespace FormulaExplorer
                     {
                         var receipt = connection.CopyComparisonContent(row, toRight, fresh.Relative, connection.ComparisonOptions.CopyFormats);
                         applied.Add(receipt);
+                        RememberResolvedRanges(fresh, row);
                         if (receipt.FormatWarning != null) { formatWarnings++; firstError = firstError ?? receipt.FormatWarning; }
                         destinations.Add(key);
                     }

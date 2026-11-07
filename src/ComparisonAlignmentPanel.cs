@@ -79,6 +79,7 @@ namespace FormulaExplorer
             }
             if (batch.Receipts.Count != 0)
             {
+                ResetComparisonHistory();
                 AlignmentReceipt[] newestFirst = batch.Receipts.AsEnumerable().Reverse().ToArray();
                 PushComparisonUndo(new ComparisonUndo { Alignment = newestFirst });
             }
@@ -96,9 +97,15 @@ namespace FormulaExplorer
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             bool fresh = session == null || (ReferenceEquals(comparisonUndoOwner, session) && comparisonUndoRevision == session.Revision);
             ComparisonUndo entry = comparisonUndo.Peek();
-            UndoComparisonEntry(bridge, entry);
+            try { UndoComparisonEntry(bridge, entry); }
+            catch (Exception error)
+            {
+                RefreshAfterComparison(currentComparison, "Annulation interrompue · " + error.Message, entry.IsCopy);
+                throw;
+            }
             comparisonUndo.Pop();
             entry.Release();
+            if (!entry.IsCopy) ResetComparisonHistory();
             RecordComparisonChange(session, fresh);
             RefreshAfterComparison(currentComparison, entry.IsCopy ? "Dernière copie annulée" : "Dernier alignement annulé", entry.IsCopy);
         }
@@ -120,6 +127,7 @@ namespace FormulaExplorer
             AlignmentRemoval result = bridge.RemoveActiveComparisonAlignment();
             if (result.Removed != 0)
             {
+                ResetComparisonHistory();
                 ClearComparisonUndo();
                 RecordComparisonChange(CurrentFormulaUndoSession(), false);
             }
@@ -197,7 +205,6 @@ namespace FormulaExplorer
             try
             {
                 ComparisonUndo[] batch = comparisonUndo.ToArray();
-                ComparisonResult previous = currentComparison;
                 ExcelBridge connection = bridge;
                 bool onlyAlignment = batch.All(entry => !entry.IsCopy), onlyCopy = batch.All(entry => entry.IsCopy);
                 string kind = onlyAlignment ? "l’alignement" : onlyCopy ? "la copie" : "les opérations de comparaison";
@@ -246,14 +253,16 @@ namespace FormulaExplorer
                             comparisonUndoOwner = session;
                             comparisonUndoRevision = session.Revision;
                         }
-                        if (failure != null)
+                        if (currentComparison != null)
                         {
-                            status.Text = "Annulation interrompue · " + failure;
-                            RefreshAlignmentActions(SelectedComparisonRow());
+                            if (batch.Take(completed).Any(entry => !entry.IsCopy)) ResetComparisonHistory();
+                            string summary = failure != null ? "Annulation interrompue · " + failure :
+                                onlyAlignment ? "Alignements annulés depuis Excel · " + count :
+                                "Opérations de comparaison annulées depuis Excel · " + count;
+                            RefreshAfterComparison(currentComparison, summary, onlyCopy && !ShowingAlignment);
                         }
-                        else if (ReferenceEquals(currentComparison, previous))
-                            RefreshAfterComparison(previous, onlyAlignment ? "Alignements annulés depuis Excel · " + count :
-                                "Opérations de comparaison annulées depuis Excel · " + count, onlyCopy);
+                        else if (failure != null)
+                        { status.Text = "Annulation interrompue · " + failure; RefreshAlignmentActions(SelectedComparisonRow()); }
                     }))
                 {
                     comparisonUndo.Clear();

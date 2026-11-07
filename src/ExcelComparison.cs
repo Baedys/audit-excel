@@ -107,7 +107,10 @@ namespace FormulaExplorer
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
             bool valuesOnly = ComparisonOptions.ValuesOnly, relative = ComparisonOptions.Relative, ignoreInputs = ComparisonOptions.IgnoreInputs;
             double tolerance = (double)ComparisonOptions.Tolerance;
-            var result = new ComparisonResult { ValuesOnly = valuesOnly, Relative = relative };
+            var result = new ComparisonResult { ValuesOnly = valuesOnly, Relative = relative, IgnoreInputs = ignoreInputs,
+                FullSheets = ReferenceScope != ComparisonScope.Range,
+                LeftWorkbook = left, RightWorkbook = right,
+                LeftTabs = ComparisonWorksheetIdentities(left), RightTabs = ComparisonWorksheetIdentities(right) };
             if (ReferenceScope == ComparisonScope.Range)
             {
                 Reference source = ReadRetainedDependencyRange(left, comparisonRange);
@@ -139,7 +142,10 @@ namespace FormulaExplorer
                     String.Equals(source.Sheet, rangeTargets[0].Sheet, StringComparison.OrdinalIgnoreCase) && source.Address == rangeTargets[0].Address)
                     throw new InvalidOperationException("Sélectionnez une autre plage à comparer.");
                 foreach (Reference target in rangeTargets)
+                {
+                    result.ComparedAreas.Add(new KeyValuePair<Reference, Reference>(source, target));
                     LiveComparison.Compare(result.Differences, source, left.Cells.Values, target, ComparisonTileCells(target), valuesOnly, relative, ignoreInputs, tolerance);
+                }
                 result.RangeTargets = retainedTargets ?? new ComparisonRangeTargets(this, rangeTargets);
                 ComparisonRangeTargets originalTargets = result.RangeTargets;
                 result.Recompare = () =>
@@ -170,6 +176,8 @@ namespace FormulaExplorer
                     throw new InvalidOperationException("Activez un autre classeur à comparer.");
                 var beforeSheets = WithDirectSnapshotWorkbook(left, workbook => ComparisonTabs(workbook, RequireDependencySnapshot(left)));
                 var afterSheets = WithDirectSnapshotWorkbook(right, workbook => ComparisonTabs(workbook, RequireDependencySnapshot(right)));
+                result.LeftTabs = beforeSheets.Where(tab => tab.IsSupported).ToDictionary(tab => tab.Name, tab => tab.Identity, StringComparer.OrdinalIgnoreCase);
+                result.RightTabs = afterSheets.Where(tab => tab.IsSupported).ToDictionary(tab => tab.Name, tab => tab.Identity, StringComparer.OrdinalIgnoreCase);
                 var beforeNames = new HashSet<string>(beforeSheets.Select(tab => tab.Name), StringComparer.OrdinalIgnoreCase);
                 var afterNames = afterSheets.ToDictionary(tab => tab.Name, StringComparer.OrdinalIgnoreCase);
                 foreach (ComparisonTab tab in beforeSheets.Where(tab => tab.IsSupported))
@@ -204,17 +212,20 @@ namespace FormulaExplorer
                     foreach (ComparisonAlignmentGap gap in gaps) result.Alignment.Add(ComparisonAlignmentRow(first, second, gap));
                 }
             }
+            foreach (var pair in pairs)
+            {
+                Reference a = pair.Key, b = pair.Value;
+                int row = Math.Min(a.FirstRow, b.FirstRow), col = Math.Min(a.FirstColumn, b.FirstColumn);
+                int endRow = Math.Max(a.LastRow, b.LastRow), endCol = Math.Max(a.LastColumn, b.LastColumn);
+                result.ComparedAreas.Add(new KeyValuePair<Reference, Reference>(
+                    Reference.FromBounds(a.Sheet, row, col, endRow, endCol, left),
+                    Reference.FromBounds(b.Sheet, row, col, endRow, endCol, right)));
+            }
             result.CompareSheets = rows =>
             {
-                foreach (var pair in pairs)
-                {
-                    Reference a = pair.Key, b = pair.Value;
-                    int row = Math.Min(a.FirstRow, b.FirstRow), col = Math.Min(a.FirstColumn, b.FirstColumn);
-                    int endRow = Math.Max(a.LastRow, b.LastRow), endCol = Math.Max(a.LastColumn, b.LastColumn);
-                    LiveComparison.Compare(rows, Reference.FromBounds(a.Sheet, row, col, endRow, endCol, left), leftCells[a.Sheet],
-                        Reference.FromBounds(b.Sheet, row, col, endRow, endCol, right), rightCells[b.Sheet],
+                foreach (var pair in result.ComparedAreas)
+                    LiveComparison.Compare(rows, pair.Key, leftCells[pair.Key.Sheet], pair.Value, rightCells[pair.Value.Sheet],
                         valuesOnly, relative, ignoreInputs, tolerance);
-                }
             };
             result.Recompare = () =>
             {
@@ -232,6 +243,9 @@ namespace FormulaExplorer
             };
             return result;
         }
+
+        Dictionary<string, long> ComparisonWorksheetIdentities(Book workbook)
+        { return RequireDependencySnapshot(workbook).Sheets.ToDictionary(sheet => sheet.Key, sheet => sheet.Value.ToInt64(), StringComparer.OrdinalIgnoreCase); }
 
         void RequireSameComparisonReference(Book savedReference)
         {

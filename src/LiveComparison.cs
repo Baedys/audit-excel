@@ -20,7 +20,10 @@ namespace FormulaExplorer
     {
         internal readonly List<ComparisonRow> Differences = new List<ComparisonRow>();
         internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
-        internal bool AlignmentLimited, SharedAlignmentReference, ValuesOnly, Relative;
+        internal bool AlignmentLimited, SharedAlignmentReference, ValuesOnly, Relative, IgnoreInputs, FullSheets;
+        internal Book LeftWorkbook, RightWorkbook;
+        internal Dictionary<string, long> LeftTabs, RightTabs;
+        internal readonly List<KeyValuePair<Reference, Reference>> ComparedAreas = new List<KeyValuePair<Reference, Reference>>();
         internal Action<List<ComparisonRow>> CompareSheets;
         internal Func<ComparisonResult> Recompare;
         internal ExcelBridge.ComparisonRangeTargets RangeTargets;
@@ -50,6 +53,27 @@ namespace FormulaExplorer
         internal long MissingSheetIdentity;
         internal List<ComparisonRow> Children;
         internal ComparisonAlignmentGap Alignment;
+        internal bool Resolved, HistoryGroup;
+
+        internal ComparisonRow WithResolution(Reference left, Reference right, string before, string after)
+        {
+            return new ComparisonRow { Left = left, Right = right, Référence = Label(left), Comparateur = Label(right),
+                Écart = Écart, Avant = before, Après = after, Resolved = true };
+        }
+
+        internal ComparisonRow WithHistoryChildren(List<ComparisonRow> children)
+        {
+            var group = (ComparisonRow)MemberwiseClone();
+            Reference left = children[0].Left, right = children[0].Right;
+            group.Left = Reference.FromBounds(left.Sheet, Left.FirstRow, Left.FirstColumn, Left.LastRow, Left.LastColumn, left.Workbook);
+            group.Right = Reference.FromBounds(right.Sheet, Right.FirstRow, Right.FirstColumn, Right.LastRow, Right.LastColumn, right.Workbook);
+            group.Référence = Label(group.Left);
+            group.Comparateur = Label(group.Right);
+            group.Children = children;
+            group.Resolved = children.All(row => row.Resolved);
+            group.HistoryGroup = true;
+            return group;
+        }
 
         internal static string Label(Reference area)
         {
@@ -60,6 +84,20 @@ namespace FormulaExplorer
 
     internal static class LiveComparison
     {
+        internal static Func<ComparisonRow, ComparisonRow> ResolvedReader(Reference left, Reference right, bool relative, bool ignoreInputs)
+        {
+            var cells = new PairedCells(left, left.Workbook.Cells.Values, right, right.Workbook.Cells.Values);
+            return previous =>
+            {
+                var rect = new Rectangle(previous.Left.FirstColumn - left.FirstColumn, previous.Left.FirstRow - left.FirstRow,
+                    previous.Left.LastColumn - previous.Left.FirstColumn + 1, previous.Left.LastRow - previous.Left.FirstRow + 1);
+                if (cells.Points(rect).Any(point => Different(cells.Read(point), false, relative, ignoreInputs, 0) == true)) return null;
+                CellPair anchor = cells.Read(rect.Location);
+                return previous.WithResolution(AtOffset(left, rect), AtOffset(right, rect),
+                    Preview(cells, rect, anchor.Left, false, false, relative), Preview(cells, rect, anchor.Right, true, false, relative));
+            };
+        }
+
         internal static void Compare(List<ComparisonRow> result, Reference left, IEnumerable<Cell> leftCells,
             Reference right, IEnumerable<Cell> rightCells, bool valuesOnly, bool relative, bool ignoreInputs, double tolerance)
         {

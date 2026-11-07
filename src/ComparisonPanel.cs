@@ -31,6 +31,7 @@ namespace FormulaExplorer
         string liveComparisonReportHeading;
         string comparisonMode;
         bool readingComparisonOptions;
+        int renderedComparisonRun;
 
         void ConfigureComparison(TabPage tab)
         {
@@ -83,6 +84,11 @@ namespace FormulaExplorer
                 else RemoveTraceHighlightOwner(comparisonHighlightOwner);
             };
             comparisonTree.AfterSelect += delegate { if (!loadingComparisonRows) UpdateComparisonSelection(); };
+            comparisonTree.BeforeCheck += delegate(object sender, TreeViewCancelEventArgs e)
+            {
+                var row = e.Node.Tag as ComparisonRow;
+                if (row != null && row.Resolved) e.Cancel = true;
+            };
             comparisonTree.AfterCheck += delegate
             {
                 if (loadingComparisonRows) return;
@@ -187,11 +193,16 @@ namespace FormulaExplorer
             }
             if (bridge == null) throw new InvalidOperationException("Ouvrez un classeur Excel.");
             ShowComparisonReference();
-            ShowComparisonResult(bridge.CompareSelection());
+            ComparisonResult next = bridge.CompareSelection();
+            ResetComparisonHistory();
+            ShowComparisonResult(next);
         }
 
         void SetCurrentComparison(ComparisonResult next)
         {
+            if (next == null || (currentComparison != null && (next.ValuesOnly != currentComparison.ValuesOnly ||
+                next.Relative != currentComparison.Relative || next.IgnoreInputs != currentComparison.IgnoreInputs)))
+                ResetComparisonHistory();
             ExcelBridge.ComparisonRangeTargets previous = currentComparison == null ? null : currentComparison.RangeTargets;
             currentComparison = next;
             if (previous != null && (next == null || !ReferenceEquals(previous, next.RangeTargets))) previous.Dispose();
@@ -219,9 +230,12 @@ namespace FormulaExplorer
         {
             if (currentComparison == null) return;
             List<ComparisonRow> rows = currentComparison.ReadDifferences();
+            List<ComparisonRow> visible = ComparisonRowsWithHistory(currentComparison, rows);
+            int resolved = visible.Sum(row => row.Children == null ? (row.Resolved ? 1 : 0) : row.Children.Count(child => child.Resolved));
             skipComparisonAlignment.Enabled = false;
-            status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts · " + comparisonMode + ComparisonAlignmentLimit();
-            ShowComparisonRows(rows);
+            status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts" +
+                (resolved == 0 ? "" : " · " + resolved + " résolus") + " · " + comparisonMode + ComparisonAlignmentLimit();
+            ShowComparisonRows(visible);
         }
 
         string ComparisonAlignmentLimit()
@@ -234,6 +248,12 @@ namespace FormulaExplorer
 
         void ShowComparisonRows(List<ComparisonRow> rows)
         {
+            bool sameRun = comparisonRun == renderedComparisonRun;
+            var selected = sameRun ? SelectedComparisonRow() : null;
+            var expanded = new HashSet<Tuple<string, string>>(sameRun ? comparisonTree.Nodes.Cast<TreeNode>()
+                .Where(node => node.IsExpanded).Select(node => ComparisonCopyKey((ComparisonRow)node.Tag)) :
+                Enumerable.Empty<Tuple<string, string>>());
+            renderedComparisonRun = comparisonRun;
             comparisonRows = rows;
             loadingComparisonRows = true;
             comparisonTree.BeginUpdate();
@@ -246,16 +266,39 @@ namespace FormulaExplorer
                     foreach (ComparisonRow row in rows) comparisonTree.Nodes.Add(ComparisonNode(row));
                 differences.Visible = rows == null;
                 comparisonResults.Visible = rows != null;
-                if (comparisonTree.Nodes.Count != 0) comparisonTree.SelectedNode = comparisonTree.Nodes[0];
+                TreeNode selectedNode = null;
+                foreach (TreeNode node in comparisonTree.Nodes)
+                {
+                    if (expanded.Contains(ComparisonCopyKey((ComparisonRow)node.Tag))) node.Expand();
+                    if (selected == null || selectedNode != null) continue;
+                    selectedNode = new[] { node }.Concat(node.Nodes.Cast<TreeNode>())
+                        .FirstOrDefault(candidate => SameComparisonSelection(selected, (ComparisonRow)candidate.Tag));
+                }
+                if (selectedNode == null && comparisonTree.Nodes.Count != 0) selectedNode = comparisonTree.Nodes[0];
+                if (selectedNode != null)
+                {
+                    if (selectedNode.Parent != null) selectedNode.Parent.Expand();
+                    comparisonTree.SelectedNode = selectedNode;
+                }
             }
             finally { comparisonTree.EndUpdate(); loadingComparisonRows = false; }
             UpdateComparisonSelection();
         }
 
+        static bool SameComparisonSelection(ComparisonRow previous, ComparisonRow current)
+        {
+            if (ComparisonCopyKey(previous).Equals(ComparisonCopyKey(current))) return true;
+            if (previous.Alignment != null || current.Alignment != null) return false;
+            return (previous.MissingSheetWorkbook != null && current.Resolved || current.MissingSheetWorkbook != null && previous.Resolved) &&
+                ((previous.Référence != "" && previous.Référence == current.Référence) ||
+                 (previous.Comparateur != "" && previous.Comparateur == current.Comparateur));
+        }
+
         TreeNode ComparisonNode(ComparisonRow row)
         {
             var node = new TreeNode(ComparisonNodeText(row)) { Tag = row };
-            if (row.Écart == "Formule") node.ForeColor = Color.Firebrick;
+            if (row.Resolved) node.ForeColor = SystemColors.GrayText;
+            else if (row.Écart == "Formule") node.ForeColor = Color.Firebrick;
             if (row.Children != null)
                 foreach (ComparisonRow child in row.Children) node.Nodes.Add(ComparisonNode(child));
             return node;
@@ -265,7 +308,10 @@ namespace FormulaExplorer
         {
             Reference area = (comparisonSwapped ? row.Left : row.Right) ?? row.Left ?? row.Right;
             string location = area.Sheet + (area.FirstRow == 0 ? "" : "!" + area.Address);
-            return location + " · " + (row.Children == null ? row.Écart : row.Children.Count + " écarts");
+            if (row.Children == null)
+                return location + " · " + (row.Resolved ? (area.FirstRow == 0 ? "Onglet copié" : "Résolu") : row.Écart);
+            int resolved = row.Children.Count(child => child.Resolved);
+            return location + " · " + (row.Children.Count - resolved) + " écarts" + (resolved == 0 ? "" : " · " + resolved + " résolus");
         }
 
         void UpdateComparisonSelection()
@@ -367,6 +413,6 @@ namespace FormulaExplorer
         }
 
         static void AppendComparisonRow(StringBuilder report, ComparisonRow row)
-        { report.AppendLine(String.Join("\t", row.Référence, row.Comparateur, row.Écart, row.Avant, row.Après)); }
+        { report.AppendLine(String.Join("\t", row.Référence, row.Comparateur, row.Resolved ? "Résolu · " + row.Écart : row.Écart, row.Avant, row.Après)); }
     }
 }
