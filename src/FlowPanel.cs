@@ -285,6 +285,8 @@ namespace FormulaExplorer
             if (e.Cancel) return;
             try
             {
+                ReturnFromComparisonTrace(false, false);
+                if (comparisonTrace != null) { e.Cancel = true; return; }
                 var traceFailures = new List<Exception>();
                 ClearTraceHighlightOwners(traceFailures);
                 var failures = new List<Exception>();

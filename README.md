@@ -125,6 +125,10 @@ Le détail colore en rouge les segments différents de chaque côté. Il suit la
 
 En mode Formules, **Modifier (F2)** ouvre un brouillon pour le côté actif. Pour choisir un côté depuis le détail, placez le curseur dans sa section avant F2. **Entrée** applique, **Échap** abandonne et **Alt+Entrée** insère un saut de ligne. Sur un bloc, la saisie s’applique à toute la plage, avec translation des références relatives. **Ctrl+Z** annule la dernière opération du comparateur.
 
+**Ctrl+Q** ouvre les antécédents et **Ctrl+Maj+Q** les dépendants du côté actif dans le même volet. Les lignes cochées priment sur la ligne courante. Un bloc de formules part de sa cellule en haut à gauche. Une plage de données reste entière. Dans le détail, le curseur peut choisir l’expression de départ et le double-clic trace la ligne courante. **Retour** ou **Entrée** à la racine retrouve la comparaison. **Échap** rétablit aussi la sélection Excel de départ.
+
+Si le tracé reprend la formule affichée dans le détail, **F2** à sa racine modifie tout le bloc comparé. **Ctrl+Z** annule une édition à la fois dans le tracé. Au retour, les éditions restantes forment une seule action du comparateur.
+
 Les écarts résolus par une copie restent grisés dans le volet. Ils restent navigables et le compteur les distingue des écarts ouverts. Annuler la copie rouvre les écarts correspondants. **Comparer** démarre un nouveau relevé.
 
 En mode formules, sélectionnez ou cochez les blocs et utilisez **Copier** pour appliquer leur contenu et leur format numérique depuis le côté actif. Dans l’arbre, **Ctrl+L** et **Ctrl+R** ciblent respectivement les côtés visibles gauche et droit. R1C1 recale les références relatives. A1 conserve les adresses. **Annuler la copie** ou **Ctrl+Z** annule le dernier lot. Le XLL permet aussi d’annuler depuis la grille Excel.

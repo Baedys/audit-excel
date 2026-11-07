@@ -19,6 +19,12 @@ namespace FormulaExplorer
         internal long DependencyWorkbookIdentity(Book snapshot)
         { return RequireDependencySnapshot(snapshot).Workbook.ToInt64(); }
 
+        internal long DependencyWorksheetIdentity(Book snapshot, string sheet)
+        {
+            IntPtr identity;
+            return RequireDependencySnapshot(snapshot).Sheets.TryGetValue(sheet, out identity) ? identity.ToInt64() : 0;
+        }
+
         internal Dictionary<string, string> DependencyWorksheetNames(Book previous, Book current)
         {
             DirectSnapshot before = RequireDependencySnapshot(previous), after = RequireDependencySnapshot(current);

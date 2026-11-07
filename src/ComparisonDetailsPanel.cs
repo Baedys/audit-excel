@@ -10,6 +10,7 @@ namespace FormulaExplorer
     public sealed partial class MainForm
     {
         int comparisonSecondSide, comparisonLeftText, comparisonRightText;
+        string comparisonLeftPayload, comparisonRightPayload;
 
         void RenderComparisonDetails(ComparisonRow row)
         {
@@ -17,6 +18,7 @@ namespace FormulaExplorer
             {
                 comparisonDetails.Clear();
                 comparisonDetails.AccessibleDescription = "";
+                comparisonLeftPayload = comparisonRightPayload = null;
                 return;
             }
 
@@ -58,6 +60,8 @@ namespace FormulaExplorer
             comparisonDetails.Text = text.ToString();
             comparisonLeftText = leftStart;
             comparisonRightText = rightStart;
+            comparisonLeftPayload = before;
+            comparisonRightPayload = after;
             comparisonDetails.SelectAll();
             comparisonDetails.SelectionColor = SystemColors.WindowText;
             comparisonDetails.AccessibleDescription = "";

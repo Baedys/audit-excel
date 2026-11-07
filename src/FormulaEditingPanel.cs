@@ -242,12 +242,17 @@ namespace FormulaExplorer
             try
             {
                 RequireFormulaEditWindow();
-                formulaEditTarget = bridge.RetainDependencyRange(book, TraceCellReference(cell));
-                if (formulaDisplayKind == FormulaEditorKind.LegacyArray)
-                    formulaEditArray = bridge.RetainDisplayedFormulaArray(book, cell, formulaEditTarget);
+                if (comparisonTraceOwner != null) OpenComparisonTraceDraft(cell);
+                else
+                {
+                    formulaEditTarget = bridge.RetainDependencyRange(book, TraceCellReference(cell));
+                    if (formulaDisplayKind == FormulaEditorKind.LegacyArray)
+                        formulaEditArray = bridge.RetainDisplayedFormulaArray(book, cell, formulaEditTarget);
+                }
             }
             catch (COMException error) { ReleaseFormulaEditTarget(); status.Text = "Édition indisponible · " + error.Message; return false; }
             catch (InvalidOperationException error) { ReleaseFormulaEditTarget(); status.Text = error.Message; return false; }
+            catch (ArgumentException error) { ReleaseFormulaEditTarget(); status.Text = error.Message; return false; }
             formulaEditFocus = source;
             formulaEditCell = cell;
             formulaEditStyle = formulaCellStyle;
@@ -313,6 +318,10 @@ namespace FormulaExplorer
             formulaEditTarget = formulaEditArray = null;
             ExcelBridge.Release(array);
             ExcelBridge.Release(target);
+            if (comparisonTraceDraft != null) comparisonTraceDraft.Dispose();
+            comparisonTraceDraft = null;
+            comparisonTraceDraftRow = null;
+            comparisonTraceDraftResult = null;
         }
 
         void ApplyFormulaEdit()
@@ -331,6 +340,7 @@ namespace FormulaExplorer
                 RequireFormulaEditWindow();
                 if (formulaEditStyle.Local && !formulaEditStyle.SameLanguage(bridge.ReadFormulaDisplayStyle(true)))
                     throw new InvalidOperationException("La syntaxe locale d’Excel a changé. Rouvrez l’édition pour l’utiliser.");
+                if (comparisonTraceDraft != null) { ApplyComparisonTraceDraft(draft, caret); return; }
                 WorksheetFormulaUndo session = CurrentFormulaUndoSession();
                 long revision = session == null ? 0 : session.Revision;
                 FormulaChange change = bridge.EditDisplayedCell(previous, formulaEditCell, formulaEditTarget, formulaEditArray, draft, formulaEditStyle);
@@ -375,6 +385,7 @@ namespace FormulaExplorer
         void UndoLastFormula()
         {
             if (formulaEditCell != null) { CloseFormulaEdit("Édition abandonnée."); return; }
+            if (comparisonTraceOwner != null) { UndoComparisonTrace(); return; }
             FormulaTraceUndo trace = formulaUndo.Latest();
             if (bridge == null || trace == null) { status.Text = "Aucune édition Clair à annuler."; return; }
             FormulaChange[] changes = trace.Entries.Peek();
@@ -429,7 +440,8 @@ namespace FormulaExplorer
 
         internal void TransferFormulaUndo()
         {
-            if (comparisonDraft != null) return;
+            if (comparisonDraft != null || comparisonTraceOwner != null ||
+                (comparisonTrace != null && comparisonTrace.Child.formulaEditCell != null)) return;
             TransferComparisonUndo();
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             if (session == null) return;
@@ -477,7 +489,8 @@ namespace FormulaExplorer
             if (formulaEditCell == null)
             {
                 if (keyData == Keys.F2 && book != null) { EditSelectedFormula(); return true; }
-                if (keyData == (Keys.Control | Keys.Z) && formulaUndo.Latest() != null) { UndoLastFormula(); return true; }
+                if (keyData == (Keys.Control | Keys.Z) && (formulaUndo.Latest() != null || CanUndoComparisonTrace()))
+                { UndoLastFormula(); return true; }
                 if (keyData == (Keys.Alt | Keys.Enter) && source == formula && !formula.ReadOnly)
                 {
                     formulaCaretBeforeInput = formula.SelectionStart;

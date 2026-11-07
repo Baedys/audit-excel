@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Tracé depuis la comparaison
+
+`CompareForm.OpenFormulaExplorerForm` 230148 choisit les plages du côté actif. Pour une formule, il prend le coin haut gauche du bloc. Common 56608 déduplique les rectangles. L’explorateur 193548 reprend le curseur sur la même formule et 195592 délègue l’écriture au comparateur. Le comparateur 231892 contrôle le rattachement au modèle et 231944 écrit sur le bloc d’origine. Le retour groupe les éditions du tracé dans la pile parente. Ce relevé vient de l’inspection statique d’Arixcel. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Clair garde le tracé et la comparaison dans le même volet. Le témoin couvre le côté actif après échange visuel, la sélection multiple, les antécédents et dépendants hors des plages comparées, les différences dans le texte, le transfert du curseur et le retour au résultat. Il vérifie l’édition du bloc, l’édition d’un antécédent hors bloc, l’annulation dans le tracé et le lot d’annulation dans le comparateur. Si le modèle change après l’ouverture d’un brouillon rattaché, Clair demande de rouvrir l’édition.
+
 ## Édition depuis la comparaison
 
 Dans Arixcel, `KeyDownHandler` 229608 et `StartEditing` 231400 ouvrent l’édition du côté actif en mode Formules. `TreeItem.FormulaEditable` 272168 autorise un sous-écart vide et exclut les lignes de tâche. `FormulaChangeAction` 231944 écrit une formule A1 dans le coin du bloc, la relit en R1C1 puis applique cette formule relative à toute la plage. Une saisie R1C1 ou littérale s’applique directement. Common 40180 et 40888 traitent la matrice historique. 232500 valide et 232832 abandonne le brouillon. L’annulation restaure la plage et réactualise les sous-écarts. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

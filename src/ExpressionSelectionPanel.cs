@@ -141,6 +141,7 @@ namespace FormulaExplorer
                 formula.SelectAll();
                 formula.SelectionFont = formula.Font;
                 formula.SelectionColor = formula.ForeColor;
+                ColorComparedTraceFormula();
                 using (var underlined = new Font(formula.Font, formula.Font.Style | FontStyle.Underline))
                     foreach (TreeNode selected in selectedExpressions)
                     {

@@ -10,6 +10,7 @@ namespace FormulaExplorer
         {
             internal readonly ComparisonRow Row, Parent;
             internal readonly long LeftSheet, RightSheet;
+            internal bool WasResolved;
 
             internal ResolvedCopy(ComparisonRow row, ComparisonRow parent, long leftSheet, long rightSheet)
             { Row = row; Parent = parent; LeftSheet = leftSheet; RightSheet = rightSheet; }
@@ -51,6 +52,8 @@ namespace FormulaExplorer
         {
             var key = Tuple.Create(left, right, row.Left.FirstRow == 0 ? "" : row.Left.Address,
                 row.Right.FirstRow == 0 ? "" : row.Right.Address);
+            ResolvedCopy prior;
+            if (comparisonHistory.TryGetValue(key, out prior) && prior.WasResolved) return;
             comparisonHistory[key] = new ResolvedCopy(ComparisonHistoryGeometry(row),
                 parent == null ? null : ComparisonHistoryGeometry(parent), left, right);
         }
@@ -103,8 +106,15 @@ namespace FormulaExplorer
                     }
                     row = reader(copy.Row);
                 }
-                if (row == null) reopened.Add(entry.Key);
-                else resolved.Add(new KeyValuePair<ResolvedCopy, ComparisonRow>(copy, row));
+                if (row == null)
+                {
+                    if (!copy.WasResolved) reopened.Add(entry.Key);
+                }
+                else
+                {
+                    copy.WasResolved = true;
+                    resolved.Add(new KeyValuePair<ResolvedCopy, ComparisonRow>(copy, row));
+                }
             }
             foreach (var key in reopened) comparisonHistory.Remove(key);
             if (resolved.Count == 0) return active;

@@ -60,6 +60,7 @@ namespace FormulaExplorer
             ConfigureAlignmentActions(bar);
             ConfigureComparisonCopy(bar);
             ConfigureComparisonEditing(bar);
+            ConfigureComparisonTrace(bar);
             bar.Controls.Add(copyComparisonFormats);
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
@@ -101,6 +102,7 @@ namespace FormulaExplorer
                 if (loadingComparisonRows) return;
                 RefreshAlignmentActions(SelectedComparisonRow());
                 RefreshComparisonCopy();
+                RefreshComparisonTraceCommand();
             };
             comparisonTree.NodeMouseDoubleClick += delegate(object sender, TreeNodeMouseClickEventArgs e)
             {
@@ -157,7 +159,10 @@ namespace FormulaExplorer
         }
 
         internal void RefreshComparisonOnFocus()
-        { if (tabs.SelectedIndex == 3) { ShowComparisonReference(); UpdateComparisonSelection(); } }
+        {
+            if (comparisonTrace != null) { comparisonTrace.Child.RefreshFormulaDisplayStyle(true); return; }
+            if (tabs.SelectedIndex == 3) { ShowComparisonReference(); UpdateComparisonSelection(); }
+        }
 
         void ChangeComparisonOption(Action<ComparisonSettings> change)
         {
@@ -270,7 +275,7 @@ namespace FormulaExplorer
             try
             {
                 comparisonTree.Nodes.Clear();
-                comparisonTree.CheckBoxes = ShowingAlignment || (currentComparison != null && !currentComparison.ValuesOnly &&
+                comparisonTree.CheckBoxes = ShowingAlignment || (currentComparison != null &&
                     rows != null && rows.Any(CanCopyComparisonRow));
                 if (rows != null)
                     foreach (ComparisonRow row in rows) comparisonTree.Nodes.Add(ComparisonNode(row));
@@ -330,8 +335,10 @@ namespace FormulaExplorer
             RefreshAlignmentActions(row);
             RefreshComparisonCopy();
             RefreshComparisonEdit();
+            RefreshComparisonTraceCommand();
             RenderComparisonDetails(row);
-            if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 || bridge == null)
+            if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 ||
+                bridge == null || comparisonTrace != null)
             {
                 RemoveTraceHighlightOwner(comparisonHighlightOwner);
                 return;
@@ -368,7 +375,13 @@ namespace FormulaExplorer
         {
             if (tabs.SelectedIndex == 3)
             {
+                if (comparisonTrace != null) return false;
                 if (comparisonDraft != null) return HandleComparisonEditKey(keyData);
+                if ((keyData == (Keys.Control | Keys.Q) || keyData == (Keys.Control | Keys.Shift | Keys.Q)) && CanTraceComparison())
+                {
+                    OpenComparisonTrace((keyData & Keys.Shift) != 0, comparisonDetails.ContainsFocus, false);
+                    return true;
+                }
                 if (keyData == Keys.F2 && CanEditComparison(SelectedComparisonRow()))
                 { StartComparisonEdit(comparisonDetails.ContainsFocus); return true; }
                 if ((keyData == (Keys.Control | Keys.V) || keyData == (Keys.Shift | Keys.Insert)) &&

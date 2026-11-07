@@ -78,7 +78,7 @@ namespace FormulaExplorer
         {
             ComparisonRow row = SelectedComparisonRow();
             if (!CanEditComparison(row)) return false;
-            bool right = fromDetails ? (comparisonDetails.SelectionStart > comparisonSecondSide) != comparisonSwapped : comparisonRight;
+            bool right = fromDetails ? ComparisonDetailRight() : comparisonRight;
             if (!CanEditComparisonSide(row, right))
             {
                 if (fromDetails) return false;

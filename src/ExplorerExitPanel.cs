@@ -89,6 +89,11 @@ namespace FormulaExplorer
                 }
                 else
                 {
+                    if (comparisonTraceOwner != null)
+                    {
+                        comparisonTraceOwner.ReturnFromComparisonTrace(restore);
+                        return true;
+                    }
                     if (restore) TryRestoreExplorerSelection(null, true);
                     Action hide = HideClosedExplorerPane;
                     Close();

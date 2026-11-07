@@ -13,6 +13,7 @@ namespace FormulaExplorer
             internal ExcelBridge.ComparisonCopyReceipt[] Copies;
             internal List<ExcelBridge.ComparisonSheetReceipt> Sheets;
             internal bool Edit;
+            internal ComparisonTraceSession Trace;
             internal bool IsCopy { get { return Alignment == null; } }
             internal int Count { get { return IsCopy ? Copies.Length + (Sheets == null ? 0 : Sheets.Count) : Alignment.Length; } }
             internal void Release()
@@ -92,13 +93,16 @@ namespace FormulaExplorer
         }
 
         void UndoLastComparisonChange()
+        { UndoComparisonChange(true); }
+
+        void UndoComparisonChange(bool selectEditedRange)
         {
             if (bridge == null || comparisonUndo.Count == 0) return;
             ClearComparisonHighlights();
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             bool fresh = session == null || (ReferenceEquals(comparisonUndoOwner, session) && comparisonUndoRevision == session.Revision);
             ComparisonUndo entry = comparisonUndo.Peek();
-            try { UndoComparisonEntry(bridge, entry); }
+            try { UndoComparisonEntry(bridge, entry, selectEditedRange); }
             catch (Exception error)
             {
                 RefreshAfterComparison(currentComparison, "Annulation interrompue · " + error.Message, entry.IsCopy);
@@ -112,12 +116,12 @@ namespace FormulaExplorer
                 entry.IsCopy ? "Dernière copie annulée" : "Dernier alignement annulé", entry.IsCopy);
         }
 
-        static void UndoComparisonEntry(ExcelBridge connection, ComparisonUndo entry)
+        static void UndoComparisonEntry(ExcelBridge connection, ComparisonUndo entry, bool selectEditedRange = true)
         {
             if (!entry.IsCopy) { connection.UndoComparisonAlignment(entry.Alignment); return; }
             if (entry.Sheets != null) connection.ValidateComparisonSheetUndo(entry.Sheets);
             ExcelBridge.UndoComparisonCopies(entry.Copies);
-            if (entry.Edit) entry.Copies[0].SelectEditedRange();
+            if (entry.Edit && selectEditedRange) entry.Copies[entry.Copies.Length - 1].SelectEditedRange();
             foreach (var copy in entry.Copies) copy.Dispose();
             entry.Copies = new ExcelBridge.ComparisonCopyReceipt[0];
             if (entry.Sheets != null) connection.UndoComparisonSheets(entry.Sheets);
@@ -237,7 +241,7 @@ namespace FormulaExplorer
                                 {
                                     ExcelBridge.UndoComparisonCopies(group.SelectMany(entry => entry.Copies).ToArray());
                                     ComparisonUndo lastEdit = group.LastOrDefault(entry => entry.Edit);
-                                    if (lastEdit != null) edited = lastEdit.Copies[0];
+                                    if (lastEdit != null) edited = lastEdit.Copies[lastEdit.Copies.Length - 1];
                                 }
                                 else connection.UndoComparisonAlignment(group.SelectMany(entry => entry.Alignment));
                                 completed = end;
@@ -274,6 +278,8 @@ namespace FormulaExplorer
                         }
                         else if (failure != null)
                         { status.Text = "Annulation interrompue · " + failure; RefreshAlignmentActions(SelectedComparisonRow()); }
+                        if (comparisonTrace != null) comparisonTrace.Child.RefreshComparisonChildModel(
+                            failure == null ? "Édition du tracé annulée depuis Excel" : "Annulation interrompue · " + failure);
                     }))
                 {
                     comparisonUndo.Clear();

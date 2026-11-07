@@ -14,7 +14,8 @@ namespace FormulaExplorer
         Control shortcutFocus;
         Func<Control, bool> shortcutControlFocus = control => control.Focus();
         internal Func<bool> LeaveExplorerForWorksheet;
-        internal bool HasWorksheetShortcutTrace { get { return IsDocked && book != null && root != null && !IsDisposed; } }
+        internal bool HasWorksheetShortcutTrace
+        { get { return comparisonTrace != null ? comparisonTrace.Child.HasWorksheetShortcutTrace : IsDocked && book != null && root != null && !IsDisposed; } }
 
         void ResetExplorerNavigation()
         {
@@ -67,6 +68,7 @@ namespace FormulaExplorer
 
         internal bool ResumeExplorerFromWorksheet()
         {
+            if (comparisonTrace != null) return comparisonTrace.Child.ResumeExplorerFromWorksheet();
             if (!HasWorksheetShortcutTrace || !Visible) return false;
             if (formulaEditCell != null) return shortcutControlFocus(formulaEditor);
             SelectExplorerTab(reverse);

@@ -262,7 +262,8 @@ namespace FormulaExplorer
             traceEngine = nextTrace;
             mapAnalysis = nextMap;
             highlightTraceCells.Enabled = bridge != null;
-            title.Text = IsDocked ? book.Name : "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
+            title.Text = comparisonTraceOwner != null ? comparisonTraceOwner.comparisonTrace.Title :
+                IsDocked ? book.Name : "CLAIR  /  " + book.Name + "\nExploration des formules et dépendances · capture " + book.Captured.ToString("HH:mm:ss");
             sheets.Items.Clear(); foreach (string item in book.Sheets.OrderBy(s => s)) sheets.Items.Add(item);
             sheets.SelectedItem = sheet;
             if (sheets.SelectedIndex < 0 && sheets.Items.Count > 0) sheets.SelectedIndex = 0;
@@ -318,7 +319,11 @@ namespace FormulaExplorer
         }
         void Back()
         {
-            if (history.Count == 0) return;
+            if (history.Count == 0)
+            {
+                if (comparisonTraceOwner != null) comparisonTraceOwner.ReturnFromComparisonTrace(false);
+                return;
+            }
             RemoveTraceHighlightOwner(traceHighlightOwner);
             ExplorerHistory previous = history.Pop();
             MergeFormulaUndoInto(previous.FormulaUndo);
@@ -345,6 +350,14 @@ namespace FormulaExplorer
         internal void ExecuteDockedRibbonCommand(string command)
         {
             if (formulaEditCell != null) { status.Text = FormulaEditingHint; return; }
+            if (comparisonTrace != null)
+            {
+                if (comparisonTrace.Child.formulaEditCell != null)
+                { comparisonTrace.Child.status.Text = FormulaEditingHint; return; }
+                if (command == "back") { comparisonTrace.Child.Back(); return; }
+                ReturnFromComparisonTrace(false);
+                if (comparisonTrace != null) return;
+            }
             if (command == "precedents" || command == "dependents")
             {
                 SelectExplorerTab(command == "dependents");
