@@ -183,8 +183,11 @@ static class Tests
         Check("Comparison text spans and display", ComparisonTextDifferenceTests.Run);
         Check("Comparison alignment and matching", ComparisonAlignmentTests.Run);
         Check("Comparison sheet formula relinking", ExcelComparisonSheetTests.RunLocalization);
+        Check("Layout utility settings", ExcelLayoutUtilityTests.RunSettings);
         if (args.Contains("--excel"))
         {
+            Check("Excel layout utilities", ExcelLayoutUtilityTests.Run);
+            Check("Excel new window view preservation", ExcelUtilityWindowTests.Run);
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
             Check("Excel comparison formula editing", ExcelComparisonEditingTests.Run);
             Check("Excel comparison formula traces", ExcelComparisonTraceTests.Run);

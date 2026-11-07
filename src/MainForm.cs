@@ -135,6 +135,7 @@ namespace FormulaExplorer
             };
 
             ConfigureComparison(compareTab);
+            ConfigureLayoutUtilities();
             warnings.Dock = DockStyle.Fill; warnings.Multiline = true; warnings.ReadOnly = true; warnings.ScrollBars = ScrollBars.Vertical; warnings.BackColor = Color.FromArgb(255, 249, 231); warnings.Font = new Font(Font.FontFamily, 9);
             layout.Controls.Add(warnings, 0, 3);
             status.Dock = DockStyle.Fill; status.ForeColor = Color.DimGray; layout.Controls.Add(status, 0, 4);
@@ -365,7 +366,7 @@ namespace FormulaExplorer
                 LoadExcel(); return;
             }
             ExecuteRibbonCommand(command);
-            if (book == null && command != "map-palette" && command != "compare") LoadExcel();
+            if (book == null && command != "map-palette" && command != "compare" && command != "utilities") LoadExcel();
         }
         public void ExecuteRibbonCommand(string command)
         {
@@ -380,6 +381,7 @@ namespace FormulaExplorer
                     case "map-palette": ToggleMapPalette(); break;
                     case "flow": tabs.SelectedIndex = 2; break;
                     case "compare": tabs.SelectedIndex = 3; ShowComparisonReference(); break;
+                    case "utilities": tabs.SelectedIndex = 4; LoadLayoutOptions(); break;
                     case "refresh": LoadExcel(); break;
                     default: throw new ArgumentException("Commande inconnue : " + command);
                 }

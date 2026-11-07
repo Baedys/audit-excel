@@ -444,6 +444,7 @@ namespace FormulaExplorer
             if (activeComparisonRun != null) return;
             if (comparisonDraft != null || comparisonTraceOwner != null ||
                 (comparisonTrace != null && comparisonTrace.Child.formulaEditCell != null)) return;
+            TransferLayoutUndo();
             TransferComparisonUndo();
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             if (session == null) return;

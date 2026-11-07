@@ -147,6 +147,19 @@ Dans une comparaison de classeurs, **Copier** peut aussi créer les onglets manq
 
 Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle exposée par `GetActiveObject`. Le nom du classeur capturé est affiché en haut. Les noms de classeurs non enregistrés ne constituent pas une identité durable entre plusieurs instances.
 
+## Utilitaires de mise en page
+
+Le bouton **Mise en page** du ruban ouvre l’onglet **Utilitaires** du volet. Choisissez la commande, son axe ou son périmètre, puis **Appliquer**. Les paramètres sont enregistrés dans les préférences locales de Clair. Le périmètre initial correspond aux feuilles sélectionnées, le zoom initial à 100 et l’ajustement initial aux colonnes.
+
+- **Aligner les largeurs sur la référence** utilise la feuille définie dans Comparer et cible les autres feuilles sélectionnées. Toutes les colonnes sont concernées. Le capteur Arixcel exécuté sur le poste de validation retient la première largeur d’une bande hétérogène et uniformise ses cibles. Cette version reproduit ce comportement, signalé dans le volet.
+- **Ajuster automatiquement** traite les colonnes ou lignes de la sélection, sur les feuilles groupées. Le contenu de l’axe entier participe au calcul, y compris hors de la sélection.
+- **Régler le zoom** accepte un niveau invariant, avec un point décimal, pour les feuilles sélectionnées ou toutes les feuilles visibles du classeur.
+- **Basculer le quadrillage** applique l’inverse de la vue active aux feuilles ciblées. Comme Arixcel, son annulation applique un inverse uniforme aux mêmes cibles.
+- **Masquer les sauts de page** retire les pointillés d’affichage des feuilles ciblées et conserve les sauts d’impression définis.
+- **Nouvelle fenêtre avec les mêmes vues** reprend les réglages des feuilles visibles, leurs sélections et défilements, puis la feuille active et le groupe d’onglets.
+
+Le bouton d’annulation indique la dernière commande réversible. **Ctrl+Z** fonctionne aussi dans le volet et conserve l’annulation du texte dans le champ de zoom. Les reçus quittant le volet sont transmis au rappel d’annulation Excel. Le masquage des pointillés et la création d’une fenêtre suivent les commandes sans reçu d’annulation d’Arixcel. Le gestionnaire complet de variantes et de cycles de raccourcis reste à porter.
+
 ## Tests
 
 ```powershell

@@ -229,6 +229,8 @@ W6 décrit des utilitaires paramétrables, plusieurs variantes d'une action, rac
 
 Tous les groupes suivants sont **absents** de la base inspectée :
 
+La branche de développement ajoute les six actions U01 dans le volet Utilitaires, ouvert depuis le ruban. Les scopes de feuilles, axes et valeurs de zoom sont persistants. Les dimensions, le zoom et le quadrillage disposent de reçus d’annulation. La nouvelle fenêtre reprend les vues de feuilles et le groupe. Le relevé natif des largeurs peut uniformiser une bande hétérogène sur le poste de validation. La reconstruction conserve ce comportement dans l’attente du choix de l’utilisateur. La configuration de variantes, l’import/export et les cycles U06 restent ouverts. [Validation des utilitaires](VALIDATION.md)
+
 | ID | Famille / méthodes observées E3 | Acceptation requise |
 | --- | --- | --- |
 | U01 | Mise en page : `ColumnWidths`, `AutoFit`, `Zoom`, `ToggleGridlines`, `RemovePageBreaks`, `NewWindow`. | Périmètre de feuilles correct, paramètres persistants, absence d'effet sur classeur non ciblé. |

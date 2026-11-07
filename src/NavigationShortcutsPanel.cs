@@ -52,6 +52,9 @@ namespace FormulaExplorer
             if (activeComparisonRun != null && keyData == Keys.Escape)
             { activeComparisonRun.Cancel(); return true; }
             if (activeComparisonRun != null && (keyData & (Keys.Alt | Keys.Control)) != Keys.None) return true;
+            if (tabs.SelectedIndex == 4 && keyData == (Keys.Control | Keys.Z) && layoutUndo.Count != 0 &&
+                !(Control.FromChildHandle(message.HWnd) is TextBoxBase))
+            { UndoLayoutUtility(); return true; }
             Control source = keyData == Keys.Enter || keyData == (Keys.Alt | Keys.Enter) ? Control.FromChildHandle(message.HWnd) : null;
             if (!(keyData == Keys.Enter && source is ButtonBase) && HandleComparisonKey(keyData)) return true;
             if (!(source is ButtonBase) && HandleFormulaEditingKey(keyData, source)) return true;

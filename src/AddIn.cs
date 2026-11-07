@@ -49,7 +49,7 @@ namespace FormulaExplorer
                 "<menu id=\"ClairFlowColors\" label=\"Flux\"><button id=\"ClairFlowRemove\" label=\"Retirer tous les flux\" onAction=\"RemoveFlowColors\"/><button id=\"ClairFlowKeep\" label=\"Rendre les flux permanents…\" onAction=\"KeepFlowColors\"/></menu>" +
                 "<menu id=\"ClairMapColors\" label=\"Cartes\"><button id=\"ClairMapRemove\" label=\"Retirer toutes les cartes\" onAction=\"RemoveMapColors\"/><button id=\"ClairMapKeep\" label=\"Rendre les cartes permanentes…\" onAction=\"KeepMapColors\"/></menu>" +
                 "<button id=\"ClairRestoreColors\" label=\"Couleurs enregistrées…\" onAction=\"RestoreSavedColors\"/>" +
-                "</group></tab></tabs></ribbon></customUI>";
+                "</group><group id=\"ClairUtilities\" label=\"Utilitaires\"><button id=\"ClairLayoutUtilities\" label=\"Mise en page\" size=\"large\" imageMso=\"PageSetupDialog\" onAction=\"ShowUtilities\"/></group></tab></tabs></ribbon></customUI>";
         }
         public void OnConnection(object app, int connectMode, object addIn, ref Array custom)
         {
@@ -87,6 +87,7 @@ namespace FormulaExplorer
         public void ShowMapPalette([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("map-palette"); }
         public void ShowFlow([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("flow"); }
         public void ShowComparison([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("compare"); }
+        public void ShowUtilities([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("utilities"); }
         public void CloseAll([MarshalAs(UnmanagedType.IDispatch)] object control) { ClosePanes(false); }
     }
 }
