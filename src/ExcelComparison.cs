@@ -13,14 +13,17 @@ namespace FormulaExplorer
             readonly string[] addresses;
             readonly object[] ranges;
 
-            internal ComparisonRangeTargets(ExcelBridge bridge, Reference[] targets)
+            internal ComparisonRangeTargets(ExcelBridge bridge, Reference[] targets, ComparisonRun run)
             {
                 addresses = targets.Select(target => target.Address).ToArray();
                 ranges = new object[targets.Length];
                 try
                 {
                     for (int i = 0; i < targets.Length; i++)
+                    {
+                        if (run != null) run.Checkpoint();
                         ranges[i] = bridge.RetainDependencyRange(targets[i].Workbook, targets[i]);
+                    }
                 }
                 catch { Dispose(); throw; }
             }
@@ -55,6 +58,7 @@ namespace FormulaExplorer
         object comparisonRange;
         internal ComparisonScope ReferenceScope { get; private set; }
         internal readonly ComparisonSettings ComparisonOptions = new ComparisonSettings();
+        internal ComparisonRun ActiveComparisonRun;
 
         internal string ComparisonReferenceLabel
         {
@@ -95,16 +99,18 @@ namespace FormulaExplorer
             }
         }
 
-        internal ComparisonResult CompareSelection()
+        internal ComparisonResult CompareSelection(ComparisonRun run)
         {
             if (comparisonBook == null) throw new InvalidOperationException("Définissez d’abord une référence Excel.");
-            return CompareSelectionFor(ActiveDirectHighlightBook(), ReferenceScope == ComparisonScope.Worksheet ? ActiveComparisonSheets(true) : null);
+            return CompareSelectionFor(ActiveDirectHighlightBook(), ReferenceScope == ComparisonScope.Worksheet ? ActiveComparisonSheets(true) : null,
+                run: run);
         }
 
         ComparisonResult CompareSelectionFor(Book right, string[] selectedSheets, ComparisonRangeTargets retainedTargets = null,
-            ComparisonSettings storedOptions = null)
+            ComparisonSettings storedOptions = null, ComparisonRun run = null)
         {
             Book savedReference = comparisonBook;
+            if (run != null) run.Checkpoint();
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
             ComparisonSettings options = storedOptions ?? ComparisonOptions.Snapshot();
             bool valuesOnly = options.ValuesOnly, relative = options.Relative, ignoreInputs = options.IgnoreInputs;
@@ -130,27 +136,30 @@ namespace FormulaExplorer
                         return clipped.Single || (height == 1 && columns == 1) || (width == 1 && rows == 1)
                             ? LiveComparison.Expand(clipped, Math.Max(height, rows), Math.Max(width, columns)) : clipped;
                     }).ToList();
-                    CaptureComparisonAreas(areas);
+                    CaptureComparisonAreas(areas, run);
                     rangeTargets = areas.SelectMany(area => TileComparisonArea(area, ComparisonTileCells(area), height, width))
                         .GroupBy(area => area.Address, StringComparer.Ordinal).Select(group => group.First()).ToArray();
                 }
                 else
                 {
                     rangeTargets = retainedTargets.Read(this, right);
-                    CaptureComparisonAreas(rangeTargets);
+                    CaptureComparisonAreas(rangeTargets, run);
                 }
-                CaptureComparisonAreas(new[] { source });
+                CaptureComparisonAreas(new[] { source }, run);
                 if (rangeTargets.Length == 0) throw new InvalidOperationException("Aucun bloc de cellules comparable dans la sélection.");
                 if (rangeTargets.Length == 1 && DependencyWorkbookIdentity(left) == DependencyWorkbookIdentity(right) &&
                     String.Equals(source.Sheet, rangeTargets[0].Sheet, StringComparison.OrdinalIgnoreCase) && source.Address == rangeTargets[0].Address)
                     throw new InvalidOperationException("Sélectionnez une autre plage à comparer.");
-                foreach (Reference target in rangeTargets)
+                for (int index = 0; index < rangeTargets.Length; index++)
                 {
+                    Reference target = rangeTargets[index];
                     ComparisonTask task = result.AddTask(source, target);
-                    CompareTask(result, result.Differences, task, left.Cells.Values, ComparisonTileCells(target));
-                    if (task.Failure == null) result.ComparedAreas.Add(new KeyValuePair<Reference, Reference>(source, target));
+                    CompareTask(result, result.Differences, task, left.Cells.Values, ComparisonTileCells(target), run,
+                        index + 1, rangeTargets.Length);
+                    if (!task.Incomplete) result.ComparedAreas.Add(new KeyValuePair<Reference, Reference>(source, target));
                 }
-                result.RangeTargets = retainedTargets ?? new ComparisonRangeTargets(this, rangeTargets);
+                RequireSameComparisonReference(savedReference);
+                result.RangeTargets = retainedTargets ?? new ComparisonRangeTargets(this, rangeTargets, run);
                 ComparisonRangeTargets originalTargets = result.RangeTargets;
                 result.RequireReference = () =>
                 {
@@ -160,14 +169,14 @@ namespace FormulaExplorer
                         throw new InvalidOperationException("La plage de référence a changé. Définissez-la de nouveau.");
                     originalTargets.Read(this, right);
                 };
-                Func<ComparisonSettings, ComparisonResult> repeatRange = settings =>
+                Func<ComparisonSettings, ComparisonRun, ComparisonResult> repeatRange = (settings, progress) =>
                 {
                     RequireSameComparisonReference(savedReference);
                     Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
-                    return CompareSelectionFor(current, null, originalTargets, settings);
+                    return CompareSelectionFor(current, null, originalTargets, settings, progress);
                 };
-                result.Recompare = () => repeatRange(null);
-                result.Rerun = () => repeatRange(options);
+                result.Recompare = () => repeatRange(null, null);
+                result.Rerun = progress => repeatRange(options, progress);
                 return result;
             }
 
@@ -178,8 +187,11 @@ namespace FormulaExplorer
                     throw new InvalidOperationException("La feuille de référence a été supprimée.");
                 bool sameBook = DependencyWorkbookIdentity(left) == DependencyWorkbookIdentity(right);
                 foreach (string sheet in selectedSheets)
+                {
+                    if (run != null) run.Checkpoint();
                     if (!sameBook || !String.Equals(leftName, sheet, StringComparison.OrdinalIgnoreCase))
                         AddComparisonSheet(result, leftName, sheet);
+                }
                 if (result.Tasks.Count == 0) throw new InvalidOperationException("Sélectionnez une autre feuille à comparer.");
                 result.SharedAlignmentReference = result.Tasks.Count > 1;
             }
@@ -195,6 +207,7 @@ namespace FormulaExplorer
                 var afterNames = afterSheets.ToDictionary(tab => tab.Name, StringComparer.OrdinalIgnoreCase);
                 foreach (ComparisonTab tab in beforeSheets.Where(tab => tab.IsSupported))
                 {
+                    if (run != null) run.Checkpoint();
                     ComparisonTab match;
                     if (!afterNames.TryGetValue(tab.Name, out match)) result.Differences.Add(UnmatchedSheet(SheetLocation(left, tab.Name), null, right, tab.Identity));
                     else if (tab.IsWorksheet && match.IsWorksheet) AddComparisonSheet(result, tab.Name, match.Name);
@@ -203,14 +216,21 @@ namespace FormulaExplorer
                 foreach (ComparisonTab tab in afterSheets.Where(tab => tab.IsSupported && !beforeNames.Contains(tab.Name)))
                     result.Differences.Add(UnmatchedSheet(null, SheetLocation(right, tab.Name), left, tab.Identity));
             }
-            CaptureComparisonSheets(result);
+            CaptureComparisonSheets(result, run);
             var leftCells = left.Cells.Values.ToLookup(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase);
             var rightCells = right.Cells.Values.ToLookup(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase);
             if (options.CheckAlignment)
             {
                 var leftBoundaries = new Dictionary<string, IReadOnlyList<Rectangle>>(StringComparer.OrdinalIgnoreCase);
-                foreach (ComparisonTask task in result.Tasks.Where(item => !item.Ignored && item.Failure == null))
+                ComparisonTask[] tasks = result.Tasks.Where(item => !item.Ignored && item.Failure == null).ToArray();
+                for (int index = 0; index < tasks.Length; index++)
                 {
+                    ComparisonTask task = tasks[index];
+                    if (run != null)
+                    {
+                        run.BeginTask(ComparisonStage.Alignment, index + 1, tasks.Length, task.Right.Sheet, valuesOnly);
+                        if (!run.Checkpoint()) break;
+                    }
                     Reference a = task.Left, b = task.Right;
                     int row = Math.Min(a.FirstRow, b.FirstRow), col = Math.Min(a.FirstColumn, b.FirstColumn);
                     IReadOnlyList<Rectangle> boundaries;
@@ -219,11 +239,13 @@ namespace FormulaExplorer
                     var first = Reference.FromBounds(a.Sheet, row, col, a.LastRow, a.LastColumn, left);
                     var second = Reference.FromBounds(b.Sheet, row, col, b.LastRow, b.LastColumn, right);
                     var gaps = new List<ComparisonAlignmentGap>();
-                    if (!ComparisonAlignment.Detect(first, leftCells[a.Sheet], boundaries,
-                        second, rightCells[b.Sheet], ComparisonAlignmentBoundaries(b.Workbook, b.Sheet), gaps))
+                    if (!ComparisonAlignment.DetectWithProgress(first, leftCells[a.Sheet], boundaries,
+                        second, rightCells[b.Sheet], ComparisonAlignmentBoundaries(b.Workbook, b.Sheet), gaps, run) &&
+                        (run == null || !run.Stopping))
                         result.AlignmentLimited = true;
                     foreach (ComparisonAlignmentGap gap in gaps) result.Alignment.Add(ComparisonAlignmentRow(first, second, gap));
                 }
+                result.AlignmentInterrupted = run != null && run.Stopping;
             }
             foreach (ComparisonTask task in result.Tasks.Where(item => !item.Ignored && item.Failure == null))
             {
@@ -234,16 +256,21 @@ namespace FormulaExplorer
                 task.Right = Reference.FromBounds(b.Sheet, row, col, lastRow, lastCol, right);
                 result.ComparedAreas.Add(new KeyValuePair<Reference, Reference>(task.Left, task.Right));
             }
-            result.CompareSheets = rows =>
+            result.CompareSheets = (rows, progress) =>
             {
-                foreach (ComparisonTask task in result.Tasks.Where(item => !item.Ignored && item.Failure == null))
+                ComparisonTask[] tasks = result.Tasks.Where(item => !item.Ignored && item.Failure == null).ToArray();
+                for (int index = 0; index < tasks.Length; index++)
                 {
-                    CompareTask(result, rows, task, leftCells[task.Left.Sheet], rightCells[task.Right.Sheet]);
-                    if (task.Failure != null)
-                        result.ComparedAreas.Remove(new KeyValuePair<Reference, Reference>(task.Left, task.Right));
+                    ComparisonTask task = tasks[index];
+                    CompareTask(result, rows, task, leftCells[task.Left.Sheet], rightCells[task.Right.Sheet], progress,
+                        index + 1, tasks.Length);
                 }
+                RequireSameComparisonReference(savedReference);
+                var incomplete = new HashSet<Reference>(tasks.Where(task => task.Incomplete).Select(task => task.Right));
+                result.ComparedAreas.RemoveAll(pair => incomplete.Contains(pair.Value));
             };
-            Func<ComparisonSettings, ComparisonResult> repeatSheets = settings =>
+            RequireSameComparisonReference(savedReference);
+            Func<ComparisonSettings, ComparisonRun, ComparisonResult> repeatSheets = (settings, progress) =>
             {
                 RequireSameComparisonReference(savedReference);
                 Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
@@ -255,10 +282,10 @@ namespace FormulaExplorer
                         throw new InvalidOperationException("Une feuille comparée a été supprimée. Lancez une nouvelle comparaison.");
                     sheets = selectedSheets.Select(sheet => names[sheet]).ToArray();
                 }
-                return CompareSelectionFor(current, sheets, null, settings);
+                return CompareSelectionFor(current, sheets, null, settings, progress);
             };
-            result.Recompare = () => repeatSheets(null);
-            result.Rerun = () => repeatSheets(options);
+            result.Recompare = () => repeatSheets(null, null);
+            result.Rerun = progress => repeatSheets(options, progress);
             return result;
         }
 
@@ -286,17 +313,23 @@ namespace FormulaExplorer
         }
 
         static void CompareTask(ComparisonResult result, List<ComparisonRow> rows, ComparisonTask task,
-            IEnumerable<Cell> left, IEnumerable<Cell> right)
+            IEnumerable<Cell> left, IEnumerable<Cell> right, ComparisonRun run, int index, int count)
         {
+            if (run != null)
+            {
+                run.BeginTask(ComparisonStage.Task, index, count,
+                    result.FullSheets ? task.Right.Sheet : task.Right.Sheet + "!" + task.Right.Address, result.ValuesOnly);
+                if (!run.Checkpoint()) { task.Interrupted = true; return; }
+            }
             try
             {
                 LiveComparison.Compare(rows, task.Left, left, task.Right, right, result.ValuesOnly, result.Relative,
-                    result.IgnoreInputs, result.Tolerance, task);
+                    result.IgnoreInputs, result.Tolerance, task, run);
             }
             catch (InvalidOperationException error) { task.Failure = error.Message; }
         }
 
-        void CaptureComparisonSheets(ComparisonResult result)
+        void CaptureComparisonSheets(ComparisonResult result, ComparisonRun run)
         {
             var leftCaptured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var rightCaptured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -305,22 +338,23 @@ namespace FormulaExplorer
             {
                 try
                 {
-                    CaptureComparisonArea(task.Left, leftCaptured, ref leftCount);
-                    CaptureComparisonArea(task.Right, rightCaptured, ref rightCount);
+                    CaptureComparisonArea(task.Left, leftCaptured, ref leftCount, run);
+                    CaptureComparisonArea(task.Right, rightCaptured, ref rightCount, run);
                 }
                 catch (COMException error) { task.Failure = error.Message; }
                 catch (InvalidOperationException error) { task.Failure = error.Message; }
             }
         }
 
-        void CaptureComparisonArea(Reference area, HashSet<string> captured, ref long scanned)
+        void CaptureComparisonArea(Reference area, HashSet<string> captured, ref long scanned, ComparisonRun run)
         {
+            if (run != null) run.Checkpoint();
             string key = Book.Key(area.Sheet, area.Address);
             if (captured.Contains(key)) return;
             long count = scanned;
             AtDirectCell(area.Workbook, area.Sheet, area.Address, delegate(object sheet, object range)
             {
-                CaptureRange(area.Workbook, sheet, range, ref count, false, true);
+                CaptureRange(area.Workbook, sheet, range, ref count, false, true, run);
                 return true;
             });
             scanned = count;
@@ -381,11 +415,11 @@ namespace FormulaExplorer
             });
         }
 
-        void CaptureComparisonAreas(IEnumerable<Reference> regions)
+        void CaptureComparisonAreas(IEnumerable<Reference> regions, ComparisonRun run)
         {
             long scanned = 0;
             var captured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Reference region in regions) CaptureComparisonArea(region, captured, ref scanned);
+            foreach (Reference region in regions) CaptureComparisonArea(region, captured, ref scanned, run);
         }
 
         static IEnumerable<Cell> ComparisonTileCells(Reference area)

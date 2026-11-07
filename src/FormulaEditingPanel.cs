@@ -440,6 +440,7 @@ namespace FormulaExplorer
 
         internal void TransferFormulaUndo()
         {
+            if (activeComparisonRun != null) return;
             if (comparisonDraft != null || comparisonTraceOwner != null ||
                 (comparisonTrace != null && comparisonTrace.Child.formulaEditCell != null)) return;
             TransferComparisonUndo();

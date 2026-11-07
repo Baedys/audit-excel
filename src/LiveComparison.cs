@@ -21,16 +21,16 @@ namespace FormulaExplorer
     {
         internal readonly List<ComparisonRow> Differences = new List<ComparisonRow>();
         internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
-        internal bool AlignmentLimited, SharedAlignmentReference, ValuesOnly, Relative, IgnoreInputs, FullSheets;
+        internal bool AlignmentLimited, AlignmentInterrupted, SharedAlignmentReference, ValuesOnly, Relative, IgnoreInputs, FullSheets;
         internal ComparisonScope Scope;
         internal double Tolerance;
         internal readonly List<ComparisonTask> Tasks = new List<ComparisonTask>();
         internal Book LeftWorkbook, RightWorkbook;
         internal Dictionary<string, long> LeftTabs, RightTabs;
         internal readonly List<KeyValuePair<Reference, Reference>> ComparedAreas = new List<KeyValuePair<Reference, Reference>>();
-        internal Action<List<ComparisonRow>> CompareSheets;
+        internal Action<List<ComparisonRow>, ComparisonRun> CompareSheets;
         internal Func<ComparisonResult> Recompare;
-        internal Func<ComparisonResult> Rerun;
+        internal Func<ComparisonRun, ComparisonResult> Rerun;
         internal Action RequireReference;
         internal ExcelBridge.ComparisonRangeTargets RangeTargets;
 
@@ -41,12 +41,23 @@ namespace FormulaExplorer
             return task;
         }
 
-        internal List<ComparisonRow> ReadDifferences()
+        internal List<ComparisonRow> ReadDifferences(ComparisonRun run = null)
         {
             if (CompareSheets != null)
             {
                 var paired = new List<ComparisonRow>();
-                CompareSheets(paired);
+                var initial = Tasks.Select(task => new { Task = task, task.Failure, task.Interrupted, task.BlockInterrupted }).ToArray();
+                try { CompareSheets(paired, run); }
+                catch
+                {
+                    foreach (var state in initial)
+                    {
+                        state.Task.Failure = state.Failure;
+                        state.Task.Interrupted = state.Interrupted;
+                        state.Task.BlockInterrupted = state.BlockInterrupted;
+                    }
+                    throw;
+                }
                 Differences.AddRange(paired);
                 CompareSheets = null;
             }
@@ -58,7 +69,9 @@ namespace FormulaExplorer
     {
         internal Reference Left, Right;
         internal bool Ignored;
+        internal bool Interrupted, BlockInterrupted;
         internal string Failure;
+        internal bool Incomplete { get { return Interrupted || BlockInterrupted || Failure != null; } }
 
         internal ComparisonTask(Reference left, Reference right)
         { Left = left; Right = right; }
@@ -77,7 +90,7 @@ namespace FormulaExplorer
         internal long MissingSheetIdentity;
         internal List<ComparisonRow> Children;
         internal ComparisonAlignmentGap Alignment;
-        internal bool Resolved, HistoryGroup;
+        internal bool Resolved, HistoryGroup, Interrupted;
         internal ComparisonPreview LeftPreview, RightPreview;
 
         internal ComparisonRow WithResolution(Reference left, Reference right, string before, string after)
@@ -140,34 +153,49 @@ namespace FormulaExplorer
 
         internal static void Compare(List<ComparisonRow> result, Reference left, IEnumerable<Cell> leftCells,
             Reference right, IEnumerable<Cell> rightCells, bool valuesOnly, bool relative, bool ignoreInputs, double tolerance,
-            ComparisonTask task = null)
+            ComparisonTask task = null, ComparisonRun run = null)
         {
             var cells = new PairedCells(left, leftCells, right, rightCells);
             var scope = Rectangle.FromLTRB(0, 0, left.LastColumn - left.FirstColumn + 1, left.LastRow - left.FirstRow + 1);
-            foreach (Rectangle block in ComparisonAreaScanner.Scan(scope, cells.Points(scope),
-                point => Different(cells.Read(point), valuesOnly, relative, ignoreInputs, tolerance), (anchor, point) => true))
+            Func<int, int, bool> checkpoint = run == null ? (Func<int, int, bool>)null : run.ScanRow;
+            var blocks = ComparisonAreaScanner.ScanWithProgress(scope, cells.Points(scope),
+                point => Different(cells.Read(point), valuesOnly, relative, ignoreInputs, tolerance), (anchor, point) => true, checkpoint);
+            if (run != null && run.Interrupted) task.Interrupted = true;
+            for (int index = 0; index < blocks.Count; index++)
             {
-                var parts = ComparisonAreaScanner.Scan(block, cells.Points(block),
-                    point => Include(cells.Read(point), valuesOnly, ignoreInputs, point.X == block.Left),
-                    (anchor, point) => SameSignature(cells.Read(anchor), cells.Read(point), valuesOnly, tolerance));
+                if (run != null && run.Stopping) break;
+                Rectangle block = blocks[index];
+                if (run != null) run.BeginBlock(index + 1, blocks.Count);
+                bool scanBlock = run == null || run.Checkpoint();
                 var children = new List<ComparisonRow>();
-                foreach (Rectangle part in parts)
+                if (scanBlock)
                 {
-                    CellPair anchor = cells.Read(part.Location);
-                    var row = CreateRow(left, right, part, valuesOnly ? "Valeur" : anchor.HasFormula ? "Formule" : "Entrée");
-                    row.Task = task;
-                    SetPreviews(row, cells, part, anchor, valuesOnly, relative);
-                    children.Add(row);
+                    var parts = ComparisonAreaScanner.ScanWithProgress(block, cells.Points(block),
+                        point => Include(cells.Read(point), valuesOnly, ignoreInputs, point.X == block.Left),
+                        (anchor, point) => SameSignature(cells.Read(anchor), cells.Read(point), valuesOnly, tolerance), checkpoint);
+                    foreach (Rectangle part in parts)
+                    {
+                        if (run != null) run.ThrowIfCancelled();
+                        CellPair anchor = cells.Read(part.Location);
+                        var row = CreateRow(left, right, part, valuesOnly ? "Valeur" : anchor.HasFormula ? "Formule" : "Entrée");
+                        row.Task = task;
+                        SetPreviews(row, cells, part, anchor, valuesOnly, relative);
+                        children.Add(row);
+                    }
                 }
-                if (children.Count == 1) result.Add(children[0]);
-                else if (children.Count > 1)
+                bool interrupted = run != null && run.Interrupted;
+                if (interrupted) task.BlockInterrupted = true;
+                if (children.Count == 1 && !interrupted) result.Add(children[0]);
+                else if (children.Count > 1 || interrupted)
                 {
                     var row = CreateRow(left, right, block, "Bloc");
                     row.Task = task;
                     row.Children = children;
+                    row.Interrupted = interrupted;
                     result.Add(row);
                 }
             }
+            if (run != null && run.Stopping) task.Interrupted = true;
         }
 
         static bool? Different(CellPair pair, bool values, bool relative, bool ignoreInputs, double tolerance)

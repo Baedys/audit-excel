@@ -283,6 +283,7 @@ namespace FormulaExplorer
         {
             base.OnFormClosing(e);
             if (e.Cancel) return;
+            if (activeComparisonRun != null) activeComparisonRun.Cancel();
             try
             {
                 ReturnFromComparisonTrace(false, false);

@@ -20,7 +20,7 @@ namespace FormulaExplorer
 
         static bool CanCopyComparisonRow(ComparisonRow row)
         {
-            return row != null && !row.Resolved && row.Alignment == null && (row.MissingSheetWorkbook != null ||
+            return row != null && !row.Resolved && !row.Interrupted && row.Alignment == null && (row.MissingSheetWorkbook != null ||
                 (row.Left != null && row.Right != null && row.Left.FirstRow > 0 && row.Right.FirstRow > 0));
         }
 

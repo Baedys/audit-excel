@@ -194,7 +194,8 @@ namespace FormulaExplorer
             finally { Release(names); Release(worksheets); }
         }
 
-        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned, bool recordUsedRange = false, bool modernRelative = false)
+        void CaptureRange(Book book, object worksheet, object usedObject, ref long scanned, bool recordUsedRange = false,
+            bool modernRelative = false, ComparisonRun run = null)
         {
             object rows = null, columns = null;
             dynamic used = usedObject; string sheet = (string)((dynamic)worksheet).Name;
@@ -232,6 +233,7 @@ namespace FormulaExplorer
                 HashSet<string> validationCells = SpecialCellAddresses(used, -4174, startRow, startCol, height, width);
                 for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
                 {
+                    if (run != null && x == 0 && (y & 15) == 0) run.Checkpoint();
                     object value = At(values, y, x);
                     string address = Coordinates.Address(startRow + y, startCol + x);
                     bool hasFormula = formulaCells.Contains(address);

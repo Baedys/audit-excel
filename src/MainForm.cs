@@ -349,6 +349,7 @@ namespace FormulaExplorer
         }
         internal void ExecuteDockedRibbonCommand(string command)
         {
+            if (activeComparisonRun != null) return;
             if (formulaEditCell != null) { status.Text = FormulaEditingHint; return; }
             if (comparisonTrace != null)
             {

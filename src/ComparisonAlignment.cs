@@ -24,12 +24,20 @@ namespace FormulaExplorer
         internal static bool Detect(Reference left, IEnumerable<Cell> leftCells, IReadOnlyList<Rectangle> leftBoundaries,
             Reference right, IEnumerable<Cell> rightCells, IReadOnlyList<Rectangle> rightBoundaries,
             List<ComparisonAlignmentGap> gaps)
+        { return DetectWithProgress(left, leftCells, leftBoundaries, right, rightCells, rightBoundaries, gaps, null); }
+
+        internal static bool DetectWithProgress(Reference left, IEnumerable<Cell> leftCells, IReadOnlyList<Rectangle> leftBoundaries,
+            Reference right, IEnumerable<Cell> rightCells, IReadOnlyList<Rectangle> rightBoundaries,
+            List<ComparisonAlignmentGap> gaps, ComparisonRun run)
         {
+            Func<bool> checkpoint = run == null ? (Func<bool>)null : run.Checkpoint;
             foreach (bool rows in new[] { false, true })
             {
-                string[][] a = Fingerprints(left, leftCells, leftBoundaries, rows);
-                string[][] b = Fingerprints(right, rightCells, rightBoundaries, rows);
-                var matches = Match(a.Length, b.Length, (x, y) => Same(a[x], b[y]), MaxDistance);
+                string[][] a = Fingerprints(left, leftCells, leftBoundaries, rows, checkpoint);
+                if (a == null) return false;
+                string[][] b = Fingerprints(right, rightCells, rightBoundaries, rows, checkpoint);
+                if (b == null) return false;
+                var matches = MatchCore(a.Length, b.Length, (x, y) => Same(a[x], b[y]), MaxDistance, checkpoint);
                 if (matches == null) return false;
                 DetectAxis(a, b, matches, rows, rows ? left.FirstRow : left.FirstColumn,
                     rows ? right.FirstRow : right.FirstColumn, gaps);
@@ -37,7 +45,8 @@ namespace FormulaExplorer
             return true;
         }
 
-        static string[][] Fingerprints(Reference area, IEnumerable<Cell> cells, IReadOnlyList<Rectangle> boundaries, bool rows)
+        static string[][] Fingerprints(Reference area, IEnumerable<Cell> cells, IReadOnlyList<Rectangle> boundaries, bool rows,
+            Func<bool> checkpoint)
         {
             int origin = rows ? area.FirstRow : area.FirstColumn;
             int end = rows ? area.LastRow : area.LastColumn;
@@ -48,6 +57,7 @@ namespace FormulaExplorer
                 .GroupBy(cell => rows ? cell.Row : cell.Column);
             foreach (var line in lines)
             {
+                if (checkpoint != null && !checkpoint()) return null;
                 int stop = limit + 1;
                 foreach (Rectangle blocked in boundaries)
                 {
@@ -159,6 +169,9 @@ namespace FormulaExplorer
 
         // The bounded frontier records the furthest consumed left index on each diagonal.
         internal static List<Point> Match(int left, int right, Func<int, int, bool> equal, int maxDistance)
+        { return MatchCore(left, right, equal, maxDistance, null); }
+
+        static List<Point> MatchCore(int left, int right, Func<int, int, bool> equal, int maxDistance, Func<bool> checkpoint)
         {
             if (Math.Abs(left - right) > maxDistance) return null;
             var matches = new List<Point>();
@@ -168,6 +181,7 @@ namespace FormulaExplorer
             int distance;
             for (distance = 0; distance <= maxDistance; distance++)
             {
+                if (checkpoint != null && !checkpoint()) return null;
                 var current = new int[distance * 2 + 1];
                 for (int i = 0; i < current.Length; i++) current[i] = -2;
                 int low = Math.Max(Math.Max(-left, -distance), distance - 2 * left - 1);
@@ -175,7 +189,11 @@ namespace FormulaExplorer
                 for (int k = low; k <= high; k++)
                 {
                     int x = Math.Max(Frontier(trace, k - 1, distance - 1), Frontier(trace, k + 1, distance - 1) + 1);
-                    while (x < left && x + k < right && equal(x, x + k)) x++;
+                    while (x < left && x + k < right && equal(x, x + k))
+                    {
+                        x++;
+                        if (checkpoint != null && (x & 1023) == 0 && !checkpoint()) return null;
+                    }
                     current[k + distance] = x;
                 }
                 trace.Add(current);

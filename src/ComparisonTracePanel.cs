@@ -119,7 +119,7 @@ namespace FormulaExplorer
                 frame.DisplayStyle = child.formulaCellStyle;
                 bool selectedFormula = ReferenceEquals(selected, launchRow) && !downstream && location == null && anchor.IsFormula;
                 string shown = right ? comparisonRightPayload : comparisonLeftPayload;
-                frame.Delegates = selectedFormula && !currentComparison.ValuesOnly &&
+                frame.Delegates = selectedFormula && !launchRow.Interrupted && !currentComparison.ValuesOnly &&
                     String.Equals(child.formulaDisplayContent, NormalizeComparisonTraceText(shown), StringComparison.Ordinal);
                 if (frame.Delegates && !launchRow.Resolved)
                     CaptureComparisonCounterpart(frame);

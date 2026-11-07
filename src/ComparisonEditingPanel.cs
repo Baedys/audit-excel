@@ -58,7 +58,7 @@ namespace FormulaExplorer
         bool CanEditComparison(ComparisonRow row)
         {
             return comparisonDraft == null && bridge != null && currentComparison != null && !currentComparison.ValuesOnly &&
-                !valuesOnly.Checked && !ShowingAlignment && row != null && row.Alignment == null &&
+                !valuesOnly.Checked && !ShowingAlignment && row != null && !row.Interrupted && row.Alignment == null &&
                 (CanEditComparisonSide(row, false) || CanEditComparisonSide(row, true));
         }
 

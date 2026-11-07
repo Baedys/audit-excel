@@ -9,12 +9,17 @@ namespace FormulaExplorer
     {
         internal static List<Rectangle> Scan(Rectangle area, IEnumerable<Point> occupied,
             Func<Point, bool?> classify, Func<Point, Point, bool> extend)
+        { return ScanWithProgress(area, occupied, classify, extend, null); }
+
+        internal static List<Rectangle> ScanWithProgress(Rectangle area, IEnumerable<Point> occupied,
+            Func<Point, bool?> classify, Func<Point, Point, bool> extend, Func<int, int, bool> checkpoint)
         {
             var finished = new List<Rectangle>();
             var active = new List<Rectangle>();
             int previousRow = area.Top - 1;
             foreach (var row in occupied.GroupBy(point => point.Y))
             {
+                if (checkpoint != null && !checkpoint(row.Key - area.Top, area.Height)) break;
                 if (row.Key > previousRow + 1)
                     ScanRow(area, previousRow + 1, Enumerable.Empty<Point>(), classify, extend, active, finished);
                 ScanRow(area, row.Key, row, classify, extend, active, finished);

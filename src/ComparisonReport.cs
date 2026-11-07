@@ -24,7 +24,7 @@ namespace FormulaExplorer
             r1c1 = style.R1C1;
             this.swapped = swapped;
             taskColumns = result.Scope == ComparisonScope.Workbook || result.Tasks.Count != 1 ||
-                result.Tasks.Any(task => task.Failure != null);
+                result.Tasks.Any(task => task.Incomplete);
             string left = Operand(result, false), right = Operand(result, true);
             var headings = new List<object>();
             if (taskColumns)
@@ -55,23 +55,28 @@ namespace FormulaExplorer
             string unit = result.Scope == ComparisonScope.Range ? "bloc" : "feuille";
             bool oneCell = result.Scope == ComparisonScope.Range && result.Tasks.Count != 0 && result.Tasks[0].Left.Single;
             object total = !oneCell && count > 1 && groups > 0 ? (object)(count + " · " + groups + " " + unit + (groups > 1 ? "s" : "")) : count;
-            Summary[ValuesOnly ? 2 : 3, 1] = result.Tasks.Any(task => task.Failure != null) ? "Au moins " + total : total;
-            foreach (ComparisonTask task in result.Tasks.Where(task => counts[task] != 0))
+            Summary[ValuesOnly ? 2 : 3, 1] = result.Tasks.Any(task => task.Incomplete) ? "Au moins " + total : total;
+            foreach (ComparisonTask task in result.Tasks.Where(task => counts[task] != 0 || task.BlockInterrupted))
             {
                 string label = TaskLabel(result.Scope, task);
-                object taskCount = task.Failure == null ? (object)counts[task] : AtLeast(counts[task]);
+                object taskCount = task.Failure == null && !task.Interrupted ? (object)counts[task] : AtLeast(counts[task]);
                 foreach (ComparisonRow block in byTask[task])
                 {
                     string blockName = Location(block.Left, block.Right, block.Resolved);
+                    int countInBlock = OpenCount(block);
+                    object blockCount = block.Interrupted ? (object)AtLeast(countInBlock) : countInBlock;
+                    if (block.Interrupted && block.Children.Count == 0)
+                        AddRow(label, taskCount, blockName, blockCount, "Bloc interrompu", null, null);
                     foreach (ComparisonRow row in (IEnumerable<ComparisonRow>)block.Children ?? Enumerable.Repeat(block, 1))
-                        AddRow(label, taskCount, blockName, OpenCount(block), Location(row.Left, row.Right, row.Resolved),
+                        AddRow(label, taskCount, blockName, blockCount, Location(row.Left, row.Right, row.Resolved),
                             Payload(row, false, display), Payload(row, true, display));
                 }
             }
-            foreach (ComparisonTask task in result.Tasks.Where(task => counts[task] == 0))
+            foreach (ComparisonTask task in result.Tasks.Where(task => counts[task] == 0 && !task.BlockInterrupted))
             {
-                if (task.Ignored || !taskColumns || (task.Failure == null && copied.Contains(task.Right.Sheet))) continue;
-                string state = task.Failure == null ? "Aucun écart" : "Tâche ignorée · " + task.Failure;
+                if (task.Ignored || !taskColumns || (!task.Incomplete && copied.Contains(task.Right.Sheet))) continue;
+                string state = task.Failure != null ? "Tâche ignorée · " + task.Failure :
+                    task.Interrupted ? "Tâche ignorée" : "Aucun écart";
                 AddRow(TaskLabel(result.Scope, task), state, null, null, null, null, null);
             }
             foreach (ComparisonRow row in unmatched.OrderBy(row => row.Left == null))
@@ -80,7 +85,7 @@ namespace FormulaExplorer
                 AddRow(present.Sheet, "Onglet présent seulement dans " + present.Workbook.Name, null, null, null, null, null);
             }
             foreach (ComparisonTask task in result.Tasks.Where(task => task.Ignored ||
-                (counts[task] == 0 && task.Failure == null && copied.Contains(task.Right.Sheet))))
+                (counts[task] == 0 && !task.Incomplete && copied.Contains(task.Right.Sheet))))
                 AddRow(TaskLabel(result.Scope, task), "Feuille hors comparaison", null, null, null, null, null);
             if (Rows.Count > 1000000)
                 throw new InvalidOperationException("Le rapport dépasse un million de lignes.");

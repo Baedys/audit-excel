@@ -1,5 +1,13 @@
 # Revue et validation
 
+## Progression et interruptions du comparateur
+
+Arixcel déclenche son moniteur après 2 000 ms via Explorer 252212 et Common 73848. 245603 ignore l’unité active. 273620 remplace cette unité pour chaque tâche et chaque bloc. 245464 annule pendant la préparation ou après une demande d’arrêt. Durant l’alignement et le scan, le premier arrêt conserve les résultats produits. Common 75764 vide les rectangles ouverts avant de rendre un résultat partiel. 266068 exporte les tâches interrompues et les bornes inférieures.
+
+Clair place ces commandes dans le volet. Les points de contrôle traitent l’annulation entre les lectures Excel et aux frontières des lignes et blocs. Un appel COM individuel peut retarder la réponse. Annuler laisse le résultat précédent et une comparaison différée peut être reprise. Les tâches et blocs interrompus restent distincts et l’export indique une borne inférieure. La copie ou l’édition d’un bloc incomplet entier est désactivée. Ses sous-écarts déjà lus restent utilisables.
+
+Le témoin Excel masqué vérifie 48 résultats, dont l’omission d’une tâche pendant sa lecture, d’un bloc encore vide, l’arrêt durant l’alignement, les lignes rendues après un arrêt et le retour au résultat précédent après annulation. Il active les boutons du volet de manière programmée et vérifie le rapport Excel partiel.
+
 ## Retour à la grille et actualisation du comparateur
 
 Dans Arixcel, `ModelessForm.GoBackToExcel` 58303 rend le focus à Excel. `History.GoBack` 64192 réactive une vue disponible. Le retour redessine la comparaison et synchronise les coordonnées de ses plages par 233522 et 273040. Alt+R suit un autre chemin. `CompareForm.Recompare` 223744 vérifie le périmètre, reconstruit le modèle avec ses options, conserve les côtés et tente de retrouver les nœuds dans la même phase. Un changement de phase vide l’annulation locale. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

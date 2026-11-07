@@ -106,7 +106,8 @@ namespace FormulaExplorer
         static ComparisonPreview DetailPreview(ComparisonRow row, bool right, bool values)
         {
             if (row.Alignment != null) return new ComparisonPreview(right ? row.Après : row.Avant, null);
-            if (row.Children == null) return right ? row.RightPreview : row.LeftPreview;
+            if (row.Interrupted) return default(ComparisonPreview);
+            if (row.Children == null || row.Children.Count == 0) return right ? row.RightPreview : row.LeftPreview;
             ComparisonPreview combined = right ? row.Children[0].RightPreview : row.Children[0].LeftPreview;
             for (int index = 1; index < row.Children.Count; index++)
             {

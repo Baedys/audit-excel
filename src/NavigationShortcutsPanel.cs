@@ -49,6 +49,9 @@ namespace FormulaExplorer
 
         protected override bool ProcessCmdKey(ref Message message, Keys keyData)
         {
+            if (activeComparisonRun != null && keyData == Keys.Escape)
+            { activeComparisonRun.Cancel(); return true; }
+            if (activeComparisonRun != null && (keyData & (Keys.Alt | Keys.Control)) != Keys.None) return true;
             Control source = keyData == Keys.Enter || keyData == (Keys.Alt | Keys.Enter) ? Control.FromChildHandle(message.HWnd) : null;
             if (!(keyData == Keys.Enter && source is ButtonBase) && HandleComparisonKey(keyData)) return true;
             if (!(source is ButtonBase) && HandleFormulaEditingKey(keyData, source)) return true;

@@ -123,6 +123,8 @@ Les écarts apparaissent en blocs dépliables. Sélectionner un bloc ou un sous-
 
 Avec le raccourci XLL actif, **Ctrl+Retour arrière** passe du comparateur à la grille et l’historique permet de retrouver le même volet. Le retour conserve la sélection Excel et les résultats affichés. **Actualiser (Alt+R)** relit les feuilles ou plages d’origine avec les options du relevé courant. Si le comparateur reste dans la même phase, les lignes et coches encore présentes sont retrouvées et l’annulation reste disponible.
 
+Pour une comparaison longue, les commandes de progression apparaissent dans le volet après environ deux secondes. Pendant la préparation, **Annuler** conserve le relevé précédent. Pendant l’analyse, **Ignorer** passe à la tâche ou au bloc suivant et **Arrêter** garde les écarts déjà produits. **Annuler** après une demande d’arrêt, ou **Échap**, abandonne le nouveau relevé. Clair et le rapport indiquent les résultats partiels.
+
 Le détail colore en rouge les segments différents de chaque côté. Il suit la notation et la préférence de langue de l’explorateur Excel. L’option **R1C1** du comparateur continue de décider quelles formules sont équivalentes.
 
 En mode Formules, **Modifier (F2)** ouvre un brouillon pour le côté actif. Pour choisir un côté depuis le détail, placez le curseur dans sa section avant F2. **Entrée** applique, **Échap** abandonne et **Alt+Entrée** insère un saut de ligne. Sur un bloc, la saisie s’applique à toute la plage, avec translation des références relatives. **Ctrl+Z** annule la dernière opération du comparateur.
