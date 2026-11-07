@@ -14,6 +14,7 @@ namespace FormulaExplorer
         public bool HasValidation;
         public int Row, Column;
         internal Book Workbook;
+        internal object CapturedExcelValue;
         public bool IsFormula { get { return !String.IsNullOrEmpty(Formula); } }
         public string Key { get { return Book.Key(Sheet, Address); } }
         public string Location { get { return "'" + Sheet.Replace("'", "''") + "'!" + Address; } }

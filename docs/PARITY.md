@@ -221,7 +221,7 @@ P06 couvre la copie directionnelle des plages comparées et des onglets manquant
 | P04 | Appliquer puis retirer un alignement, avec undo. | Absent. | Copies jetables : formules, noms, tailles et formats restent cohérents ; annulation restaure toutes les propriétés touchées. |
 | P05 | Regrouper différences voisines, mettre en évidence segments. | Blocs, sous-écarts, navigation et coloration des segments dans le volet. | Les tâches complètes et le format des valeurs typées restent à comparer. |
 | P06 | Fusion directionnelle et copie de formats/feuilles. | Absent ; seulement lecture. | Copier gauche/droite puis re-comparer ; protection, collision et undo. Les détails de copie de formats sont à confirmer runtime. |
-| P07 | Édition, exploration, échange de côtés et rapport. | F2 dans le volet, Ctrl+Q et Ctrl+Maj+Q dans le comparateur, délégation de l’édition au bloc et retour au même résultat. Ctrl+Z partagé avec copie et alignement, Ctrl+Tab, Ctrl+S et rapport texte. | Rapport avec état incomplet et raccourcis restants. |
+| P07 | Édition, exploration, échange de côtés et rapport. | F2 dans le volet, Ctrl+Q et Ctrl+Maj+Q, délégation de l’édition au bloc et retour au même résultat. Ctrl+Z partagé avec copie et alignement, Ctrl+Tab et Ctrl+S. Alt+X ouvre le rapport Excel, avec filtre et état partiel par tâche. | Commandes interactives pour ignorer une tâche ou arrêter l’analyse. Alt+R et aller-retour avec la grille depuis la comparaison. |
 
 ## 7. Utilitaires et paramètres
 

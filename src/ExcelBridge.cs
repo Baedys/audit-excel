@@ -252,7 +252,8 @@ namespace FormulaExplorer
                     string kind = value == null ? "Vide" : isError ? "Erreur" : value is bool ? "Booléen" : value is string ? "Texte" : "Nombre";
                     string text = isError ? ErrorText(value) : Convert.ToString(value, CultureInfo.InvariantCulture);
                     book.Add(new Cell { Sheet = sheet, Address = address, Row = startRow + y, Column = startCol + x, Value = text, Kind = kind, Formula = hasFormula ? Convert.ToString(At(formulas, y, x), CultureInfo.InvariantCulture) : null,
-                        FormulaR1C1 = hasFormula && relativeFormulas != null ? Convert.ToString(At(relativeFormulas, y, x), CultureInfo.InvariantCulture) : null, HasValidation = hasValidation });
+                        FormulaR1C1 = hasFormula && relativeFormulas != null ? Convert.ToString(At(relativeFormulas, y, x), CultureInfo.InvariantCulture) : null,
+                        HasValidation = hasValidation, CapturedExcelValue = value });
                 }
             }
             finally { Release(columns); Release(rows); }

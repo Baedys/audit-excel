@@ -21,6 +21,9 @@ namespace FormulaExplorer
         internal readonly List<ComparisonRow> Differences = new List<ComparisonRow>();
         internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
         internal bool AlignmentLimited, SharedAlignmentReference, ValuesOnly, Relative, IgnoreInputs, FullSheets;
+        internal ComparisonScope Scope;
+        internal double Tolerance;
+        internal readonly List<ComparisonTask> Tasks = new List<ComparisonTask>();
         internal Book LeftWorkbook, RightWorkbook;
         internal Dictionary<string, long> LeftTabs, RightTabs;
         internal readonly List<KeyValuePair<Reference, Reference>> ComparedAreas = new List<KeyValuePair<Reference, Reference>>();
@@ -28,6 +31,13 @@ namespace FormulaExplorer
         internal Func<ComparisonResult> Recompare;
         internal Action RequireReference;
         internal ExcelBridge.ComparisonRangeTargets RangeTargets;
+
+        internal ComparisonTask AddTask(Reference left, Reference right, bool ignored = false)
+        {
+            var task = new ComparisonTask(left, right) { Ignored = ignored };
+            Tasks.Add(task);
+            return task;
+        }
 
         internal List<ComparisonRow> ReadDifferences()
         {
@@ -42,6 +52,16 @@ namespace FormulaExplorer
         }
     }
 
+    internal sealed class ComparisonTask
+    {
+        internal Reference Left, Right;
+        internal bool Ignored;
+        internal string Failure;
+
+        internal ComparisonTask(Reference left, Reference right)
+        { Left = left; Right = right; }
+    }
+
     internal sealed class ComparisonRow
     {
         public string Référence { get; internal set; }
@@ -50,6 +70,7 @@ namespace FormulaExplorer
         public string Avant { get; internal set; }
         public string Après { get; internal set; }
         internal Reference Left, Right;
+        internal ComparisonTask Task;
         internal Book MissingSheetWorkbook;
         internal long MissingSheetIdentity;
         internal List<ComparisonRow> Children;
@@ -72,6 +93,7 @@ namespace FormulaExplorer
             group.Référence = Label(group.Left);
             group.Comparateur = Label(group.Right);
             group.Children = children;
+            group.Task = children[0].Task;
             group.Resolved = children.All(row => row.Resolved);
             group.HistoryGroup = true;
             return group;
@@ -115,7 +137,8 @@ namespace FormulaExplorer
         }
 
         internal static void Compare(List<ComparisonRow> result, Reference left, IEnumerable<Cell> leftCells,
-            Reference right, IEnumerable<Cell> rightCells, bool valuesOnly, bool relative, bool ignoreInputs, double tolerance)
+            Reference right, IEnumerable<Cell> rightCells, bool valuesOnly, bool relative, bool ignoreInputs, double tolerance,
+            ComparisonTask task = null)
         {
             var cells = new PairedCells(left, leftCells, right, rightCells);
             var scope = Rectangle.FromLTRB(0, 0, left.LastColumn - left.FirstColumn + 1, left.LastRow - left.FirstRow + 1);
@@ -130,6 +153,7 @@ namespace FormulaExplorer
                 {
                     CellPair anchor = cells.Read(part.Location);
                     var row = CreateRow(left, right, part, valuesOnly ? "Valeur" : anchor.HasFormula ? "Formule" : "Entrée");
+                    row.Task = task;
                     SetPreviews(row, cells, part, anchor, valuesOnly, relative);
                     children.Add(row);
                 }
@@ -137,6 +161,7 @@ namespace FormulaExplorer
                 else if (children.Count > 1)
                 {
                     var row = CreateRow(left, right, block, "Bloc");
+                    row.Task = task;
                     row.Children = children;
                     result.Add(row);
                 }

@@ -105,6 +105,7 @@ namespace FormulaExplorer
                         readers.Add(area.Value, reader);
                     }
                     row = reader(copy.Row);
+                    if (row != null) row.Task = result.Tasks.FirstOrDefault(task => ReferenceEquals(task.Right, area.Value));
                 }
                 if (row == null)
                 {

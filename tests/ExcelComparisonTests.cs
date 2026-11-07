@@ -428,6 +428,7 @@ public static class ExcelComparisonTests
                 Equal((string)keep(leftAlign.Range["B3"]).Value2, "Alpha", "detection leaves the reference unchanged");
                 Equal((string)keep(rightAlign.Range["B3"]).Value2, "Extra line", "detection leaves the comparator unchanged");
                 Equal(Field<Button>(targetView, "skipComparisonAlignment").Enabled, true, "the alignment phase allows ordinary comparison");
+                Equal(Field<Button>(targetView, "exportComparison").Enabled, false, "alignment proposals cannot be exported as differences");
                 object planned = Field<object>(targetView, "currentComparison");
                 Equal(Field<Delegate>(planned, "CompareSheets") != null, true, "cell differences are deferred until after alignment review");
                 Invoke(targetView, "NavigateComparison", rows[0], true);
@@ -435,6 +436,7 @@ public static class ExcelComparisonTests
                 Invoke(targetView, "ShowComparisonDifferences");
                 Equal(Leaves(groups()).Cast<object>().All(row => Text(row, "Écart") != "Alignement"), true, "ordinary differences open without alignment");
                 Equal(Field<Button>(targetView, "skipComparisonAlignment").Enabled, false, "ordinary comparison leaves the alignment phase");
+                Equal(Field<Button>(targetView, "exportComparison").Enabled, true, "the ordinary differences enable export");
                 Equal(Field<Delegate>(planned, "CompareSheets"), null, "continuing consumes the same comparison snapshot");
                 Field<CheckBox>(targetView, "checkComparisonAlignment").Checked = false;
                 Equal(compare().Cast<object>().All(row => Text(row, "Écart") != "Alignement"), true, "disabling detection keeps the ordinary comparison");

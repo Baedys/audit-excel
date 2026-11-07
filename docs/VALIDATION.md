@@ -1,5 +1,13 @@
 # Revue et validation
 
+## Rapport Excel du comparateur
+
+`CompareForm.Export` 231112 appelle `Report.Generate` 266068 après la comparaison. Le rapport Arixcel ouvre un classeur à une feuille. Les en-têtes sont à la ligne 5. 375368 choisit cinq colonnes pour un résultat unique de feuille ou de plage et sept lorsque la tâche ou la feuille est indiquée. Les colonnes de contenu gardent leurs côtés physiques après échange visuel. Les chaînes de formule sont protégées par 375551 et colorées par 375592. 250940 produit le total et le préfixe indiquant un résultat partiel. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Clair exporte le résultat capturé dans la feuille `Comparaison`. Le filtre et les lignes figées facilitent la lecture du tableau. Les formules et les textes d’entrée restent littéraux. Les écarts résolus peuvent rester dans le détail d’une tâche ouverte. Un onglet hors comparaison, un onglet supplémentaire et une tâche non terminée portent des états distincts. La capture conserve les feuilles lisibles lorsqu’une autre dépasse la limite ou ne peut pas être lue. Les commandes interactives Skip et Stop du scan Arixcel restent à porter.
+
+Le témoin Excel masqué vérifie 44 résultats. Il couvre les rapports à cinq et sept colonnes, les côtés inversés dans le volet, la coloration de caractères, une sous-différence résolue au milieu d’une tâche ouverte, les onglets supplémentaires, un graphique ignoré et une capture partielle à cause de la limite. Il vérifie aussi les nombres, les booléens, les erreurs, les textes qui ressemblent à une formule et l’export sans écart.
+
 ## Tracé depuis la comparaison
 
 `CompareForm.OpenFormulaExplorerForm` 230148 choisit les plages du côté actif. Pour une formule, il prend le coin haut gauche du bloc. Common 56608 déduplique les rectangles. L’explorateur 193548 reprend le curseur sur la même formule et 195592 délègue l’écriture au comparateur. Le comparateur 231892 contrôle le rattachement au modèle et 231944 écrit sur le bloc d’origine. Le retour groupe les éditions du tracé dans la pile parente. Ce relevé vient de l’inspection statique d’Arixcel. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -28,7 +29,7 @@ namespace FormulaExplorer
         TableLayoutPanel comparisonResults;
         List<ComparisonRow> comparisonRows;
         ComparisonResult currentComparison;
-        Button skipComparisonAlignment;
+        Button skipComparisonAlignment, exportComparison;
         bool comparisonRight = true, comparisonSwapped, loadingComparisonRows;
         string liveComparisonReportHeading;
         string comparisonMode;
@@ -61,6 +62,9 @@ namespace FormulaExplorer
             ConfigureComparisonCopy(bar);
             ConfigureComparisonEditing(bar);
             ConfigureComparisonTrace(bar);
+            exportComparison = ActionButton("Rapport Excel (Alt+X)", ExportComparisonResults);
+            exportComparison.Enabled = false;
+            bar.Controls.Add(exportComparison);
             bar.Controls.Add(copyComparisonFormats);
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
@@ -247,9 +251,11 @@ namespace FormulaExplorer
             List<ComparisonRow> rows = currentComparison.ReadDifferences();
             List<ComparisonRow> visible = ComparisonRowsWithHistory(currentComparison, rows);
             int resolved = visible.Sum(row => row.Children == null ? (row.Resolved ? 1 : 0) : row.Children.Count(child => child.Resolved));
+            int incomplete = currentComparison.Tasks.Count(task => task.Failure != null);
             skipComparisonAlignment.Enabled = false;
             status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts" +
-                (resolved == 0 ? "" : " · " + resolved + " résolus") + " · " + comparisonMode + ComparisonAlignmentLimit();
+                (resolved == 0 ? "" : " · " + resolved + " résolus") + " · " + comparisonMode + ComparisonAlignmentLimit() +
+                (incomplete == 0 ? "" : " · comparaison partielle · tâches non terminées : " + incomplete);
             ShowComparisonRows(visible);
         }
 
@@ -336,6 +342,7 @@ namespace FormulaExplorer
             RefreshComparisonCopy();
             RefreshComparisonEdit();
             RefreshComparisonTraceCommand();
+            if (exportComparison != null) exportComparison.Enabled = CanExportComparisonResults();
             RenderComparisonDetails(row);
             if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 ||
                 bridge == null || comparisonTrace != null)
@@ -377,6 +384,11 @@ namespace FormulaExplorer
             {
                 if (comparisonTrace != null) return false;
                 if (comparisonDraft != null) return HandleComparisonEditKey(keyData);
+                if (keyData == (Keys.Alt | Keys.X) && CanExportComparisonResults())
+                {
+                    Safe(ExportComparisonResults);
+                    return true;
+                }
                 if ((keyData == (Keys.Control | Keys.Q) || keyData == (Keys.Control | Keys.Shift | Keys.Q)) && CanTraceComparison())
                 {
                     OpenComparisonTrace((keyData & Keys.Shift) != 0, comparisonDetails.ContainsFocus, false);
@@ -436,5 +448,41 @@ namespace FormulaExplorer
 
         static void AppendComparisonRow(StringBuilder report, ComparisonRow row)
         { report.AppendLine(String.Join("\t", row.Référence, row.Comparateur, row.Resolved ? "Résolu · " + row.Écart : row.Écart, row.Avant, row.Après)); }
+
+        bool CanExportComparisonResults()
+        {
+            return bridge != null && currentComparison != null && comparisonRows != null && !ShowingAlignment &&
+                comparisonDraft == null && comparisonTrace == null;
+        }
+
+        void ExportComparisonResults()
+        {
+            if (!CanExportComparisonResults()) return;
+            try
+            {
+                var style = explorerFormulaStyle.WithNotation(currentComparison.Relative);
+                var report = new ComparisonReport(currentComparison, comparisonRows, style, comparisonSwapped, ComparisonReportText);
+                bridge.ExportComparisonReport(report);
+                status.Text = "Rapport ouvert dans un nouveau classeur Excel.";
+            }
+            catch (Exception error) { status.Text = "Rapport indisponible · " + error.Message; }
+        }
+
+        string ComparisonReportText(ComparisonRow row, bool right, FormulaDisplayStyle style)
+        {
+            ComparisonPreview preview = right ? row.RightPreview : row.LeftPreview;
+            if (style.Local)
+            {
+                try
+                {
+                    string text = LocalComparisonFormula(right ? row.Right : row.Left, preview, style);
+                    if (text != null) return text;
+                }
+                catch (COMException) { }
+                catch (InvalidOperationException) { }
+                catch (MissingMemberException) { }
+            }
+            return DetailText(preview, false, style);
+        }
     }
 }

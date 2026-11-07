@@ -131,6 +131,8 @@ Si le tracé reprend la formule affichée dans le détail, **F2** à sa racine m
 
 Les écarts résolus par une copie restent grisés dans le volet. Ils restent navigables et le compteur les distingue des écarts ouverts. Annuler la copie rouvre les écarts correspondants. **Comparer** démarre un nouveau relevé.
 
+Depuis les résultats, **Rapport Excel (Alt+X)** ouvre un nouveau classeur filtrable. Les cinq premières lignes restent visibles pendant le défilement. Le rapport détaille les écarts par feuille ou tâche et par bloc. Il conserve les deux côtés physiques dans leurs colonnes, même après **Ctrl+S**. Les formules sont exportées comme texte avec leurs segments différents en rouge. En mode Valeurs, les nombres, booléens et erreurs restent typés. Les tâches omises portent leur motif et le total d’une comparaison partielle indique le minimum d’écarts trouvés.
+
 En mode formules, sélectionnez ou cochez les blocs et utilisez **Copier** pour appliquer leur contenu et leur format numérique depuis le côté actif. Dans l’arbre, **Ctrl+L** et **Ctrl+R** ciblent respectivement les côtés visibles gauche et droit. R1C1 recale les références relatives. A1 conserve les adresses. **Annuler la copie** ou **Ctrl+Z** annule le dernier lot. Le XLL permet aussi d’annuler depuis la grille Excel.
 
 **Copier les formats** est coché par défaut. Le volet reprend l’alignement, les fusions entièrement comprises, la police et le texte enrichi, les bordures, les fonds, les motifs et la protection des cellules. Les règles conditionnelles et les validations de destination sont conservées. Décochez l’option pour copier le contenu et le format numérique.
