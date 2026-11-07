@@ -163,6 +163,12 @@ Le bouton **Mise en page** du ruban ouvre l’onglet **Utilitaires** du volet. C
 
 Le bouton d’annulation indique la dernière commande réversible. **Ctrl+Z** fonctionne aussi dans le volet et conserve l’annulation du texte dans le champ de zoom. Les reçus quittant le volet sont transmis au rappel d’annulation Excel. Le masquage des pointillés et la création d’une fenêtre suivent les commandes sans reçu d’annulation d’Arixcel. Le gestionnaire complet de variantes et de cycles de raccourcis reste à porter.
 
+## Copie et collage
+
+Dans **Utilitaires → Copie et collage**, **Copier la somme** additionne les valeurs des cellules visibles de la sélection courante, textes numériques compris selon la culture Windows. Dates typées et booléens sont exclus. Le résultat reste lisible dans le volet. Les zones qui se chevauchent reproduisent le parcours Arixcel : elles peuvent doubler ou exclure certaines cellules. La progression peut être arrêtée avant écriture du presse-papiers.
+
+Après une copie de cellules dans Excel, choisissez **Formules**, **Valeurs**, **Formats**, **Validation des données** ou **Formats numériques**, puis **Coller la propriété**. Les reçus utilisent la même annulation que les formats et la mise en page. La source doit appartenir à un classeur ouvert dans la même instance Excel. Les limites de capture et les frontières de validation sont détaillées dans les [preuves U03](docs/CLIPBOARD-EVIDENCE.md). La duplication générique reste en développement.
+
 ## Tests
 
 ```powershell

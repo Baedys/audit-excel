@@ -136,15 +136,16 @@ namespace FormulaExplorer
             return ((dynamic)sheet).Range[from + ":" + to];
         }
 
-        static List<DimensionRun> ReadDimensions(object sheet, bool rows, int first, int last)
+        static List<DimensionRun> ReadDimensions(object sheet, bool rows, int first, int last, Action checkpoint = null)
         {
             var runs = new List<DimensionRun>();
-            ReadDimensions(sheet, rows, first, last, runs);
+            ReadDimensions(sheet, rows, first, last, runs, checkpoint);
             return runs;
         }
 
-        static void ReadDimensions(object sheet, bool rows, int first, int last, List<DimensionRun> runs)
+        static void ReadDimensions(object sheet, bool rows, int first, int last, List<DimensionRun> runs, Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             object range = DimensionRange(sheet, rows, first, last);
             object value;
             try { value = OfficeCall(range, rows ? "RowHeight" : "ColumnWidth", BindingFlags.GetProperty); }
@@ -156,8 +157,8 @@ namespace FormulaExplorer
             }
             if (first == last) throw new InvalidOperationException("Dimension Excel inaccessible.");
             int middle = first + (last - first) / 2;
-            ReadDimensions(sheet, rows, first, middle, runs);
-            ReadDimensions(sheet, rows, middle + 1, last, runs);
+            ReadDimensions(sheet, rows, first, middle, runs, checkpoint);
+            ReadDimensions(sheet, rows, middle + 1, last, runs, checkpoint);
         }
 
         static bool SameDimensions(List<DimensionRun> first, List<DimensionRun> second)

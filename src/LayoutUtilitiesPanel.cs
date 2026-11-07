@@ -37,12 +37,14 @@ namespace FormulaExplorer
             layoutUndoButton = ActionButton("Annuler l’utilitaire", UndoLayoutUtility); layoutUndoButton.Enabled = false;
             bar.Controls.Add(layoutUndoButton); panel.Controls.Add(bar);
             ConfigureFormatUtilities(panel);
+            ConfigureClipboardUtilities(panel);
             Action fit = () =>
             {
                 int width = Math.Max(1, tab.ClientSize.Width - (tab.VerticalScroll.Visible ? SystemInformation.VerticalScrollBarWidth : 0));
                 panel.MaximumSize = new System.Drawing.Size(width, 0);
                 layoutHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal), 0);
                 formatUtilityHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal - 26), 0);
+                utilityClipboardHint.MaximumSize = new System.Drawing.Size(Math.Max(1, width - panel.Padding.Horizontal - 26), 0);
             };
             tab.SizeChanged += delegate { fit(); }; panel.SizeChanged += delegate { fit(); }; fit();
             layoutAction.SelectedIndexChanged += delegate { ShowLayoutOptions(); };

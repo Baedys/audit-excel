@@ -69,7 +69,7 @@ Les essais discriminants pour les trois premiers lots incluent filtres et masqua
 - **Témoin de régression pour le collage visible.** Dans le cas filtré ci-dessus, la cible `C2:C7` doit devenir `[10,102,30,104,50,106]`. `C3` et `C5` sont filtrées. `C7` reste la sentinelle hors plage. En cas de dimensions visibles incompatibles, la commande s’arrête avant la première écriture. Tester séparément colonnes masquées, zones disjointes et source qui chevauche la destination.
 - **Témoin de régression pour les vrais blancs.** Seul un blanc réel doit être retiré. Une formule `=""`, un zéro et un espace doivent suivre le déplacement et conserver leur contenu. Vérifier fusion et protection avant l’opération.
 
-Le nettoyage syntaxique des références reste une nouvelle capacité : le parseur existant ne la fournit pas à lui seul. L’ajustement automatique de Power-user après modification d’une cellule reste distinct de la commande explicite AutoFit de Clair. De même, la copie d’écarts A1/R1C1 du comparateur ne constitue pas encore un collage générique de deux plages.
+Le nettoyage syntaxique des références reste une nouvelle capacité : le parseur existant ne la fournit pas à lui seul. L’ajustement automatique de Power-user après modification d’une cellule reste distinct de la commande explicite AutoFit de Clair. Le développement U03 ajoute la somme copiée et cinq collages spéciaux au volet. Un helper indépendant prépare le collage exact et le déplacement des références internes ; la duplication générique de deux plages reste à raccorder. [Preuves U03](CLIPBOARD-EVIDENCE.md)
 
 ## Éléments complémentaires déclarés par le binaire
 

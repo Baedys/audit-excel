@@ -24,6 +24,8 @@ static class Tests
         Check("utility number format semantics", delegate { UtilityNumberFormatsTests.Run(); });
         Check("format utility settings", FormatUtilitySettingsTests.Run);
         Check("utility undo cleanup retry", UtilityUndoReleaseTests.Run);
+        Check("utility duplicate formula contracts", delegate { Console.WriteLine("UTILITY_DUPLICATE_FORMULA_ASSERTIONS " + UtilityDuplicateFormulasTests.Run()); });
+        Check("utility clipboard contracts", delegate { Console.WriteLine("UTILITY_CLIPBOARD_ASSERTIONS " + UtilityClipboardTests.Run()); });
         Check("absolute and mixed references", delegate { var p = Parse("=$B$1+B$2+$B3"); Equal(p.References.Count, 3); Equal(p.References[0].FirstRow, 1); });
         Check("cross-sheet quoted apostrophe", delegate { var p = Parse("='O''Brien'!B2"); Equal(p.References[0].Sheet, "O'Brien"); });
         Check("cross-sheet unquoted unicode", delegate { Equal(Parse("=Hypothèses!B2").References[0].Sheet, "Hypothèses"); });
@@ -191,6 +193,7 @@ static class Tests
         {
             Check("Excel layout utilities", ExcelLayoutUtilityTests.Run);
             Check("Excel format utilities", ExcelFormatUtilityTests.Run);
+            Check("Excel paste property utilities", ExcelPasteSpecialUtilityTests.Run);
             Check("Excel new window view preservation", ExcelUtilityWindowTests.Run);
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
             Check("Excel comparison formula editing", ExcelComparisonEditingTests.Run);
