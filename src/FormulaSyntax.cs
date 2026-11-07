@@ -10,7 +10,52 @@ namespace FormulaExplorer
         public string Text, Kind;
         public int Start, Length;
         public readonly List<ExpressionNode> Children = new List<ExpressionNode>();
+        internal SheetSpanReference SheetSpan;
+        internal ExpressionNode SheetSpanOrigin;
         public override string ToString() { return Text; }
+    }
+
+    internal sealed class SheetSpanReference
+    {
+        static readonly Regex Qualifier = new Regex(@"\G(?<s>'(?:[^']|'')+'|(?:\[[^\]]+\])?[\p{L}\p{N}_.]+:[\p{L}\p{N}_.]+)!");
+        internal readonly string First, Last, Address, Workbook;
+        internal readonly bool HasPath;
+        internal ExpressionNode[] Parts = new ExpressionNode[0];
+
+        SheetSpanReference(string first, string last, string address, string workbook, bool hasPath)
+        { First = first; Last = last; Address = address; Workbook = workbook; HasPath = hasPath; }
+
+        internal IEnumerable<string> WorksheetsBetween(IList<string> order)
+        {
+            int first = -1;
+            for (int i = 0; i < order.Count; i++)
+            {
+                if (first < 0 && String.Equals(order[i], First, StringComparison.OrdinalIgnoreCase)) first = i;
+                if (!String.Equals(order[i], Last, StringComparison.OrdinalIgnoreCase)) continue;
+                if (first >= 0)
+                    for (int sheet = first; sheet <= i; sheet++) yield return order[sheet];
+                yield break;
+            }
+        }
+
+        internal static SheetSpanReference Read(string source, int start, out int end)
+        {
+            end = start;
+            Match qualifier = Qualifier.Match(source, start);
+            if (!qualifier.Success) return null;
+            string sheets = qualifier.Groups["s"].Value;
+            if (sheets[0] == '\'') sheets = sheets.Substring(1, sheets.Length - 2).Replace("''", "'");
+            int bracket = sheets.LastIndexOf(']');
+            int bookStart = bracket < 0 ? -1 : sheets.LastIndexOf('[', bracket);
+            if (bracket >= 0 && (bookStart < 0 || bracket == bookStart + 1)) return null;
+            string workbook = bookStart < 0 ? "" : sheets.Substring(bookStart + 1, bracket - bookStart - 1);
+            string[] names = sheets.Substring(bracket + 1).Split(':');
+            if (names.Length != 2 || names[0].Length == 0 || names[1].Length == 0) return null;
+            Match address = FormulaParser.AddressPattern.Match(source, start + qualifier.Length);
+            if (!address.Success || Reference.Parse(names[0], address.Value) == null) return null;
+            end = address.Index + address.Length;
+            return new SheetSpanReference(names[0], names[1], address.Value, workbook, bookStart > 0);
+        }
     }
 
     /// <summary>
@@ -42,11 +87,19 @@ namespace FormulaExplorer
 
         /// <summary>Returns an invariant expression with enclosing LET bindings needed to evaluate a selected subexpression.</summary>
         public static string EvaluationText(ExpressionNode root, ExpressionNode target)
+        { return EvaluationText(root, target, null); }
+
+        internal static string EvaluationText(ExpressionNode root, ExpressionNode target, string replacement)
         {
             if (root == null || target == null) throw new ArgumentNullException(root == null ? "root" : "target");
+            if (target.SheetSpanOrigin != null)
+            {
+                replacement = replacement ?? target.Text;
+                target = target.SheetSpanOrigin;
+            }
             var path = new List<ExpressionNode>();
             if (!FindPath(root, target, path)) throw new ArgumentException("The selected expression does not belong to this formula.", "target");
-            string expression = target.Text;
+            string expression = replacement ?? target.Text;
             if (target.Kind == "Missing argument" || target.Kind == "Array row") throw new InvalidOperationException("This syntax element is not independently evaluable.");
             for (int p = path.Count - 2; p >= 0; p--)
             {
@@ -68,15 +121,37 @@ namespace FormulaExplorer
             return expression;
         }
 
-        static string FunctionName(ExpressionNode node)
+        internal static string FunctionName(ExpressionNode node)
         {
             if (node.Kind != "Function") return "";
             int parenthesis = node.Text.IndexOf('(');
             string name = parenthesis < 0 ? "" : node.Text.Substring(0, parenthesis).Trim().ToUpperInvariant();
-            return name.StartsWith("_XLFN.", StringComparison.Ordinal) ? name.Substring(6) : name;
+            if (name.StartsWith("_XLFN.", StringComparison.Ordinal)) name = name.Substring(6);
+            return name.StartsWith("_XLWS.", StringComparison.Ordinal) ? name.Substring(6) : name;
         }
 
-        static bool FindPath(ExpressionNode node, ExpressionNode target, List<ExpressionNode> path)
+        internal static ExpressionNode UnwrapGroups(ExpressionNode node)
+        {
+            while (node.Kind == "Group" && node.Children.Count == 1) node = node.Children[0];
+            return node;
+        }
+
+        internal static ExpressionNode LetBinding(ExpressionNode root, ExpressionNode variable)
+        {
+            var path = new List<ExpressionNode>();
+            if (!FindPath(root, variable, path)) return null;
+            for (int p = path.Count - 2; p >= 0; p--)
+            {
+                ExpressionNode scope = path[p];
+                if (FunctionName(scope) != "LET" || scope.Children.Count < 3 || scope.Children.Count % 2 == 0) continue;
+                int visiblePairs = scope.Children.IndexOf(path[p + 1]) / 2;
+                for (int i = visiblePairs * 2 - 2; i >= 0; i -= 2)
+                    if (String.Equals(scope.Children[i].Text, variable.Text, StringComparison.OrdinalIgnoreCase)) return scope.Children[i + 1];
+            }
+            return null;
+        }
+
+        internal static bool FindPath(ExpressionNode node, ExpressionNode target, List<ExpressionNode> path)
         {
             var parents = new Dictionary<ExpressionNode, ExpressionNode>();
             var pending = new Stack<ExpressionNode>();
@@ -99,21 +174,39 @@ namespace FormulaExplorer
             return false;
         }
 
-        sealed class Token
+        internal static IReadOnlyList<Token> PresentationTokens(string formula, FormulaDisplayStyle style, Regex gridReference)
+        { return new Parser(formula, true, style, gridReference).Tokens; }
+
+        internal static bool IsInvariantFormulaError(string text)
+        { return Array.Exists(Parser.Errors, error => String.Equals(error, text, StringComparison.OrdinalIgnoreCase)); }
+
+        internal sealed class Token
         {
             public string Text, Kind;
             public int Start, End;
+            public SheetSpanReference SheetSpan;
         }
 
         sealed class Parser
         {
             readonly string source;
             readonly List<Token> tokens = new List<Token>();
-            int index, depth;
+            readonly bool presentation;
+            readonly FormulaDisplayStyle displayStyle;
+            readonly Regex displayGridReference;
+            int index, depth, arrayDepth;
             static readonly Regex R1C1Token = new Regex(@"^R(?:\d+|\[-?\d+\])?C(?:\d+|\[-?\d+\])?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            static readonly string[] Errors = { "#GETTING_DATA", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#NULL!", "#N/A", "#SPILL!", "#CALC!", "#CONNECT!", "#BLOCKED!", "#UNKNOWN!", "#FIELD!", "#BUSY!", "#PYTHON!" };
+            internal static readonly string[] Errors = { "#GETTING_DATA", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#NULL!", "#N/A", "#SPILL!", "#CALC!", "#CONNECT!", "#BLOCKED!", "#UNKNOWN!", "#FIELD!", "#BUSY!", "#PYTHON!" };
 
-            public Parser(string text) { source = text; Lex(); }
+            public Parser(string text, bool presentation = false, FormulaDisplayStyle displayStyle = null, Regex displayGridReference = null)
+            {
+                source = text;
+                this.presentation = presentation;
+                this.displayStyle = displayStyle;
+                this.displayGridReference = displayGridReference;
+                Lex();
+            }
+            internal IReadOnlyList<Token> Tokens { get { return tokens; } }
             Token Current { get { return tokens[index]; } }
             Token Take() { return tokens[index++]; }
             FormatException Error(string message, int position) { return new FormatException(message + " (position " + position + ")."); }
@@ -199,7 +292,7 @@ namespace FormulaExplorer
             static bool ReferenceLike(ExpressionNode node)
             {
                 if (node.Kind == "Group") return node.Children.Count == 1 && ReferenceLike(node.Children[0]);
-                return node.Kind == "Reference" || node.Kind == "Name" || node.Kind == "Function" || node.Kind == "Invocation" || node.Kind == "Range" || node.Kind == "Union" || node.Kind == "Intersection" || node.Kind == "Spill";
+                return node.SheetSpan != null || node.Kind == "Reference" || node.Kind == "Name" || node.Kind == "Function" || node.Kind == "Invocation" || node.Kind == "Range" || node.Kind == "Union" || node.Kind == "Intersection" || node.Kind == "Spill";
             }
             static bool RangeEndpoint(ExpressionNode node)
             {
@@ -210,6 +303,12 @@ namespace FormulaExplorer
             ExpressionNode Prefix(bool union)
             {
                 Token token = Take();
+                if (token.SheetSpan != null)
+                {
+                    ExpressionNode span = Node("3D reference", token.Start, token.End);
+                    span.SheetSpan = token.SheetSpan;
+                    return span;
+                }
                 if (token.Text == "+" || token.Text == "-" || token.Text == "@")
                 {
                     ExpressionNode operand = Expression(70, union);
@@ -306,11 +405,23 @@ namespace FormulaExplorer
             void Lex()
             {
                 int p = 0;
+                char decimalPoint = displayStyle == null ? '.' : displayStyle.DecimalSeparator;
                 while (p < source.Length)
                 {
                     if (Char.IsWhiteSpace(source[p])) { p++; continue; }
                     int start = p;
                     char c = source[p];
+                    if (!presentation && (c == '\'' || c == '[' || IsNameCharacter(c)))
+                    {
+                        int end;
+                        SheetSpanReference span = SheetSpanReference.Read(source, p, out end);
+                        if (span != null)
+                        {
+                            tokens.Add(new Token { Start = start, End = end, Kind = "Atom", Text = source.Substring(start, end - start), SheetSpan = span });
+                            p = end;
+                            continue;
+                        }
+                    }
                     string kind = "Symbol";
                     if (c == '"')
                     {
@@ -323,11 +434,11 @@ namespace FormulaExplorer
                         }
                         if (!closed) throw Error("Unclosed string literal", start);
                     }
-                    else if (Char.IsDigit(c) || (c == '.' && p + 1 < source.Length && Char.IsDigit(source[p + 1])))
+                    else if (Char.IsDigit(c) || (c == decimalPoint && p + 1 < source.Length && Char.IsDigit(source[p + 1])))
                     {
                         kind = "Number";
                         while (p < source.Length && Char.IsDigit(source[p])) p++;
-                        if (p < source.Length && source[p] == '.') { p++; while (p < source.Length && Char.IsDigit(source[p])) p++; }
+                        if (p < source.Length && source[p] == decimalPoint) { p++; while (p < source.Length && Char.IsDigit(source[p])) p++; }
                         if (p + 1 < source.Length && (source[p] == 'E' || source[p] == 'e') && (Char.IsDigit(source[p + 1]) || source[p + 1] == '+' || source[p + 1] == '-'))
                         {
                             p++; if (p < source.Length && (source[p] == '+' || source[p] == '-')) p++;
@@ -335,7 +446,7 @@ namespace FormulaExplorer
                             if (digits == p) throw Error("Invalid numeric exponent", start);
                         }
                         // Sheet names may begin with a digit, e.g. 2026!A1.
-                        if (p < source.Length && (source[p] == '!' || IsNameCharacter(source[p])))
+                        if (p < source.Length && (source[p] == '!' || (IsNameCharacter(source[p]) && !IsStyledSymbol(source[p]))))
                         {
                             p = start; ScanAtom(ref p); kind = "Atom";
                             if (source.Substring(start, p - start).IndexOf('!') < 0) throw Error("Invalid number or identifier beginning with a digit", start);
@@ -343,13 +454,14 @@ namespace FormulaExplorer
                     }
                     else if (c == '#')
                     {
-                        bool found = false;
-                        foreach (string error in Errors)
-                        {
-                            if (source.Length - p >= error.Length && String.Compare(source, p, error, 0, error.Length, StringComparison.OrdinalIgnoreCase) == 0)
-                            { p += error.Length; kind = "Error"; found = true; break; }
-                        }
-                        if (!found) p++;
+                        if (TryScanError(ref p)) kind = "Error";
+                        else p++;
+                    }
+                    else if (IsStyledSymbol(c))
+                    {
+                        if (c == displayStyle.ArrayOpen) arrayDepth++;
+                        else if (c == displayStyle.ArrayClose) arrayDepth--;
+                        p++;
                     }
                     else if (c == '\'' || c == '[' || IsNameCharacter(c)) { ScanAtom(ref p); kind = "Atom"; }
                     else if ("+-*/^&=<>%:,;(){}@".IndexOf(c) >= 0)
@@ -364,33 +476,65 @@ namespace FormulaExplorer
             }
             static bool IsNameCharacter(char c) { return Char.IsLetterOrDigit(c) || c == '_' || c == '.' || c == '$' || c == '\\' || c == '?'; }
 
+            bool IsStyledSymbol(char c)
+            {
+                return displayStyle != null && (c == displayStyle.ArrayOpen || c == displayStyle.ArrayClose ||
+                    c == displayStyle.ListSeparator || (arrayDepth > 0 && (c == displayStyle.ArrayColumnSeparator || c == displayStyle.ArrayRowSeparator)));
+            }
+
+            bool TryScanError(ref int p)
+            {
+                foreach (string error in Errors)
+                    if (source.Length - p >= error.Length && String.Compare(source, p, error, 0, error.Length, StringComparison.OrdinalIgnoreCase) == 0)
+                    { p += error.Length; return true; }
+                if (displayStyle == null || !displayStyle.Local) return false;
+                int end = p + 1;
+                if (end >= source.Length || !Char.IsLetter(source[end])) return false;
+                while (end < source.Length && (Char.IsLetterOrDigit(source[end]) || "_./".IndexOf(source[end]) >= 0)) end++;
+                if (end < source.Length && (source[end] == '!' || source[end] == '?')) end++;
+                p = end;
+                return true;
+            }
+
+            bool TryScanStyledGrid(ref int p)
+            {
+                if (displayGridReference == null) return false;
+                Match match = displayGridReference.Match(source, p);
+                if (!match.Success || match.Index != p) return false;
+                int end = p + match.Length;
+                if (end < source.Length && (IsNameCharacter(source[end]) || source[end] == '!' || source[end] == '[')) return false;
+                p = end;
+                return true;
+            }
+
             void ScanAtom(ref int p)
             {
                 int start = p;
                 bool qualified = false;
+                if (TryScanStyledGrid(ref p)) return;
                 if (source[p] == '\'')
                 {
-                    p++; bool closed = false;
-                    while (p < source.Length)
-                    {
-                        if (source[p++] != '\'') continue;
-                        if (p < source.Length && source[p] == '\'') { p++; continue; }
-                        closed = true; break;
-                    }
-                    if (!closed) throw Error("Unclosed quoted sheet or workbook name", start);
-                    if (p >= source.Length || source[p] != '!') throw Error("Quoted sheet or workbook name must be followed by '!'", p);
+                    ScanQuotedIdentifier(ref p);
+                    // Excel can render a name from R1C1 as an A1 quoted
+                    // identifier, e.g. ='A1'. It is not a sheet qualifier.
+                    if (p >= source.Length || source[p] != '!') return;
                     p++; qualified = true;
+                    if (TryScanStyledGrid(ref p)) return;
                 }
                 while (p < source.Length)
                 {
+                    if (qualified && source[p] == '\'') { ScanQuotedIdentifier(ref p); break; }
+                    if (IsStyledSymbol(source[p])) break;
                     if (IsNameCharacter(source[p])) { p++; continue; }
                     if (source[p] == '!')
                     {
                         if (qualified) throw Error("A reference has more than one sheet separator", p);
-                        qualified = true; p++; continue;
+                        qualified = true; p++;
+                        if (TryScanStyledGrid(ref p)) return;
+                        continue;
                     }
-                    if (qualified && source.Length - p >= 5 && String.Compare(source, p, "#REF!", 0, 5, StringComparison.OrdinalIgnoreCase) == 0)
-                    { p += 5; break; }
+                    if (qualified && source[p] == '#' && displayStyle != null && TryScanError(ref p)) return;
+                    if (qualified && source.Length - p >= 5 && String.Compare(source, p, "#REF!", 0, 5, StringComparison.OrdinalIgnoreCase) == 0) { p += 5; break; }
                     if (source[p] != '[') break;
                     int bracketStart = p, brackets = 0;
                     do
@@ -403,6 +547,18 @@ namespace FormulaExplorer
                     if (brackets != 0) throw Error("Unclosed structured or external reference", bracketStart);
                 }
                 if (p == start || (source[p - 1] == '!' && !source.Substring(start, p - start).EndsWith("#REF!", StringComparison.OrdinalIgnoreCase))) throw Error("Incomplete reference", start);
+            }
+
+            void ScanQuotedIdentifier(ref int p)
+            {
+                int start = p++;
+                while (p < source.Length)
+                {
+                    if (source[p++] != '\'') continue;
+                    if (p < source.Length && source[p] == '\'') { p++; continue; }
+                    return;
+                }
+                throw Error("Unclosed quoted sheet or workbook name", start);
             }
         }
     }

@@ -110,6 +110,34 @@ public static class FormulaMapTests
         local.Formula = "=LET(x,1,x)+x"; local.FormulaR1C1 = local.Formula;
         Kind(lexical, local, FormulaMapKind.UniqueFormulaExternalRefs);
         names.Warnings.Add("Capture incomplète"); Equal(FormulaMap.Analyze(names).Warnings.Contains("Capture incomplète"), true);
+        // A band's first row/column is a classification boundary even when
+        // matching formulas exist immediately outside it in the workbook.
+        var band = new Book();
+        Add(band, "B2", "=A1", "=R[-1]C[-1]");
+        Cell bandRight = Add(band, "C2", "=B1", "=R[-1]C[-1]");
+        Cell bandDown = Add(band, "B3", "=A2", "=R[-1]C[-1]");
+        Cell bandBoth = Add(band, "C3", "=B2", "=R[-1]C[-1]");
+        Equal(Find(FormulaMap.Analyze(band), bandBoth).Kind, FormulaMapKind.FormulaCopiedDownAndAcross);
+        var columnBand = FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 2, 3, 2, 1), true);
+        Equal(columnBand.Cells.Count, 2);
+        Equal(Find(columnBand, bandRight).Kind, FormulaMapKind.UniqueFormula);
+        Equal(Find(columnBand, bandBoth).Kind, FormulaMapKind.FormulaCopiedDown);
+        var rowBand = FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 3, 2, 1, 2), true);
+        Equal(Find(rowBand, bandDown).Kind, FormulaMapKind.UniqueFormula);
+        Equal(Find(rowBand, bandBoth).Kind, FormulaMapKind.FormulaCopiedAcross);
+        Equal(FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 3, 3, 1, 1), true).Cells.Single().Kind, FormulaMapKind.UniqueFormula);
+        var blankBand = FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 2, 2, 3, 3), true);
+        Equal(blankBand.Cells.Count, 9);
+        Equal(blankBand.Cells.Count(item => item.Kind == FormulaMapKind.Empty), 5);
+        Equal(blankBand.Cells.Single(item => item.Cell.Address == "D4").Cell.Kind, "Vide");
+        Equal(band.Cells.Count, 4); // Synthesized blanks do not mutate the capture.
+        Equal(FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 2, 2, 3, 3), false).Cells.Count, 4);
+        Equal(FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 100, 10, 1, 1), true).Cells.Single().Kind, FormulaMapKind.Empty);
+        Equal(FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 100, 10, 1, 1), false).Cells.Count, 0);
+        Cell validated = Demo.Add(band, "S", "D4", "", "", "Vide"); validated.HasValidation = true;
+        Equal(FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 4, 4, 1, 1), true).Cells.Single().Kind, FormulaMapKind.DataValidation);
+        band.Warnings.Add("Scope warning");
+        Equal(FormulaMap.Analyze(band, "S", new FormulaMapArea(7, 4, 4, 1, 1), true).Warnings.Contains("Scope warning"), true);
         Console.WriteLine("PASS Formula map: " + assertions + " assertions");
         return assertions;
     }

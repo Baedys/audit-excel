@@ -43,6 +43,23 @@ Le constructeur statique du type imbriqué nommé `FormulaMap` charge les couleu
 
 `Color.Empty` signifie ici absence de couleur de carte pour la catégorie, pas effacement du format existant. `MapColors..cctor`, `IL_0177`–`IL_0183`, charge l'option AnalyseUFs avec une valeur par défaut vraie. Le stockage précis de la restauration, les limites de la zone effectivement lue et les interactions avec les formats conditionnels restent à vérifier en exécution.
 
+## Modification des options sur des cartes actives
+
+Lecture CIL de la même DLL. `MapColors.GetColor` (RVA `116284`, `IL_0000`–`IL_0014`) affiche les sous-types 5 à 7 avec la couleur du type générique 4 quand AnalyseUFs est désactivée. `SaveSettings` (RVA `115844`) conserve `MapAnalyzeFormulas`. `Reset_Click` (RVA `117330`) rétablit l'analyse et les couleurs initiales.
+
+`MapColors.<UpdateSettings>b__0` (RVA `350064`) distingue trois changements. `Manager.OnSettingsChanged` (RVA `111416`) choisit la mise à jour correspondante.
+
+| Changement | Effet sur les cartes actives |
+| --- | --- |
+| Couleurs seulement | Recoloration à partir des catégories en mémoire. |
+| Analyse des formules uniques désactivée | Recoloration générique, avec conservation des catégories détaillées en mémoire. |
+| Analyse des formules uniques réactivée | Réanalyse des seules cartes sans catégories détaillées, puis recoloration des autres. |
+| Couleur de validation ajoutée ou retirée | Réanalyse de toutes les cartes actives. Le changement entre deux couleurs actives relève de la recoloration seule. |
+
+`<ReAnalyse>b__0` (RVA `348572`) lit la zone physique de chaque modèle avec les deux options courantes, avant `Map.ReplaceBlocks` (RVA `114276`). Ce chemin ne reprend pas de masque de fonds conditionnels. `CheckAnalyse_CheckedChanged` (RVA `117287`) déclenche la mise à jour et enregistre les paramètres. Dans Excel, le menu **Map Colors** a ouvert une palette flottante avec onze catégories, trois lignes de sous-types en retrait, la case d'analyse et les commandes de remise à zéro, chargement et export.
+
+`MapColors.WriteSettings` (RVA `116028`) écrit sous `FormulaMaps` les champs `AnalyseUFs`, `Colors` et `CustomColors`. Le convertisseur de couleurs (RVA `69284` et `69408`) lit des chaînes HTML et représente l'absence de fond par une chaîne vide. `TryReadSettings` (RVA `116048`) détecte aussi l'ancien format plat par la clé `UniqueFormula`. Il remplace alors les seuls fonds fournis et conserve les autres réglages. Le codec Clair est vérifié contre ce contrat statique.
+
 ## Implémentation originale de Clair
 
 `FormulaMap.Analyze(Book)` fournit des `MapCell` avec cellule, catégorie, raison et avertissements, et un résultat global `Cells`, `Warnings`, `Incomplete`. L'implémentation reproduit les priorités et directions ci-dessus ; elle utilise les chaînes R1C1 réellement capturées dans Excel. Les comparaisons sont ordinales exactes : références mixtes/absolues, espaces et casse des chaînes littérales ne sont pas normalisés arbitrairement.
@@ -53,10 +70,12 @@ Les copies prouvées par R1C1 peuvent conserver une catégorie de copie tout en 
 
 Le moteur classe les cellules présentes dans `Book.Cells`. Il ne fabrique ni les cellules vides absentes de la capture, ni leur validation. L'appelant doit capturer les cellules vides avec validation nécessaires au périmètre. Toute capture plafonnée doit fournir un avertissement ; celui-ci est propagé dans `Incomplete`.
 
-Pour l'instant, le moteur applique l'analyse des formules uniques et de validation ; la désactivation de ces options n'est pas exposée par cette API. Les détails des noms complexes, références 3D, tables, fonctions dynamiques et qualification explicite de la feuille courante ne sont pas considérés comme reproduits intégralement. Le parseur de Clair est indépendant de celui du produit original et ses limitations restent visibles.
+`FormulaMapOptions` expose les deux options, actives par défaut. La palette Clair déduit l'analyse de validation de la présence d'un style actif, fond ou police. Le style de police est une extension de Clair. Le volet enregistre chaque changement et met à jour les cartes en conservant leurs propriétaires et zones physiques. La remise aux valeurs d'origine conserve les couleurs personnalisées. Le JSON échange les fonds, le réglage des formules uniques et les couleurs personnalisées. Le XML Clair conserve aussi les polices et la catégorie `Unknown`. Les v1/v2 restent lisibles et l'écriture utilise v3 lorsqu'une liste de couleurs personnalisées diffère de celle d'origine.
+
+Les détails des noms complexes, références 3D, tables, fonctions dynamiques et qualification explicite de la feuille courante restent à comparer. Le parseur de Clair est indépendant et signale ses limites dans les résultats.
 
 ## Validation
 
 `FormulaMapTests.Run()` couvre directions de copie et cellule source, trous, séparation des feuilles, limites A1/XFD1048576, R1C1 relatives et absolues, casse des chaînes, références locales/interfeuilles/externes, chaînes littérales trompeuses, tableaux structurés non résolus, syntaxe invalide, données R1C1 absentes, priorités validation/constantes/formules, erreurs calculées et chaînes de noms.
 
-Compilation .NET Framework et **64 assertions réussies** lors de cette livraison. Ces tests vérifient le moteur pur. Ils ne prouvent ni l'application/restauration des formats dans Excel, ni la persistance après réouverture, ni une comparaison différentielle complète avec Arixcel. Ces validations restent nécessaires avant de déclarer la carte identique.
+Les tests de classification totalisent **80 assertions**, complétées par **67** sur les options. Le corpus de palette couvre la migration v1/v2 et l'éditeur. Les contrôles Excel et leur périmètre figurent dans [VALIDATION.md](VALIDATION.md).

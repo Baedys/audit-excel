@@ -14,14 +14,27 @@ public static class ExcelOperationsTests
     {
         if (actual != expected) throw new Exception(label + ": expected " + expected + ", got " + actual);
     }
+    static string ActiveLocation(object application)
+    {
+        object active = null, sheet = null, workbook = null;
+        try
+        {
+            active = ((dynamic)application).ActiveCell; sheet = ((dynamic)active).Worksheet; workbook = ((dynamic)sheet).Parent;
+            return (string)((dynamic)workbook).FullName + "|" + (string)((dynamic)sheet).Name + "!" + (string)((dynamic)active).Address;
+        }
+        finally { ExcelBridge.Release(workbook); ExcelBridge.Release(sheet); ExcelBridge.Release(active); }
+    }
     static ExpressionValue EvaluateChecked(object application, ExcelBridge bridge, Book book, Cell cell, string expression)
     {
         dynamic app = application;
         bool eventsBefore = app.EnableEvents, screenBefore = app.ScreenUpdating;
-        Console.WriteLine("CHECK Evaluate " + expression + " before: EnableEvents=" + eventsBefore + " ScreenUpdating=" + screenBefore);
+        string activeBefore = ActiveLocation(application);
+        Console.WriteLine("CHECK Evaluate " + expression + " before: EnableEvents=" + eventsBefore + " ScreenUpdating=" + screenBefore + " active=" + activeBefore + " owner=" + cell.Location);
         ExpressionValue result = bridge.Evaluate(book, cell, expression);
         bool eventsAfter = app.EnableEvents, screenAfter = app.ScreenUpdating;
-        Console.WriteLine("CHECK Evaluate " + expression + " after: EnableEvents=" + eventsAfter + " ScreenUpdating=" + screenAfter);
+        string activeAfter = ActiveLocation(application);
+        Console.WriteLine("CHECK Evaluate " + expression + " after: EnableEvents=" + eventsAfter + " ScreenUpdating=" + screenAfter + " active=" + activeAfter + " result=" + result.Text.Replace(Environment.NewLine, " / "));
+        Equal(activeAfter, activeBefore);
         EqualFlag(eventsAfter, eventsBefore, expression + " EnableEvents restoration");
         EqualFlag(screenAfter, screenBefore, expression + " ScreenUpdating restoration");
         return result;
@@ -66,12 +79,24 @@ public static class ExcelOperationsTests
                 dynamic selectionSheet = iteration % 2 == 0 ? other : secondSheet;
                 dynamic selection = Keep(selectionSheet.Range["D9:E10"]);
                 if (iteration % 3 != 0) selection = Keep(app.Union(selection, Keep(selectionSheet.Range["G11:H12"])));
-                app.Goto(selection, false); Keep(selectionSheet.Range["E10"]).Activate();
+                try { app.Goto(selection, false); Keep(selectionSheet.Range["E10"]).Activate(); }
+                catch
+                {
+                    // Keep the original COM failure while exposing a setup fault
+                    // separately from a failure inside ExcelBridge.Evaluate.
+                    try { Console.WriteLine("SETUP FAILED cycle=" + iteration + " expected sheet=" + (string)selectionSheet.Name + " active=" + ActiveLocation(application)); }
+                    catch { Console.WriteLine("SETUP FAILED cycle=" + iteration + "; active cell unavailable"); }
+                    throw;
+                }
                 string priorWorkbookName = (string)Keep(app.ActiveWorkbook).FullName;
                 string priorSheetName = (string)Keep(app.ActiveSheet).Name, priorAddress = (string)Keep(app.Selection).Address;
                 int priorWindowHandle = (int)Keep(app.ActiveWindow).Hwnd, priorAreaCount = (int)Keep(Keep(app.Selection).Areas).Count;
                 app.EnableEvents = iteration % 2 == 0; app.ScreenUpdating = iteration % 3 == 0;
                 bool iterationEvents = app.EnableEvents, iterationScreen = app.ScreenUpdating;
+                // A literal range result cannot detect a wrong implicit caller.
+                // ROW()/COLUMN() must use B5, never prior active E10 (or a cached caller).
+                ExpressionValue position = bridge.Evaluate(book, cell, "ROW()*100+COLUMN()");
+                if (position.Text != "502") throw new Exception("Cycle " + iteration + " owner Values!B5 expected ROW()*100+COLUMN()=502, got " + position.Text + "; prior=" + priorWorkbookName + "|" + priorSheetName + "!$E$10; restored=" + ActiveLocation(application));
                 var evaluatedRange = bridge.Evaluate(book, cell, "A1:A2");
                 Equal(evaluatedRange.Rows, 2L); Equal(evaluatedRange.Text, "7" + Environment.NewLine + "3");
                 Equal((string)Keep(app.ActiveWorkbook).FullName, priorWorkbookName);
@@ -83,7 +108,7 @@ public static class ExcelOperationsTests
                 EqualFlag((bool)app.EnableEvents, iterationEvents, "Cycle " + iteration + " EnableEvents restoration");
                 EqualFlag((bool)app.ScreenUpdating, iterationScreen, "Cycle " + iteration + " ScreenUpdating restoration");
             }
-            Console.WriteLine("PASS 50 evaluation restoration cycles across two books and disjoint selections (500 assertions)");
+            Console.WriteLine("PASS 50 evaluation context/restoration cycles across two books and disjoint selections (550 assertions)");
             ((dynamic)secondWorkbook).Close(false); ExcelBridge.Release(secondWorkbook); secondWorkbook = null;
             app.EnableEvents = eventsBefore; app.ScreenUpdating = screenBefore;
             FormulaChange change = bridge.EditFormula(book, cell, "=SUM(A1:A2)*3"); Equal((double)b5.Value2, 30.0);
@@ -117,6 +142,10 @@ public static class ExcelOperationsTests
             book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M1"), "=DATE(2026,1,1)"); bridge.UndoFormula(change);
             Equal(Format(dateCell, null), "General"); Equal((double)dateCell.Value2, 8.0);
             book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M1"), "=DATE(2026,1,1)"); Format(dateCell, "0.000"); bridge.UndoFormula(change); Equal(Format(dateCell, null), "0.000");
+            dynamic textFormatted = Keep(ws.Range["M2"]); Format(textFormatted, "@"); textFormatted.Value2 = "texte";
+            book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M2"), "=1+2");
+            Equal((bool)textFormatted.HasFormula, true); Equal((double)textFormatted.Value2, 3.0); Equal(Format(textFormatted, null), "@");
+            bridge.UndoFormula(change); Equal((bool)textFormatted.HasFormula, false); Equal((string)textFormatted.Value2, "texte"); Equal(Format(textFormatted, null), "@");
             other.Activate(); dynamic shapes = Keep(other.Shapes), shape = Keep(shapes.AddShape(1, 5, 5, 30, 30)); shape.Select();
             book = bridge.Capture(workbook); bridge.Evaluate(book, book.Get("Values", "K3"), "[@[Input!]]*2");
             Equal((string)Keep(app.Selection).Name, (string)shape.Name);
@@ -126,6 +155,14 @@ public static class ExcelOperationsTests
             book = bridge.Capture(workbook); Equal(bridge.SelectionCells(book).Count, 5);
             bridge.Evaluate(book, book.Get("Values", "K3"), "[@[Input!]]*2");
             Equal((int)Keep(Keep(app.Selection).Areas).Count, 2); Equal((string)Keep(app.ActiveCell).Address, "$E$10");
+            dynamic moved = Keep(ws.Range["M20"]); moved.Formula2 = "=42";
+            book = bridge.Capture(workbook); change = bridge.EditFormula(book, book.Get("Values", "M20"), "=99");
+            Keep(moved.EntireRow).Insert();
+            Keep(ws.Range["M20"]).Formula2 = "=99";
+            ws.Name = "Valeurs déplacées";
+            bridge.UndoFormula(change);
+            Equal((string)Keep(ws.Range["M20"]).Formula2, "=99"); Equal((string)Keep(ws.Range["M21"]).Formula2, "=42");
+            Equal(change.Location, "'Valeurs déplacées'!M21");
             Console.WriteLine("PASS Excel expressions, locale, context restoration, formula edit/undo and conflict protection");
         }
         finally

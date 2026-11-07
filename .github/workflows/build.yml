@@ -9,12 +9,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile and test core
         shell: pwsh
-        run: ./test.ps1
+        run: ./test.ps1 -WithExcelShortcut
       - uses: actions/upload-artifact@v4
         with:
           name: clair-windows-prototype
           path: |
             bin/Clair.exe
             bin/Clair.AddIn.dll
+            bin/Clair.Shortcut.x64.xll
+            bin/Clair.Shortcut.x86.xll
             LICENSE
             README.md

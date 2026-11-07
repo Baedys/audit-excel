@@ -1,6 +1,6 @@
-param([switch]$Excel)
+param([switch]$Excel, [switch]$WithExcelShortcut)
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'build.ps1')
+& (Join-Path $PSScriptRoot 'build.ps1') -WithExcelShortcut:$WithExcelShortcut
 $compilerPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compilerPath)) { $compilerPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
 $binPath = Join-Path $PSScriptRoot 'bin'

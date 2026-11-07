@@ -20,6 +20,8 @@ public static class HighlightPaletteTests
     }
     static void Same(HighlightPalette actual, HighlightPalette expected)
     {
+        Equal(actual.AnalyzeUniqueFormulas, expected.AnalyzeUniqueFormulas);
+        Equal(actual.AnalyzeDataValidation, expected.AnalyzeDataValidation);
         Equal(actual.Entries.Count, expected.Entries.Count);
         foreach (FormulaMapKind kind in Enum.GetValues(typeof(FormulaMapKind)))
         {
@@ -37,6 +39,7 @@ public static class HighlightPaletteTests
         {
             string path = Path.Combine(folder, "palette.xml"), invalid = Path.Combine(folder, "invalid.xml");
             HighlightPalette palette = HighlightPalette.Default();
+            Equal(palette.AnalyzeUniqueFormulas, true); Equal(palette.AnalyzeDataValidation, true);
             Equal(palette.Entries.Count, Enum.GetValues(typeof(FormulaMapKind)).Length);
             foreach (FormulaMapKind kind in Enum.GetValues(typeof(FormulaMapKind)))
             {
@@ -55,6 +58,7 @@ public static class HighlightPaletteTests
             Equal(palette.Entries[FormulaMapKind.Text].FillRgb, (int?)null);
             Equal(palette.Entries[FormulaMapKind.Empty].FillRgb, (int?)null);
             HighlightPalette copy = palette.Clone(); Same(copy, palette);
+            copy.AnalyzeUniqueFormulas = false; Equal(palette.AnalyzeUniqueFormulas, true);
             copy.Entries[FormulaMapKind.Number].FillRgb = 0;
             Equal(palette.Entries[FormulaMapKind.Number].FillRgb, (int?)0xFFFF71);
             Equal(Object.ReferenceEquals(palette.Entries, copy.Entries), false);
@@ -63,11 +67,17 @@ public static class HighlightPaletteTests
             palette.Save(path);
             Same(HighlightPalette.Load(path), palette);
             string original = File.ReadAllText(path);
+            Equal(original.Contains("version=\"2\""), true);
+            Equal(original.Contains("analyzeUniqueFormulas=\"true\""), true);
+            string legacy = original.Replace("version=\"2\"", "version=\"1\"").Replace(" analyzeUniqueFormulas=\"true\"", "");
+            File.WriteAllText(invalid, legacy); Same(HighlightPalette.Load(invalid), HighlightPalette.Default());
+            File.Delete(invalid);
             Equal(Directory.GetFiles(folder).Length, 1);
             palette.Entries[FormulaMapKind.Text].FillRgb = 0;
             palette.Entries[FormulaMapKind.Text].FontRgb = 0xFFFFFF;
             palette.Entries[FormulaMapKind.Number].Enabled = false;
             palette.Entries[FormulaMapKind.Number].FontRgb = 0x123456;
+            palette.AnalyzeUniqueFormulas = false;
             palette.Save(path); // Existing-file atomic replacement path.
             Same(HighlightPalette.Load(path), palette);
             Equal(Directory.GetFiles(folder).Length, 1);
@@ -97,10 +107,15 @@ public static class HighlightPaletteTests
             string firstStyle = Regex.Match(original, @"<Style\s[^>]*/>").Value;
             string withoutDeclaration = original.Substring(original.IndexOf("?>", StringComparison.Ordinal) + 2);
             string[] invalidDocuments = {
-                original.Replace("version=\"1\"", "version=\"2\""),
-                original.Replace(" version=\"1\"", ""),
+                original.Replace("version=\"2\"", "version=\"3\""),
+                original.Replace(" version=\"2\"", ""),
                 original.Replace("ClairHighlightPalette", "OtherPalette"),
-                original.Replace("version=\"1\"", "version=\"1\" mystery=\"x\""),
+                original.Replace("version=\"2\"", "version=\"2\" mystery=\"x\""),
+                original.Replace(" analyzeUniqueFormulas=\"true\"", ""),
+                original.Replace("analyzeUniqueFormulas=\"true\"", "analyzeUniqueFormulas=\"TRUE\""),
+                original.Replace("analyzeUniqueFormulas=\"true\"", "analyzeUniqueFormulas=\"1\""),
+                original.Replace("analyzeUniqueFormulas=\"true\"", "analyzeUniqueFormulas=\"\""),
+                original.Replace("version=\"2\"", "version=\"1\""),
                 original.Replace("kind=\"Number\"", "kind=\"FutureKind\""),
                 original.Replace("kind=\"Number\"", "kind=\"number\""),
                 original.Replace("kind=\"Number\"", "kind=\"2\""),
@@ -122,7 +137,7 @@ public static class HighlightPaletteTests
                 original.Replace(firstStyle, firstStyle.Replace(" />", ">text</Style>")),
                 original.Replace(firstStyle, firstStyle.Replace(" />", "><Nested /></Style>")),
                 original.Replace("<Style", "<UnknownStyle"),
-                original.Replace("version=\"1\"", "xmlns=\"urn:other\" version=\"1\""),
+                original.Replace("version=\"2\"", "xmlns=\"urn:other\" version=\"2\""),
                 original.Replace("</ClairHighlightPalette>", "extra</ClairHighlightPalette>"),
                 original + "<Extra />",
                 "<!DOCTYPE ClairHighlightPalette [<!ENTITY hidden 'FFC000'>]>" + withoutDeclaration,

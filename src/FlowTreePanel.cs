@@ -45,9 +45,10 @@ namespace FormulaExplorer
         {
             flowGroupBySheet.Text = "Regrouper par feuille"; flowGroupBySheet.AutoSize = true;
             SyncFlowGroupOption(); left.Controls.Add(flowGroupBySheet, 0, 0);
-            left.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Espace : colorer · Entrée : explorer", AutoEllipsis = true }, 0, 1);
+            if (!IsDocked) left.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "Espace : colorer · Entrée : explorer", AutoEllipsis = true }, 0, 1);
             flowGroups.Dock = DockStyle.Fill; flowGroups.HideSelection = false; flowGroups.BorderStyle = BorderStyle.None; flowGroups.ShowNodeToolTips = true;
             flowGroups.ItemHeight = Math.Max(22, Font.Height + 6); flowGroups.AccessibleName = "Arbre des flux et couleurs";
+            flowGroups.AccessibleDescription = "Espace pour colorer, Entrée pour explorer.";
             flowTreeStates.ColorDepth = ColorDepth.Depth32Bit;
             foreach (CheckBoxState state in new[] { CheckBoxState.UncheckedNormal, CheckBoxState.CheckedNormal, CheckBoxState.MixedNormal })
             {

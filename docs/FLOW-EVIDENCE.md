@@ -6,6 +6,10 @@ Méthode : réutilisation de l'inventaire existant puis lecture ciblée des corp
 
 Les observations sont statiques, limitées aux chemins ci-dessous. Elles ne prouvent pas le résultat visuel dans toutes les versions d'Excel. La [documentation officielle du flux](https://www.arixcel.com/explorer/functions/flow), lue dans son module public `chunk-C0OacgCm.js`, décrit le choix d'un périmètre et d'une zone centrale, deux vues, des groupes à colorer/décolorer, la fermeture normale avec retrait, la fermeture conservant les couleurs, leur retrait ultérieur et leur conservation comme format du classeur. Elle exclut explicitement les dépendances via OFFSET/INDIRECT. Ces descriptions actuelles corroborent certaines branches du binaire, sans remplacer leur vérification runtime.
 
+## Références 3D et périmètre
+
+`CalcFlow.ParsedFormula` (RVA `302492`, `IL_001f` à `IL_00b3`) parcourt les feuilles de l'arbre de formule. Le nœud 3D est ignoré et ses enfants physiques sont collectés. `Model.NavigateFormula` (RVA `305184`, `IL_0043` à `IL_014e`) résout la feuille dans le périmètre, situe les coordonnées et marque les cellules communes avec la zone. Ce parcours suit les références écrites dans la formule, indépendamment de la valeur renvoyée. Dans Excel, les cinq blocs externes du témoin incluent `Fev`, feuille masquée. [Comparaison native](VALIDATION.md)
+
 ## 1. Catégories et palette par défaut
 
 Enum `Arixcel.Explorer.Features.CalcFlow.CellType` : Empty=0, Inputs=1, Calculations=2, Outputs=3, OrphanFormulas=4, OutsidePrecedents=5, InsideInflows=6, InsideOutflows=7, OutsideDependents=8. Enum ViewMode : InputsOutputs=0, InflowsOutflows=1.

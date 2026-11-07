@@ -2,20 +2,43 @@ param([switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
 $addinPath = Join-Path $PSScriptRoot 'bin\Clair.AddIn.dll'
 $classId = '{A230F44E-6C1B-49DA-8798-7BA554B85D52}'
+$paneId = '{08D97549-45B7-46A0-A919-AACF0D35E91E}'
 $owner = 'Clair.FormulaExplorer.0.1'
 $classKey = "Software\Classes\CLSID\$classId"
+$paneKey = "Software\Classes\CLSID\$paneId"
 $progKey = 'Software\Classes\Clair.ExcelAddIn'
+$paneProgKey = 'Software\Classes\Clair.ExcelTaskPane'
 $addinKey = 'Software\Microsoft\Office\Excel\Addins\Clair.ExcelAddIn'
 if (-not $Uninstall -and -not (Test-Path -LiteralPath $addinPath)) { throw 'Build first: .\build.ps1' }
 $registryViews = @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)
 if (-not $Uninstall) { $assemblyName = [Reflection.AssemblyName]::GetAssemblyName($addinPath).FullName }
+
+function Register-ClairComClass($hive, $clsidKey, $id, $name, $progId, $managedType, $threading, $categories) {
+    $key = $hive.CreateSubKey($clsidKey)
+    try { $key.SetValue('', $name); $key.SetValue('ClairOwner', $owner) } finally { $key.Dispose() }
+    $key = $hive.CreateSubKey("$clsidKey\InprocServer32")
+    try {
+        $key.SetValue('', 'mscoree.dll'); $key.SetValue('ThreadingModel', $threading)
+        $key.SetValue('Class', $managedType); $key.SetValue('Assembly', $assemblyName)
+        $key.SetValue('RuntimeVersion', 'v4.0.30319'); $key.SetValue('CodeBase', ([Uri]$addinPath).AbsoluteUri)
+    } finally { $key.Dispose() }
+    $key = $hive.CreateSubKey("$clsidKey\ProgId")
+    try { $key.SetValue('', $progId) } finally { $key.Dispose() }
+    foreach ($category in $categories) { $hive.CreateSubKey("$clsidKey\Implemented Categories\$category").Dispose() }
+    $path = "Software\Classes\$progId"
+    $key = $hive.CreateSubKey($path)
+    try { $key.SetValue('', $name); $key.SetValue('ClairOwner', $owner) } finally { $key.Dispose() }
+    $key = $hive.CreateSubKey("$path\CLSID")
+    try { $key.SetValue('', $id) } finally { $key.Dispose() }
+}
+
 # Check every view before writing anything: a conflict in the second view must
 # not leave the first view partially registered or partially uninstalled.
 foreach ($registryView in $registryViews) {
     $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $registryView)
     try {
         # Refuse to replace or delete a key not owned by this add-in.
-        foreach ($path in @($classKey, $progKey, $addinKey)) {
+        foreach ($path in @($classKey, $progKey, $paneKey, $paneProgKey, $addinKey)) {
             $existing = $hive.OpenSubKey($path)
             try { if ($null -ne $existing -and $existing.GetValue('ClairOwner') -ne $owner) { throw "Registry key belongs to another installation: $path" } }
             finally { if ($null -ne $existing) { $existing.Dispose() } }
@@ -26,29 +49,14 @@ foreach ($registryView in $registryViews) {
     $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $registryView)
     try {
         if ($Uninstall) {
-            foreach ($path in @($addinKey, $progKey, $classKey)) { $hive.DeleteSubKeyTree($path, $false) }
+            foreach ($path in @($addinKey, $paneProgKey, $paneKey, $progKey, $classKey)) { $hive.DeleteSubKeyTree($path, $false) }
         } else {
-            $key = $hive.CreateSubKey($classKey)
-            try { $key.SetValue('', 'Clair Excel Add-in'); $key.SetValue('ClairOwner', $owner) } finally { $key.Dispose() }
-            $key = $hive.CreateSubKey("$classKey\InprocServer32")
-            try {
-                $key.SetValue('', 'mscoree.dll'); $key.SetValue('ThreadingModel', 'Both')
-                $key.SetValue('Class', 'FormulaExplorer.ExcelAddIn')
-                $key.SetValue('Assembly', $assemblyName)
-                $key.SetValue('RuntimeVersion', 'v4.0.30319')
-                $key.SetValue('CodeBase', ([Uri]$addinPath).AbsoluteUri)
-            } finally { $key.Dispose() }
-            $key = $hive.CreateSubKey("$classKey\ProgId")
-            try { $key.SetValue('', 'Clair.ExcelAddIn') } finally { $key.Dispose() }
             # Office's COMAddIns.Update discovers components in the add-in designer category.
-            $key = $hive.CreateSubKey("$classKey\Implemented Categories\{B65AD802-ABAF-11D0-BB8B-00A0C90F2744}")
-            $key.Dispose()
-            $key = $hive.CreateSubKey("$classKey\Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}")
-            $key.Dispose()
-            $key = $hive.CreateSubKey($progKey)
-            try { $key.SetValue('', 'Clair Excel Add-in'); $key.SetValue('ClairOwner', $owner) } finally { $key.Dispose() }
-            $key = $hive.CreateSubKey("$progKey\CLSID")
-            try { $key.SetValue('', $classId) } finally { $key.Dispose() }
+            Register-ClairComClass $hive $classKey $classId 'Clair Excel Add-in' 'Clair.ExcelAddIn' 'FormulaExplorer.ExcelAddIn' 'Both' `
+                @('{B65AD802-ABAF-11D0-BB8B-00A0C90F2744}', '{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}')
+            Register-ClairComClass $hive $paneKey $paneId 'Clair Excel Task Pane' 'Clair.ExcelTaskPane' 'FormulaExplorer.ExcelTaskPaneControl' 'Apartment' `
+                @('{40FC6ED4-2438-11CF-A3DB-080036F12502}')
+            $hive.CreateSubKey("$paneKey\Control").Dispose()
             $key = $hive.CreateSubKey($addinKey)
             try {
                 $key.SetValue('ClairOwner', $owner)

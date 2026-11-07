@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -16,11 +17,26 @@ namespace FormulaExplorer
 
     public sealed class FormulaChange
     {
-        internal string Workbook, Sheet, Address, BeforeFormula, AfterFormula, BeforeFormat, AfterFormat;
-        internal object BeforeValue;
-        internal bool WasFormula;
+        internal Book Workbook;
+        internal string Sheet, Address, DisplaySheet, BeforeFormat, AfterFormat;
+        internal FormulaCellContent Before, After;
+        internal LegacyArrayContent BeforeArray, AfterArray;
+        internal object Target;
         public bool Undone { get; internal set; }
-        public string Location { get { return "'" + Sheet.Replace("'", "''") + "'!" + Address; } }
+        public string Location { get { return "'" + (DisplaySheet ?? Sheet).Replace("'", "''") + "'!" + Address; } }
+        internal void ReleaseTarget()
+        {
+            object target = Target;
+            Target = null;
+            try { ExcelBridge.Release(target); }
+            catch (InvalidComObjectException) { }
+        }
+    }
+
+    sealed class FormulaCellContent
+    {
+        internal string Formula, TextPrefix;
+        internal object Value;
     }
 
     public sealed partial class ExcelBridge
@@ -29,8 +45,11 @@ namespace FormulaExplorer
         // Explicit LCID: Excel's IDispatch otherwise interprets SUM as a local function
         // name under a French Windows locale, returning #NAME? instead of a value.
         static object OfficeCall(object target, string member, BindingFlags flags, params object[] args)
+        { return OfficeCallWithCulture(target, member, flags, FormulaCulture, args); }
+
+        static object OfficeCallWithCulture(object target, string member, BindingFlags flags, CultureInfo culture, params object[] args)
         {
-            try { return target.GetType().InvokeMember(member, flags, null, target, args, FormulaCulture); }
+            try { return target.GetType().InvokeMember(member, flags, null, target, args, culture); }
             catch (TargetInvocationException ex) { throw ex.InnerException ?? ex; }
         }
         static object ReadFormula(object range)
@@ -39,14 +58,12 @@ namespace FormulaExplorer
             catch (COMException) { return OfficeCall(range, "Formula", BindingFlags.GetProperty); }
             catch (MissingMethodException) { return OfficeCall(range, "Formula", BindingFlags.GetProperty); }
         }
-        static void WriteFormula(object range, string text)
+        static void WriteFormula(object range, string text, bool forceFormula = true, FormulaDisplayStyle style = null)
         {
             // Detect property availability separately: an invalid formula must never
             // be retried through a different formula dialect.
-            bool modern = true;
-            try { OfficeCall(range, "Formula2", BindingFlags.GetProperty); }
-            catch (COMException) { modern = false; }
-            catch (MissingMethodException) { modern = false; }
+            string property;
+            ReadFormulaInStyle(range, style ?? FormulaDisplayStyle.Invariant, out property);
             object app = null, autoCorrect = null;
             bool autoFill = false, captured = false;
             try
@@ -54,7 +71,10 @@ namespace FormulaExplorer
                 app = ((dynamic)range).Application; autoCorrect = ((dynamic)app).AutoCorrect;
                 autoFill = ((dynamic)autoCorrect).AutoFillFormulasInLists; captured = true;
                 ((dynamic)autoCorrect).AutoFillFormulasInLists = false;
-                OfficeCall(range, modern ? "Formula2" : "Formula", BindingFlags.SetProperty, text);
+                bool textFormat = forceFormula && String.Equals(FormulaNumberFormat(range), "@", StringComparison.Ordinal);
+                if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "General");
+                try { OfficeCall(range, property, BindingFlags.SetProperty, text); }
+                finally { if (textFormat) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, "@"); }
             }
             finally
             {
@@ -89,44 +109,152 @@ namespace FormulaExplorer
         }
         public ExpressionValue Evaluate(Book book, Cell owner, string expression)
         {
+            string text = PrepareExpression(expression);
+            return WithExpressionContext(book, owner, false, (sheet, range) => ReadExpression(sheet, range, text, Describe));
+        }
+
+        public ISet<ExpressionNode> EvaluateBranches(Book book, Cell owner, ExpressionNode root)
+        {
+            if (root == null) throw new ArgumentNullException("root");
+            if (!FormulaSyntax.Flatten(root).Any(FormulaBranches.Supports)) return new HashSet<ExpressionNode>();
+            return WithExpressionContext(book, owner, true, (sheet, range) =>
+            {
+                RefreshSheetSpans(sheet, FormulaSyntax.Flatten(root));
+                return ReadExpressionBranches(sheet, range, root);
+            });
+        }
+
+        static ISet<ExpressionNode> ReadExpressionBranches(object sheet, object range, ExpressionNode root)
+        {
+            return FormulaBranches.Chosen(root,
+                operand => ReadBranchWitness(sheet, range, root, operand, ReadBranchValue, Type.Missing),
+                function => UsesFallback(sheet, range, root, function),
+                (function, argument, first) => ReadExtremumArgument(sheet, range, root, function, argument, first));
+        }
+
+        static object ReadExtremumArgument(object sheet, object range, ExpressionNode root, ExpressionNode function, ExpressionNode child, int first)
+        {
+            if (FormulaSyntax.UnwrapGroups(child).SheetSpan == null)
+            {
+                object value = ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing,
+                    evaluateOnApplication: child.SheetSpanOrigin != null);
+                if (!Object.ReferenceEquals(value, multipleBranchCells)) return value;
+            }
+            // Arixcel evaluates multi-cell and 3D references through the parent function.
+            string expression = ReducedReferenceText(function, child, first);
+            return ReadBranchWitness(sheet, range, root, child, ReadBranchValue, Type.Missing, expression, evaluateOnApplication: true);
+        }
+
+        static T ReadBranchWitness<T>(object sheet, object range, ExpressionNode root, ExpressionNode operand,
+            Func<object, T> read, T unavailable, string replacement = null, bool evaluateOnApplication = false)
+        {
+            try
+            {
+                string text = PrepareExpression(FormulaSyntax.EvaluationText(root, operand, replacement));
+                return ReadExpression(sheet, range, text, read, evaluateOnApplication);
+            }
+            catch (InvalidOperationException) { return unavailable; }
+            catch (FormatException) { return unavailable; }
+            catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { return unavailable; }
+            catch (COMException error) { if ((uint)error.ErrorCode == 0x800A03EC) return unavailable; throw; }
+        }
+
+        static string PrepareExpression(string expression)
+        {
             if (String.IsNullOrWhiteSpace(expression)) throw new ArgumentException("Expression vide.");
             string text = expression.StartsWith("=", StringComparison.Ordinal) ? expression : "=" + expression;
             if (text.Length > 255) throw new InvalidOperationException("Excel Evaluate accepte 255 caractères au maximum. Sélectionnez une sous-expression plus courte.");
-            return AtCell(book.FullName, owner.Sheet, owner.Address, delegate(object worksheet, object range)
+            return text;
+        }
+
+        static T ReadExpression<T>(object sheet, object range, string text, Func<object, T> read, bool evaluateOnApplication = false)
+        {
+            string contextual = QualifyTableReferences(range, text);
+            if (contextual.Length > 255) throw new InvalidOperationException("Expression contextualisée au-delà de la limite Excel Evaluate de 255 caractères.");
+            object app = null, result = null;
+            try
+            {
+                if (evaluateOnApplication) app = ((dynamic)sheet).Application;
+                result = OfficeCall(app ?? sheet, "Evaluate", BindingFlags.InvokeMethod, contextual);
+                return read(result);
+            }
+            finally { Release(result); Release(app); }
+        }
+
+        static readonly object[] multipleBranchCells = new object[0];
+        static object ReadBranchValue(object value)
+        {
+            if (value == null || !Marshal.IsComObject(value)) return value;
+            object areas = null;
+            try
+            {
+                areas = ((dynamic)value).Areas;
+                return (int)((dynamic)areas).Count == 1 && Convert.ToDouble(((dynamic)value).CountLarge) == 1
+                    ? ((dynamic)value).Value2 : multipleBranchCells;
+            }
+            finally { Release(areas); }
+        }
+
+        T WithExpressionContext<T>(Book book, Cell owner, bool preserveGroups, Func<object, object, T> evaluate)
+        {
+            return AtDirectCell(book, owner.Sheet, owner.Address, delegate(object worksheet, object range)
             {
                 RequireCurrentFormula(range, owner);
                 dynamic app = application;
                 if ((int)((dynamic)worksheet).Visible != -1) throw new InvalidOperationException("Affichez la feuille dans Excel pour évaluer dans son contexte.");
-                object priorWindow = null, priorSheet = null, priorSelection = null, priorActive = null, result = null;
-                bool priorRange = false;
+                object priorWindow = null, priorSheet = null, priorSelection = null, priorActive = null, priorWorkbook = null;
+                bool priorRange = false, moved = false, changedFlags = false;
                 bool events = app.EnableEvents, screen = app.ScreenUpdating;
                 try
                 {
                     priorWindow = app.ActiveWindow; priorSheet = app.ActiveSheet; priorSelection = app.Selection; priorActive = app.ActiveCell;
+                    priorWorkbook = app.ActiveWorkbook;
                     try { OfficeCall(priorSelection, "Row", BindingFlags.GetProperty); priorRange = true; }
                     catch (COMException) { }
                     catch (MissingMethodException) { }
-                    app.EnableEvents = false; app.ScreenUpdating = false;
-                    app.Goto(range, false);
-                    string contextual = QualifyTableReferences(range, text);
-                    if (contextual.Length > 255) throw new InvalidOperationException("Expression contextualisée au-delà de la limite Excel Evaluate de 255 caractères.");
-                    result = OfficeCall(worksheet, "Evaluate", BindingFlags.InvokeMethod, contextual);
-                    return Describe(result);
+                    bool alreadyAtOwner = preserveGroups && priorActive != null &&
+                        String.Equals((string)((dynamic)priorActive).Address[true, true, 1, true],
+                            (string)((dynamic)range).Address[true, true, 1, true], StringComparison.OrdinalIgnoreCase);
+                    if (preserveGroups && !alreadyAtOwner && ExcelConditionalFillContext.HasGroupedWindow(priorWindow, worksheet))
+                        throw new InvalidOperationException("Activez la cellule de formule pour analyser ses expressions lorsque des feuilles sont groupées.");
+                    changedFlags = true; app.EnableEvents = false; app.ScreenUpdating = false;
+                    if (!alreadyAtOwner)
+                    {
+                        moved = true;
+                        if (priorWindow != null && priorWorkbook != null && DirectSession.Identity(priorWorkbook) == DependencyWorkbookIdentity(book))
+                        {
+                            if (priorSheet == null || DirectSession.Identity(priorSheet) != DirectSession.Identity(worksheet))
+                                ((dynamic)worksheet).Activate();
+                            ((dynamic)range).Select();
+                        }
+                        else app.Goto(range, false);
+                    }
+                    return evaluate(worksheet, range);
                 }
                 finally
                 {
                     try
                     {
-                        if (priorWindow != null) ((dynamic)priorWindow).Activate();
-                        if (priorRange && priorSelection != null)
+                        if (moved && priorWindow != null) ((dynamic)priorWindow).Activate();
+                        if (moved && priorRange && priorSelection != null)
                         {
-                            // Range.Select requires its sheet to remain active. Goto
-                            // restores the actual range's workbook/sheet as one step,
-                            // including a multi-area selection in another workbook.
-                            app.Goto(priorSelection, false);
+                            // Goto can switch to another window of the same workbook.
+                            // Restore the range in the window and worksheet already chosen.
+                            if (priorWindow == null) app.Goto(priorSelection, false);
+                            else
+                            {
+                                object activeSheet = app.ActiveSheet;
+                                try
+                                {
+                                    if (priorSheet != null && (activeSheet == null ||
+                                        DirectSession.Identity(activeSheet) != DirectSession.Identity(priorSheet))) ((dynamic)priorSheet).Activate();
+                                    ((dynamic)priorSelection).Select();
+                                }
+                                finally { Release(activeSheet); }
+                            }
                             if (priorActive != null) ((dynamic)priorActive).Activate();
                         }
-                        else
+                        else if (moved)
                         {
                             if (priorSheet != null) ((dynamic)priorSheet).Activate();
                             if (priorSelection != null) ((dynamic)priorSelection).Select();
@@ -134,8 +262,12 @@ namespace FormulaExplorer
                     }
                     finally
                     {
-                        app.ScreenUpdating = screen; app.EnableEvents = events;
-                        Release(result); Release(priorActive); Release(priorSelection); Release(priorSheet); Release(priorWindow);
+                        try { if (changedFlags) app.ScreenUpdating = screen; }
+                        finally
+                        {
+                            try { if (changedFlags) app.EnableEvents = events; }
+                            finally { Release(priorActive); Release(priorSelection); Release(priorSheet); Release(priorWindow); Release(priorWorkbook); }
+                        }
                     }
                 }
             });
@@ -257,36 +389,278 @@ namespace FormulaExplorer
         public FormulaChange EditFormula(Book book, Cell cell, string formulaText)
         {
             if (String.IsNullOrWhiteSpace(formulaText) || !formulaText.StartsWith("=", StringComparison.Ordinal)) throw new ArgumentException("La formule doit commencer par = (noms de fonctions anglais).");
-            return AtCell(book.FullName, cell.Sheet, cell.Address, delegate(object worksheet, object range)
+            return EditCellContent(book, cell, formulaText, true);
+        }
+
+        internal object RetainDisplayedFormulaArray(Book book, Cell cell, object target)
+        { return AtDirectSheet(book, cell.Sheet, worksheet => RetainEditableLegacyArray(worksheet, target)); }
+
+        internal bool SelectionIsWithinLegacyArray(Book book, Cell cell, IReadOnlyList<Reference> selection)
+        {
+            return AtDirectCell(book, cell.Sheet, cell.Address, delegate(object worksheet, object range)
             {
-                RequireEditable(range); RequireCurrentFormula(range, cell);
-                dynamic target = range;
-                object currentValue = target.Value2;
-                string currentKind = currentValue == null ? "Vide" : currentValue is ErrorWrapper || currentValue is Int32 ? "Erreur" : currentValue is bool ? "Booléen" : currentValue is string ? "Texte" : "Nombre";
-                if (!cell.IsFormula && ((bool)target.HasFormula || currentKind != cell.Kind || !String.Equals(Scalar(currentValue), String.IsNullOrEmpty(cell.Value) && cell.Kind == "Vide" ? "(vide)" : cell.Kind == "Booléen" ? cell.Value.ToUpperInvariant() : cell.Value, StringComparison.Ordinal)))
-                    throw new InvalidOperationException("Cellule modifiée dans Excel : rechargez avant de l'éditer.");
-                FormulaChange change = new FormulaChange { Workbook = book.FullName, Sheet = cell.Sheet, Address = cell.Address,
-                    BeforeFormula = Convert.ToString(ReadFormula(range), FormulaCulture), BeforeValue = target.Value2, WasFormula = (bool)target.HasFormula, BeforeFormat = (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty) };
-                WriteFormula(range, formulaText);
-                change.AfterFormula = Convert.ToString(ReadFormula(range), FormulaCulture);
-                change.AfterFormat = (string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty);
-                return change;
+                if (!IsLegacyArrayMember(range) || (bool)((dynamic)worksheet).ProtectContents || IsLegacyDataTable(ReadLegacyArrayFormula(range)))
+                    return false;
+                object block = null;
+                try
+                {
+                    block = ((dynamic)range).CurrentArray;
+                    Reference bounds = block == null ? null : Reference.Parse(cell.Sheet, (string)((dynamic)block).Address);
+                    return bounds != null && selection.All(area => String.Equals(area.Sheet, bounds.Sheet, StringComparison.OrdinalIgnoreCase) &&
+                        bounds.FirstRow <= area.FirstRow && bounds.LastRow >= area.LastRow &&
+                        bounds.FirstColumn <= area.FirstColumn && bounds.LastColumn >= area.LastColumn);
+                }
+                finally { Release(block); }
             });
+        }
+
+        internal FormulaChange EditDisplayedCell(Book book, Cell cell, object target, object array, string text, FormulaDisplayStyle style)
+        { return EditCellContent(book, cell, text, false, target, array, style); }
+
+        FormulaChange EditCellContent(Book book, Cell cell, string text, bool requireFormula, object retained = null, object retainedArray = null, FormulaDisplayStyle style = null)
+        {
+            Func<object, object, FormulaChange> edit = delegate(object worksheet, object range)
+            {
+                bool isArray = !requireFormula && (bool)((dynamic)range).HasArray;
+                if (!requireFormula && isArray != (retainedArray != null)) throw new InvalidOperationException("La plage matricielle a changé dans Excel.");
+                object array = isArray ? RetainEditableLegacyArray(worksheet, range) : null;
+                try
+                {
+                    if (isArray && !String.Equals((string)((dynamic)array).Address, (string)((dynamic)retainedArray).Address, StringComparison.Ordinal))
+                        throw new InvalidOperationException("La plage matricielle a changé dans Excel.");
+                    if (!isArray) RequireEditable(range);
+                    RequireCurrentFormula(range, cell);
+                    object target = array ?? range;
+                    FormulaCellContent current = isArray ? null : ReadFormulaContent(target);
+                    if (!cell.IsFormula && (current == null || !MatchesCapturedConstant(cell, current)))
+                        throw new InvalidOperationException("Cellule modifiée dans Excel : rechargez avant de l'éditer.");
+                    LegacyArrayContent currentArray = isArray ? ReadLegacyArrayContent(target) : null;
+                    if (isArray && (currentArray == null || currentArray.Formula == null)) throw new InvalidOperationException("La plage matricielle a changé dans Excel.");
+
+                    // Keep the physical workbook ticket without retaining all the captured cells in the undo stack.
+                    var lifetime = new Book { FullName = book.FullName };
+                    directSnapshots.Add(lifetime, RequireDependencySnapshot(book));
+                    string address = ((string)((dynamic)target).Address).Replace("$", "");
+                    FormulaChange change = new FormulaChange { Workbook = lifetime, Sheet = cell.Sheet, Address = address,
+                        DisplaySheet = (string)((dynamic)worksheet).Name, BeforeArray = currentArray,
+                        Before = current, BeforeFormat = isArray ? null : FormulaNumberFormat(target), Target = RangeAt(worksheet, address) };
+                    try
+                    {
+                        if (isArray)
+                        {
+                            WriteLegacyArrayText(target, text, style ?? FormulaDisplayStyle.Invariant);
+                            change.AfterArray = ReadLegacyArrayContent(target);
+                            if (change.AfterArray == null) throw new InvalidOperationException("Excel n’a pas restitué la plage matricielle attendue.");
+                            if (change.AfterArray.Formula != null && !CanWriteLegacyArrayFormula(change.AfterArray.Formula))
+                                throw new InvalidOperationException("La formule matricielle normalisée par Excel dépasse 255 caractères.");
+                        }
+                        else
+                        {
+                            if (text.Length == 0) ((dynamic)target).ClearContents();
+                            else WriteFormula(target, text, requireFormula, style);
+                            change.After = ReadFormulaContent(target);
+                            if (requireFormula && change.After.Formula == null) throw new InvalidOperationException("Excel n’a pas accepté le texte comme formule.");
+                            change.AfterFormat = FormulaNumberFormat(target);
+                        }
+                    }
+                    catch (Exception writeError)
+                    {
+                        change.ReleaseTarget();
+                        try { RestoreEditContent(target, change, true, change.BeforeFormat); }
+                        catch (Exception rollbackError)
+                        {
+                            throw new InvalidOperationException("Restauration après échec de l’écriture impossible. " +
+                                writeError.Message + " · " + rollbackError.Message, new AggregateException(writeError, rollbackError));
+                        }
+                        throw;
+                    }
+                    return change;
+                }
+                finally { Release(array); }
+            };
+            return retained == null ? AtDirectCell(book, cell.Sheet, cell.Address, edit) :
+                AtDirectSheet(book, cell.Sheet, worksheet => edit(worksheet, retained));
         }
         public void UndoFormula(FormulaChange change)
         {
-            if (change == null || change.Undone) throw new InvalidOperationException("Aucune édition à annuler.");
-            AtCell(change.Workbook, change.Sheet, change.Address, delegate(object worksheet, object range)
+            UndoFormulaCore(change);
+            change.ReleaseTarget();
+        }
+
+        internal void UndoFormulaBatch(FormulaChange[] newestFirst)
+        {
+            var formats = new string[newestFirst.Length];
+            int completed = 0;
+            try
             {
-                RequireEditable(range);
-                if (!(bool)((dynamic)range).HasFormula || !String.Equals(Convert.ToString(ReadFormula(range), FormulaCulture), change.AfterFormula, StringComparison.Ordinal))
+                for (; completed < newestFirst.Length; completed++)
+                    formats[completed] = UndoFormulaCore(newestFirst[completed]);
+            }
+            catch (Exception undoError)
+            {
+                var errors = new List<Exception> { undoError };
+                for (int index = completed - 1; index >= 0; index--)
+                {
+                    try { RestoreUndoneFormula(newestFirst[index], formats[index]); }
+                    catch (Exception rollbackError) { errors.Add(rollbackError); }
+                }
+                if (errors.Count == 1) throw;
+                throw new InvalidOperationException("Restauration du lot d’annulation incomplète. " +
+                    String.Join(" · ", errors.Select(error => error.Message)), new AggregateException(errors));
+            }
+            foreach (FormulaChange change in newestFirst) change.ReleaseTarget();
+        }
+
+        string UndoFormulaCore(FormulaChange change)
+        {
+            if (change == null || change.Undone || change.Target == null) throw new InvalidOperationException("Aucune édition à annuler.");
+            return AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
+            {
+                object range = change.Target;
+                bool isArray = change.BeforeArray != null;
+                if (isArray) RequireEditableLegacyArray(worksheet, range);
+                else RequireEditable(range);
+                bool same = isArray ? SameLegacyArrayContent(ReadLegacyArrayContent(range), change.AfterArray) :
+                    SameFormulaContent(ReadFormulaContent(range), change.After);
+                if (!same)
                     throw new InvalidOperationException("Cellule modifiée depuis l'édition : annulation refusée pour préserver votre modification.");
-                if (change.WasFormula) WriteFormula(range, change.BeforeFormula);
-                else if (change.BeforeValue is string) ((dynamic)range).Value2 = "'" + (string)change.BeforeValue;
-                else ((dynamic)range).Value2 = change.BeforeValue;
-                if (String.Equals((string)OfficeCall(range, "NumberFormat", BindingFlags.GetProperty), change.AfterFormat, StringComparison.Ordinal)) OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, change.BeforeFormat);
-                change.Undone = true; return true;
+                string sheet = (string)((dynamic)worksheet).Name;
+                string address = ((string)((dynamic)range).Address).Replace("$", "");
+                string format = isArray ? null : FormulaNumberFormat(range);
+                try
+                {
+                    RestoreEditContent(range, change, true, String.Equals(format, change.AfterFormat, StringComparison.Ordinal) ? change.BeforeFormat : format);
+                }
+                catch (Exception undoError)
+                {
+                    try
+                    {
+                        RestoreEditContent(range, change, false, format);
+                    }
+                    catch (Exception rollbackError)
+                    {
+                        throw new InvalidOperationException("Restauration après échec de l’annulation impossible. " +
+                            undoError.Message + " · " + rollbackError.Message, new AggregateException(undoError, rollbackError));
+                    }
+                    throw;
+                }
+                change.DisplaySheet = sheet; change.Address = address; change.Undone = true;
+                return format;
             });
+        }
+
+        void RestoreUndoneFormula(FormulaChange change, string format)
+        {
+            AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
+            {
+                object range = change.Target;
+                bool array = change.BeforeArray != null;
+                if (array) RequireEditableLegacyArray(worksheet, range);
+                else RequireEditable(range);
+                bool same = array ? SameLegacyArrayContent(ReadLegacyArrayContent(range), change.BeforeArray) :
+                    SameFormulaContent(ReadFormulaContent(range), change.Before);
+                if (!same) throw new InvalidOperationException("Le contenu a changé pendant l’annulation · " + change.Location);
+                RestoreEditContent(range, change, false, format);
+                change.Undone = false;
+                return true;
+            });
+        }
+
+        internal void SelectFormulaUndoTarget(FormulaChange change)
+        {
+            AtDirectSheet(change.Workbook, change.Sheet, delegate(object worksheet)
+            {
+                object workbook = null, windows = null, window = null, range = null;
+                try
+                {
+                    workbook = ((dynamic)worksheet).Parent;
+                    windows = ((dynamic)workbook).Windows;
+                    window = ((dynamic)windows).Item[1];
+                    range = RangeAt(worksheet, change.Address);
+                    ((dynamic)window).Activate();
+                    ((dynamic)worksheet).Activate();
+                    ((dynamic)range).Select();
+                    return true;
+                }
+                finally { Release(range); Release(window); Release(windows); Release(workbook); }
+            });
+        }
+
+        static bool MatchesCapturedConstant(Cell cell, FormulaCellContent current)
+        {
+            object value = current.Value;
+            string kind = value == null ? "Vide" : value is ErrorWrapper || value is int ? "Erreur" : value is bool ? "Booléen" : value is string ? "Texte" : "Nombre";
+            string captured = cell.Kind == "Vide" ? "(vide)" : cell.Kind == "Booléen" ? cell.Value.ToUpperInvariant() : cell.Value;
+            return current.Formula == null && kind == cell.Kind && String.Equals(Scalar(value), captured, StringComparison.Ordinal);
+        }
+
+        static void RestoreEditContent(object range, FormulaChange change, bool original, string format)
+        {
+            if (change.BeforeArray != null) RestoreLegacyArrayContent(range, original ? change.BeforeArray : change.AfterArray);
+            else RestoreFormulaContent(range, original ? change.Before : change.After, format);
+        }
+
+        static string FormulaNumberFormat(object range, bool local = false)
+        { return (local ? OfficeCallWithCulture(range, "NumberFormatLocal", BindingFlags.GetProperty, CultureInfo.CurrentCulture) :
+            OfficeCall(range, "NumberFormat", BindingFlags.GetProperty)) as string; }
+
+        static void RestoreFormulaNumberFormat(object range, string format, bool local = false)
+        {
+            if (!String.Equals(FormulaNumberFormat(range, local), format, StringComparison.Ordinal))
+            {
+                if (local) OfficeCallWithCulture(range, "NumberFormatLocal", BindingFlags.SetProperty, CultureInfo.CurrentCulture, format);
+                else OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, format);
+            }
+        }
+
+        static FormulaCellContent ReadFormulaContent(object range, FormulaDisplayStyle style = null)
+        {
+            dynamic cell = range;
+            if ((bool)cell.HasFormula)
+            {
+                string property;
+                object formula = style == null ? ReadFormula(range) : ReadFormulaInStyle(range, style, out property);
+                return new FormulaCellContent { Formula = Convert.ToString(formula, FormulaCulture) };
+            }
+            object value = cell.Value2;
+            return new FormulaCellContent { Value = value, TextPrefix = value is string ? Convert.ToString((object)cell.PrefixCharacter, FormulaCulture) : null };
+        }
+
+        static object ComparableFormulaValue(object value)
+        {
+            var error = value as ErrorWrapper;
+            return error == null ? value : error.ErrorCode;
+        }
+
+        static bool SameFormulaContent(FormulaCellContent current, FormulaCellContent expected)
+        {
+            return String.Equals(current.Formula, expected.Formula, StringComparison.Ordinal) &&
+                String.Equals(current.TextPrefix, expected.TextPrefix, StringComparison.Ordinal) &&
+                Object.Equals(ComparableFormulaValue(current.Value), ComparableFormulaValue(expected.Value));
+        }
+
+        static void RestoreFormulaContent(object range, FormulaCellContent content, string format, bool localNumberFormat = false)
+        {
+            if (!SameFormulaContent(ReadFormulaContent(range), content))
+            {
+                if (content.Formula != null) WriteFormula(range, content.Formula);
+                else if (content.Value == null) ((dynamic)range).ClearContents();
+                else if (content.Value is string)
+                {
+                    if (content.TextPrefix == "'") ((dynamic)range).Value2 = "'" + (string)content.Value;
+                    else
+                    {
+                        RestoreFormulaNumberFormat(range, "@", localNumberFormat);
+                        ((dynamic)range).Value2 = (string)content.Value;
+                    }
+                }
+                else if (ComparableFormulaValue(content.Value) is int)
+                    OfficeCall(range, "Value2", BindingFlags.SetProperty, new ErrorWrapper((int)ComparableFormulaValue(content.Value)));
+                else ((dynamic)range).Value2 = content.Value;
+            }
+            RestoreFormulaNumberFormat(range, format, localNumberFormat);
+            if (!SameFormulaContent(ReadFormulaContent(range), content))
+                throw new InvalidOperationException("Excel n’a pas restitué le contenu initial à l’identique.");
         }
         public Book Refresh(Book book, Cell cell)
         {
@@ -299,36 +673,57 @@ namespace FormulaExplorer
         }
         public List<Cell> SelectionCells(Book book)
         {
-            object selection = null, worksheet = null, workbook = null, areas = null;
+            var cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
+            foreach (Reference area in ReadSelectionRanges(book, false))
+                for (int row = area.FirstRow; row <= area.LastRow; row++)
+                    for (int column = area.FirstColumn; column <= area.LastColumn; column++)
+                    {
+                        Cell cell = book.Get(area.Sheet, Coordinates.Address(row, column));
+                        cells[cell.Key] = cell;
+                    }
+            return new List<Cell>(cells.Values);
+        }
+
+        internal List<Reference> ReadSelectionRanges(Book book, bool forTrace)
+        { return ReadSelectionRangeBounds(book, forTrace, false); }
+
+        List<Reference> ReadSelectionRangeBounds(Book book, bool forTrace, bool allowLargeSelection)
+        {
+            object selection = null, worksheet = null, workbook = null, areas = null, window = null, selectedSheets = null;
             try
             {
                 selection = ((dynamic)application).Selection;
-                try { worksheet = ((dynamic)selection).Worksheet; }
-                catch (Exception) { throw new InvalidOperationException("Sélectionnez une plage de cellules dans Excel."); }
+                if (!MapSelectionSupports(selection, MapSelectionRangeInterface))
+                    throw new InvalidOperationException("Sélectionnez une plage de cellules dans Excel.");
+                worksheet = ((dynamic)selection).Worksheet;
                 workbook = ((dynamic)worksheet).Parent;
                 if (!String.Equals((string)((dynamic)workbook).FullName, book.FullName, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Sélection dans un autre classeur : rechargez la capture.");
-                if (Convert.ToDouble(((dynamic)selection).CountLarge) > 250000) throw new InvalidOperationException("Sélection limitée à 250 000 cellules pour cette version.");
+                if (!forTrace && !allowLargeSelection && Convert.ToDouble(((dynamic)selection).CountLarge) > 250000)
+                    throw new InvalidOperationException("Sélection limitée à 250 000 cellules pour cette version.");
                 string sheet = (string)((dynamic)worksheet).Name;
-                var cells = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
+                var ranges = new List<Reference>();
                 areas = ((dynamic)selection).Areas;
                 for (int i = 1; i <= (int)((dynamic)areas).Count; i++)
                 {
-                    object area = null, rows = null, columns = null;
+                    object area = null;
                     try
                     {
-                        area = ((dynamic)areas).Item[i]; rows = ((dynamic)area).Rows; columns = ((dynamic)area).Columns;
-                        int firstRow = (int)((dynamic)area).Row, firstColumn = (int)((dynamic)area).Column;
-                        int height = (int)((dynamic)rows).Count, width = (int)((dynamic)columns).Count;
-                        for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
-                        {
-                            Cell cell = book.Get(sheet, Coordinates.Address(firstRow + y, firstColumn + x)); cells[cell.Key] = cell;
-                        }
+                        area = ((dynamic)areas).Item[i];
+                        var rectangle = MapSelectionRectangle(area);
+                        ranges.Add(Reference.FromBounds(sheet, rectangle.Top, rectangle.Left, rectangle.Bottom - 1, rectangle.Right - 1));
                     }
-                    finally { Release(columns); Release(rows); Release(area); }
+                    finally { Release(area); }
                 }
-                return new List<Cell>(cells.Values);
+                if (forTrace && (ranges.Count > 1 || ranges.Any(range => !range.Single)))
+                {
+                    window = ((dynamic)application).ActiveWindow;
+                    selectedSheets = ((dynamic)window).SelectedSheets;
+                    if ((int)((dynamic)selectedSheets).Count > 1)
+                        throw new InvalidOperationException("Dégroupez les feuilles Excel avant de tracer cette sélection.");
+                }
+                return ranges;
             }
-            finally { Release(areas); Release(workbook); Release(worksheet); Release(selection); }
+            finally { Release(selectedSheets); Release(window); Release(areas); Release(workbook); Release(worksheet); Release(selection); }
         }
     }
 }

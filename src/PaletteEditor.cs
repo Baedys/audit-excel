@@ -15,18 +15,25 @@ namespace FormulaExplorer
         readonly Func<T, string> label;
         readonly DataGridView grid = new DataGridView();
         readonly string defaultPath;
+        readonly Func<bool> readAnalyzeUniqueFormulas;
+        readonly Action<bool> writeAnalyzeUniqueFormulas;
+        readonly CheckBox analyzeUniqueFormulas = new CheckBox { Text = "Analyser les références des formules uniques", AutoSize = true };
         public PaletteEditor(Dictionary<T, HighlightStyle> styles,
             Func<Dictionary<T, HighlightStyle>> defaults, Func<string, Dictionary<T, HighlightStyle>> load,
-            Action<string> save, Func<T, string> label, string defaultPath, string title, string description)
+            Action<string> save, Func<T, string> label, string defaultPath, string title, string description,
+            Func<bool> readAnalyzeUniqueFormulas = null, Action<bool> writeAnalyzeUniqueFormulas = null)
         {
             if (styles == null) throw new ArgumentNullException("styles");
             if (defaults == null) throw new ArgumentNullException("defaults");
             if (load == null) throw new ArgumentNullException("load");
             if (save == null) throw new ArgumentNullException("save");
             if (label == null) throw new ArgumentNullException("label");
+            if ((readAnalyzeUniqueFormulas == null) != (writeAnalyzeUniqueFormulas == null))
+                throw new ArgumentException("Both analysis option callbacks are required together.");
             if (String.IsNullOrWhiteSpace(defaultPath)) throw new ArgumentException("An explicit default palette path is required.", "defaultPath");
             PaletteStorage.Clone(styles); // Validate without replacing the caller-owned dictionary.
             this.styles = styles; this.defaults = defaults; this.load = load; this.save = save; this.label = label;
+            this.readAnalyzeUniqueFormulas = readAnalyzeUniqueFormulas; this.writeAnalyzeUniqueFormulas = writeAnalyzeUniqueFormulas;
             this.defaultPath = Path.GetFullPath(defaultPath);
             Text = title; Size = new Size(800, 650); MinimumSize = new Size(740, 600);
             Font = new Font("Segoe UI", 10); StartPosition = FormStartPosition.CenterParent;
@@ -43,10 +50,11 @@ namespace FormulaExplorer
             grid.CellContentClick += delegate(object sender, DataGridViewCellEventArgs e) { if (e.RowIndex >= 0 && e.ColumnIndex >= 2) ChooseColor(e.RowIndex, e.ColumnIndex); };
             panel.Controls.Add(grid, 0, 1);
             FlowLayoutPanel bar = new FlowLayoutPanel { Dock = DockStyle.Fill };
+            if (readAnalyzeUniqueFormulas != null) { bar.Controls.Add(analyzeUniqueFormulas); bar.SetFlowBreak(analyzeUniqueFormulas, true); }
             bar.Controls.Add(Button("Sans fond", delegate { ClearColor(true); })); bar.Controls.Add(Button("Sans police", delegate { ClearColor(false); }));
-            bar.Controls.Add(Button("Défaut", delegate { ReplaceStyles(this.defaults()); }));
+            bar.Controls.Add(Button("Défaut", UseDefaults));
             bar.Controls.Add(Button("Importer…", Import)); bar.Controls.Add(Button("Exporter…", Export));
-            bar.Controls.Add(Button("Enregistrer par défaut", delegate { ReadEnabled(); Directory.CreateDirectory(Path.GetDirectoryName(this.defaultPath)); this.save(this.defaultPath); MessageBox.Show(this, "Palette enregistrée pour les prochaines fenêtres Clair.", "Clair"); }));
+            bar.Controls.Add(Button("Enregistrer par défaut", delegate { Directory.CreateDirectory(Path.GetDirectoryName(this.defaultPath)); SaveTo(this.defaultPath); MessageBox.Show(this, "Palette enregistrée pour les prochaines fenêtres Clair.", "Clair"); }));
             Button ok = Button("Utiliser", delegate { ReadEnabled(); DialogResult = DialogResult.OK; }); bar.Controls.Add(ok);
             Button cancel = Button("Annuler", delegate { DialogResult = DialogResult.Cancel; }); bar.Controls.Add(cancel);
             AcceptButton = ok; CancelButton = cancel; panel.Controls.Add(bar, 0, 2); Populate();
@@ -58,6 +66,7 @@ namespace FormulaExplorer
         }
         void Populate()
         {
+            if (readAnalyzeUniqueFormulas != null) analyzeUniqueFormulas.Checked = readAnalyzeUniqueFormulas();
             grid.Rows.Clear();
             foreach (T kind in Enum.GetValues(typeof(T)))
             {
@@ -89,6 +98,7 @@ namespace FormulaExplorer
         void ReadEnabled()
         {
             grid.EndEdit(); foreach (DataGridViewRow row in grid.Rows) styles[(T)row.Tag].Enabled = Convert.ToBoolean(row.Cells[0].Value);
+            if (writeAnalyzeUniqueFormulas != null) writeAnalyzeUniqueFormulas(analyzeUniqueFormulas.Checked);
         }
         void ChooseColor(int index, int column)
         {
@@ -108,13 +118,40 @@ namespace FormulaExplorer
         void Import()
         {
             using (OpenFileDialog dialog = new OpenFileDialog { Filter = "Palette XML (*.xml)|*.xml" })
-                if (dialog.ShowDialog(this) == DialogResult.OK) { ReplaceStyles(load(dialog.FileName)); }
+                if (dialog.ShowDialog(this) == DialogResult.OK) ImportFrom(dialog.FileName);
         }
         void Export()
         {
             using (SaveFileDialog dialog = new SaveFileDialog { Filter = "Palette XML (*.xml)|*.xml", FileName = "clair-palette.xml" })
-                if (dialog.ShowDialog(this) == DialogResult.OK) { ReadEnabled(); save(dialog.FileName); }
+                if (dialog.ShowDialog(this) == DialogResult.OK) SaveTo(dialog.FileName);
         }
+        internal void ImportFrom(string path) { ReplaceStyles(load(path)); }
+        internal void UseDefaults() { ReplaceStyles(defaults()); }
+        internal void SaveTo(string path) { ReadEnabled(); save(path); }
     }
 
+    // Map profiles include analysis options. Keep their full document attached
+    // to the generic editor rather than dropping options at the style boundary.
+    internal static class MapPaletteEditor
+    {
+        public static PaletteEditor<FormulaMapKind> Create(HighlightPalette edited, Func<FormulaMapKind, string> label,
+            string defaultPath, string title, string description)
+        {
+            if (edited == null) throw new ArgumentNullException("edited");
+            return new PaletteEditor<FormulaMapKind>(edited.Entries,
+                delegate {
+                    HighlightPalette replacement = HighlightPalette.Default();
+                    edited.AnalyzeUniqueFormulas = replacement.AnalyzeUniqueFormulas; return replacement.Entries;
+                },
+                delegate(string path) {
+                    HighlightPalette replacement = HighlightPalette.Load(path);
+                    edited.AnalyzeUniqueFormulas = replacement.AnalyzeUniqueFormulas;
+                    edited.CustomColors.Clear();
+                    foreach (int? color in replacement.CustomColors) edited.CustomColors.Add(color);
+                    return replacement.Entries;
+                },
+                delegate(string path) { edited.Save(path); }, label, defaultPath, title, description,
+                delegate { return edited.AnalyzeUniqueFormulas; }, delegate(bool value) { edited.AnalyzeUniqueFormulas = value; });
+        }
+    }
 }

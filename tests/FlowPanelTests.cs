@@ -13,6 +13,8 @@ public static class FlowPanelTests
     public sealed class ClosedExcel
     {
         public object Workbooks { get { throw new COMException("Test connection has closed.", unchecked((int)0x800706BA)); } }
+        public bool ScreenUpdating { get { throw new COMException("Test connection has closed.", unchecked((int)0x800706BA)); } set { } }
+        public bool EnableEvents { get { throw new COMException("Test connection has closed.", unchecked((int)0x800706BA)); } set { } }
     }
     static readonly List<object> objects = new List<object>();
     static int checks;
@@ -76,10 +78,10 @@ public static class FlowPanelTests
             Keep(a.Font).Color = OLE(0x112233); Keep(b.Font).Color = OLE(0x223344);
             app.Calculate(); ws.Activate(); b.Select();
             ExcelBridge bridge = new ExcelBridge(application); Book captured = bridge.Capture(workbook);
-            bridge.ApplyHighlights(captured, new[] { new CellHighlight { Cell = captured.Get("Flow", "A1"), FillColor = OLE(0x556677) }, new CellHighlight { Cell = captured.Get("Flow", "B1"), FillColor = OLE(0x667788) } }, "map");
+            bridge.ApplyDirectHighlights(captured, "test-map", "map", new[] { new DirectHighlight { Cell = captured.Get("Flow", "A1"), LayerId = "map", FillColor = OLE(0x556677) }, new DirectHighlight { Cell = captured.Get("Flow", "B1"), LayerId = "map", FillColor = OLE(0x667788) } });
             first = Open(bridge); Invoke(first, "AnalyzeFlow");
             Equal(FontColor(a), OLE(0x112233)); Equal(Fill(b), OLE(0x667788));
-            Equal(bridge.HasHighlights(captured, "Flow", Field<string>(first, "flowLayer")), false);
+            Equal(bridge.HasDirectHighlights(Field<string>(first, "flowLayer")), false);
             Equal(CategoryState(first, FlowCategory.Inputs), CheckState.Unchecked);
             SelectGroups(first);
             Equal(FontColor(a), OLE(0x0000FF)); Equal(Fill(a), OLE(0x556677)); Equal(Fill(b), OLE(0xF2F2F2)); Equal(Fill(c), OLE(0xCCFF99)); Equal(Fill(orphan), OLE(0xFF9999));
@@ -114,7 +116,7 @@ public static class FlowPanelTests
             Invoke(first, "ToggleFlowRole", inputBlockRow);
             Equal(grid.Rows[inputBlockRow].Cells[0].Value, CheckState.Checked);
             Equal(FontColor(a), OLE(0x0000FF)); Equal(FontColor(Keep(ws.Range["A2"])), OLE(0x0000FF));
-            string firstLayer = Field<string>(first, "flowLayer"); Equal(bridge.HasHighlights(captured, "Flow", firstLayer), true);
+            string firstLayer = Field<string>(first, "flowLayer"); Equal(bridge.HasDirectHighlights(firstLayer), true);
             // A boundary cell has both an inflow font and an outflow fill.
             Field<ComboBox>(first, "flowFocus").SelectedIndex = 2; b.Select();
             Field<ComboBox>(first, "flowView").SelectedIndex = 1; Invoke(first, "AnalyzeFlow");
@@ -142,21 +144,21 @@ public static class FlowPanelTests
             // Another explorer owns its own layer; closing it preserves the first.
             second = Open(bridge); Invoke(second, "AnalyzeFlow"); SelectGroups(second);
             string secondLayer = Field<string>(second, "flowLayer"); Equal(firstLayer == secondLayer, false);
-            Equal(bridge.HasHighlights(captured, "Flow", firstLayer), true); Equal(bridge.HasHighlights(captured, "Flow", secondLayer), true);
+            Equal(bridge.HasDirectHighlights(firstLayer), true); Equal(bridge.HasDirectHighlights(secondLayer), true);
             second.Close(); Application.DoEvents(); Equal(second.IsDisposed, true);
-            Equal(bridge.HasHighlights(captured, "Flow", secondLayer), false); Equal(bridge.HasHighlights(captured, "Flow", firstLayer), true);
+            Equal(bridge.HasDirectHighlights(secondLayer), false); Equal(bridge.HasDirectHighlights(firstLayer), true);
             Equal(FontColor(b), OLE(0x188A18));
             // SaveAs changes FullName after the snapshot; closing still discovers its layer.
             Field<List<ExcelBridge>>(first, "flowConnections").Insert(0, new ExcelBridge(new ClosedExcel()));
             wb.SaveAs(temporary, 51); first.Close(); Application.DoEvents(); Equal(first.IsDisposed, true);
-            captured = bridge.Capture(workbook); Equal(bridge.HasHighlights(captured, "Flow", firstLayer), false); Equal(bridge.HasHighlights(captured, "Flow", "map"), true);
+            captured = bridge.Capture(workbook); Equal(bridge.HasDirectHighlights(firstLayer), false); Equal(bridge.HasDirectHighlights("test-map"), true);
             Equal(FontColor(a), OLE(0x112233)); Equal(Fill(b), OLE(0x667788));
             retained = Open(bridge); Invoke(retained, "AnalyzeFlow"); SelectGroups(retained); string retainedLayer = Field<string>(retained, "flowLayer");
             Field<CheckBox>(retained, "keepFlowColors").Checked = true; retained.Close(); Application.DoEvents();
-            Equal(retained.IsDisposed, true); Equal(bridge.HasHighlights(captured, "Flow", retainedLayer), true);
+            Equal(retained.IsDisposed, true); Equal(bridge.HasDirectHighlights(retainedLayer), true);
             remover = Open(bridge); Invoke(remover, "RemoveFlowColors"); remover.Close(); Application.DoEvents();
-            Equal(bridge.HighlightLayers(captured).Any(l => l.StartsWith("flow_", StringComparison.Ordinal)), false);
-            Equal(bridge.HasHighlights(captured, "Flow", "map"), true); Equal((string)b.Formula, "=SUM(A1:A2)*2"); Equal((double)a.Value2, 7.0);
+            Equal(bridge.HasDirectHighlights(retainedLayer), false);
+            Equal(bridge.HasDirectHighlights("test-map"), true); Equal((string)b.Formula, "=SUM(A1:A2)*2"); Equal((double)a.Value2, 7.0);
             // Capture must retain worksheet order rather than alphabetize the names.
             dynamic zOrder = Keep(Keep(wb.Worksheets).Add(Type.Missing, notes)); zOrder.Name = "Z order";
             dynamic aOrder = Keep(Keep(wb.Worksheets).Add(Type.Missing, zOrder)); aOrder.Name = "A order";

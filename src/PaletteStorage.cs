@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Xml;
 
@@ -11,6 +12,7 @@ namespace FormulaExplorer
     internal static class PaletteStorage
     {
         const string Version = "1";
+        internal const int MaxCustomColors = 1024;
         internal static Dictionary<T, HighlightStyle> Clone<T>(IDictionary<T, HighlightStyle> entries) where T : struct
         {
             Validate(entries);
@@ -31,15 +33,56 @@ namespace FormulaExplorer
                 ValidateColor(style.FillRgb); ValidateColor(style.FontRgb);
             }
         }
-        static void ValidateColor(int? color)
+        internal static void ValidateColor(int? color)
         {
             if (color.HasValue && (color.Value < 0 || color.Value > 0xFFFFFF)) throw new FormatException("RGB colors must be between 000000 and FFFFFF.");
         }
 
         internal static void Save<T>(string path, string rootElement, IDictionary<T, HighlightStyle> entries) where T : struct
+        { SaveCore(path, rootElement, entries, null, null); }
+        internal static void SaveMap(string path, string rootElement, IDictionary<FormulaMapKind, HighlightStyle> entries,
+            bool analyzeUniqueFormulas, IList<int?> customColors)
+        { SaveCore(path, rootElement, entries, analyzeUniqueFormulas, customColors); }
+        static void SaveCore<T>(string path, string rootElement, IDictionary<T, HighlightStyle> entries,
+            bool? analyzeUniqueFormulas, IList<int?> customColors) where T : struct
+        {
+            Dictionary<T, HighlightStyle> snapshot = Clone(entries); // Validate all mutable entries before creating any file.
+            string encodedColors = customColors == null ? null : String.Join(";", SnapshotCustomColors(customColors)
+                .Select(color => color.HasValue ? color.Value.ToString("X6", CultureInfo.InvariantCulture) : "none"));
+            WriteAtomically(path, stream =>
+            {
+                var settings = new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = true, CloseOutput = false, NewLineChars = "\n" };
+                using (XmlWriter writer = XmlWriter.Create(stream, settings))
+                {
+                    string version = encodedColors != null ? "3" : analyzeUniqueFormulas.HasValue ? "2" : Version;
+                    writer.WriteStartDocument(); writer.WriteStartElement(rootElement); writer.WriteAttributeString("version", version);
+                    if (analyzeUniqueFormulas.HasValue) writer.WriteAttributeString("analyzeUniqueFormulas", analyzeUniqueFormulas.Value ? "true" : "false");
+                    if (encodedColors != null) writer.WriteAttributeString("customColors", encodedColors);
+                    foreach (T kind in Enum.GetValues(typeof(T)))
+                    {
+                        HighlightStyle style = snapshot[kind];
+                        writer.WriteStartElement("Style"); writer.WriteAttributeString("kind", kind.ToString());
+                        writer.WriteAttributeString("enabled", style.Enabled ? "true" : "false");
+                        if (style.FillRgb.HasValue) writer.WriteAttributeString("fillRgb", style.FillRgb.Value.ToString("X6", CultureInfo.InvariantCulture));
+                        if (style.FontRgb.HasValue) writer.WriteAttributeString("fontRgb", style.FontRgb.Value.ToString("X6", CultureInfo.InvariantCulture));
+                        writer.WriteEndElement();
+                    }
+                    writer.WriteEndElement(); writer.WriteEndDocument();
+                }
+            });
+        }
+
+        internal static int?[] SnapshotCustomColors(IList<int?> colors)
+        {
+            if (colors.Count > MaxCustomColors) throw new FormatException("Too many custom colors in the palette.");
+            int?[] snapshot = colors.ToArray();
+            foreach (int? color in snapshot) ValidateColor(color);
+            return snapshot;
+        }
+
+        internal static void WriteAtomically(string path, Action<Stream> write)
         {
             if (String.IsNullOrWhiteSpace(path)) throw new ArgumentException("An explicit palette file path is required.", "path");
-            Dictionary<T, HighlightStyle> snapshot = Clone(entries); // Validate all mutable entries before creating any file.
             string destination = Path.GetFullPath(path);
             string folder = Path.GetDirectoryName(destination);
             if (String.IsNullOrEmpty(Path.GetFileName(destination))) throw new ArgumentException("A palette file name is required.", "path");
@@ -50,21 +93,7 @@ namespace FormulaExplorer
                 using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
                 {
                     created = true;
-                    var settings = new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = true, CloseOutput = false, NewLineChars = "\n" };
-                    using (XmlWriter writer = XmlWriter.Create(stream, settings))
-                    {
-                        writer.WriteStartDocument(); writer.WriteStartElement(rootElement); writer.WriteAttributeString("version", Version);
-                        foreach (T kind in Enum.GetValues(typeof(T)))
-                        {
-                            HighlightStyle style = snapshot[kind];
-                            writer.WriteStartElement("Style"); writer.WriteAttributeString("kind", kind.ToString());
-                            writer.WriteAttributeString("enabled", style.Enabled ? "true" : "false");
-                            if (style.FillRgb.HasValue) writer.WriteAttributeString("fillRgb", style.FillRgb.Value.ToString("X6", CultureInfo.InvariantCulture));
-                            if (style.FontRgb.HasValue) writer.WriteAttributeString("fontRgb", style.FontRgb.Value.ToString("X6", CultureInfo.InvariantCulture));
-                            writer.WriteEndElement();
-                        }
-                        writer.WriteEndElement(); writer.WriteEndDocument();
-                    }
+                    write(stream);
                     stream.Flush(true);
                 }
                 // Both paths are on the same volume. Never delete/truncate the existing destination first.
@@ -79,7 +108,14 @@ namespace FormulaExplorer
         }
 
         internal static Dictionary<T, HighlightStyle> Load<T>(string path, string rootElement) where T : struct
+        { bool ignored; int?[] ignoredColors; return LoadCore<T>(path, rootElement, false, out ignored, out ignoredColors); }
+        internal static Dictionary<FormulaMapKind, HighlightStyle> LoadMap(string path, string rootElement, out bool analyzeUniqueFormulas, out int?[] colors)
+        { return LoadCore<FormulaMapKind>(path, rootElement, true, out analyzeUniqueFormulas, out colors); }
+        static Dictionary<T, HighlightStyle> LoadCore<T>(string path, string rootElement, bool allowMapOptions,
+            out bool analyzeUniqueFormulas, out int?[] colors) where T : struct
         {
+            analyzeUniqueFormulas = true;
+            colors = null;
             if (String.IsNullOrWhiteSpace(path)) throw new ArgumentException("An explicit palette file path is required.", "path");
             var settings = new XmlReaderSettings
             {
@@ -93,8 +129,26 @@ namespace FormulaExplorer
                 {
                     if (reader.MoveToContent() != XmlNodeType.Element || reader.Name != rootElement || reader.NamespaceURI.Length != 0)
                         throw new FormatException("Expected " + rootElement + " document.");
-                    CheckAttributes(reader, new[] { "version" });
-                    if (reader.GetAttribute("version") != Version) throw new FormatException("Unsupported or missing palette version.");
+                    string version = reader.GetAttribute("version");
+                    if (allowMapOptions && (version == "2" || version == "3"))
+                    {
+                        if (version == "3")
+                        {
+                            CheckAttributes(reader, new[] { "version", "analyzeUniqueFormulas", "customColors" });
+                            string encodedColors = reader.GetAttribute("customColors");
+                            if (encodedColors == null) throw new FormatException("Custom colors are missing from the palette.");
+                            colors = ReadCustomColors(encodedColors);
+                        }
+                        else CheckAttributes(reader, new[] { "version", "analyzeUniqueFormulas" });
+                        string flag = reader.GetAttribute("analyzeUniqueFormulas");
+                        if (flag != "true" && flag != "false") throw new FormatException("AnalyzeUniqueFormulas must be true or false.");
+                        analyzeUniqueFormulas = flag == "true";
+                    }
+                    else
+                    {
+                        CheckAttributes(reader, new[] { "version" });
+                        if (version != Version) throw new FormatException("Unsupported or missing palette version.");
+                    }
                     if (reader.IsEmptyElement) throw new FormatException("The palette contains no styles.");
                     reader.ReadStartElement();
                     var palette = new Dictionary<T, HighlightStyle>();
@@ -128,6 +182,13 @@ namespace FormulaExplorer
                 }
             }
             catch (XmlException ex) { throw new FormatException("Invalid palette XML: " + ex.Message, ex); }
+        }
+        static int?[] ReadCustomColors(string encoded)
+        {
+            if (encoded.Length == 0) return new int?[0];
+            string[] values = encoded.Split(';');
+            if (values.Length > MaxCustomColors) throw new FormatException("Too many custom colors in the palette.");
+            return values.Select(value => value == "none" ? null : ReadColor(value)).ToArray();
         }
         static void CheckAttributes(XmlReader reader, string[] allowed)
         {

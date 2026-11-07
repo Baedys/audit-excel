@@ -31,23 +31,25 @@ namespace FormulaExplorer
             LoadFlowViewSettings();
             try { if (File.Exists(FlowPalettePath)) flowPalette = FlowPalette.Load(FlowPalettePath); }
             catch (Exception ex) { flowPaletteWarning = "Palette flux illisible : " + ex.Message + " Défaut utilisé."; }
-            bar.SetFlowBreak(bar.Controls[bar.Controls.Count - 1], true);
-            foreach (ComboBox combo in new[] { flowScope, flowFocus, flowView }) { combo.DropDownStyle = ComboBoxStyle.DropDownList; combo.Width = 210; }
+            if (!IsDocked) bar.SetFlowBreak(bar.Controls[bar.Controls.Count - 1], true);
+            foreach (ComboBox combo in new[] { flowScope, flowFocus, flowView }) { combo.DropDownStyle = ComboBoxStyle.DropDownList; combo.Width = IsDocked ? 142 : 210; }
             flowScope.Items.AddRange(new object[] { "Classeur capturé", "Feuille de la racine", "Sélection Excel" }); flowScope.SelectedIndex = 0;
             flowFocus.Items.AddRange(new object[] { "Tout le périmètre", "Feuille de la racine", "Sélection Excel" }); flowFocus.SelectedIndex = 0;
             flowView.Items.AddRange(new object[] { "Rôles de calcul", "Flux de la zone centrale" }); flowView.SelectedIndex = 0;
             bar.Controls.Add(new Label { Text = "Périmètre", AutoSize = true, Padding = new Padding(0, 5, 0, 0) }); bar.Controls.Add(flowScope);
+            Button analyze = ActionButton("Analyser", AnalyzeFlow);
+            if (IsDocked) { bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true); }
             bar.Controls.Add(new Label { Text = "Zone centrale", AutoSize = true, Padding = new Padding(8, 5, 0, 0) }); bar.Controls.Add(flowFocus);
-            Button analyze = ActionButton("Analyser", AnalyzeFlow); bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true);
+            if (!IsDocked) { bar.Controls.Add(analyze); bar.SetFlowBreak(analyze, true); }
             bar.Controls.Add(flowView);
             flowCellDetails.Text = "Détail par cellule"; flowCellDetails.AutoSize = true; flowCellDetails.Padding = new Padding(0, 6, 0, 0);
             bar.Controls.Add(flowCellDetails);
             flowCellDetails.CheckedChanged += delegate { if (flowResult != null) ShowFlowCategories(); };
-            bar.Controls.Add(ActionButton("Retirer tous les flux", RemoveFlowColors));
-            bar.Controls.Add(ActionButton("Palette flux…", EditFlowPalette));
-            Button report = ActionButton("Rapport flux", ExportFlow); bar.Controls.Add(report); bar.SetFlowBreak(report, true);
-            keepFlowColors.Text = "Conserver les couleurs à la fermeture"; keepFlowColors.AutoSize = true; keepFlowColors.Padding = new Padding(0, 6, 0, 0); bar.Controls.Add(keepFlowColors);
-            bar.Controls.Add(ActionButton("Fermer en conservant", delegate { keepFlowColors.Checked = true; Close(); }));
+            bar.Controls.Add(ActionButton(IsDocked ? "Retirer" : "Retirer tous les flux", RemoveFlowColors));
+            InitializeFlowDirectCommands(bar);
+            keepFlowColors.Text = IsDocked ? "Garder les couleurs" : "Conserver les couleurs à la fermeture";
+            keepFlowColors.AutoSize = true; keepFlowColors.Padding = new Padding(0, 6, 0, 0); bar.Controls.Add(keepFlowColors);
+            if (!IsDocked) bar.Controls.Add(ActionButton("Fermer en conservant", delegate { keepFlowColors.Checked = true; Close(); }));
             flowView.SelectedIndexChanged += delegate
             {
                 SyncFlowGroupOption();
@@ -57,15 +59,18 @@ namespace FormulaExplorer
         }
         Control CreateFlowBody()
         {
-            SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 230 };
             TableLayoutPanel left = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3 };
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); left.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 24 : 32));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, IsDocked ? 0 : 28)); left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             InitializeFlowTree(left);
-            left.Controls.Add(flowGroups, 0, 2); split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
+            left.Controls.Add(flowGroups, 0, 2);
             flow.CellContentClick += delegate(object sender, DataGridViewCellEventArgs e)
             {
                 if (e.RowIndex >= 0 && e.ColumnIndex == 0) Safe(delegate { ToggleFlowRole(e.RowIndex); });
             };
+            if (IsDocked) return StackPaneControls(left, flow, 61);
+            SplitContainer split = new SplitContainer { Dock = DockStyle.Fill, Width = 1020, SplitterDistance = 230 };
+            split.Panel1.Controls.Add(left); split.Panel2.Controls.Add(flow);
             return split;
         }
         List<Cell> FlowSelection()
@@ -75,23 +80,33 @@ namespace FormulaExplorer
         }
         void AnalyzeFlow()
         {
+            var bindings = FlowLiveBindings();
+            Func<Cell, Cell> current = delegate(Cell cell)
+            {
+                DirectHighlightBinding binding;
+                if (!Object.ReferenceEquals(book, flowDirectBook) || !bindings.TryGetValue(cell.Key, out binding)) return cell;
+                return binding.Valid ? new Cell { Sheet = binding.Sheet, Address = binding.Address } : null;
+            };
             var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (flowResult != null)
                 foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
                     foreach (Cell cell in flowResult.Cells(category))
-                        if (FlowRoleEnabled(category, cell)) selected.Add(FlowHighlightPlan.RoleKey(category, cell));
-            var history = flowActivations.ToList();
+                        if (FlowRoleEnabled(category, cell) && current(cell) != null) selected.Add(FlowHighlightPlan.RoleKey(category, current(cell)));
+            var history = flowActivations.Select(a => a.Cells == null ? new FlowActivation(a.Category) :
+                FlowActivation.ForCells(a.Category, a.Cells.Select(current).Where(c => c != null).ToList().AsReadOnly())).ToList();
             if (bridge != null)
             {
-                Book fresh = bridge.Refresh(book, root); string sheet = root.Sheet, address = root.Address;
+                Cell location = current(FlowRoot);
+                if (location == null) throw new InvalidOperationException("Cellule racine supprimée : rechargez une sélection Excel avant d'analyser.");
+                Book fresh = bridge.RefreshDirectHighlightOwner(flowLayer, book); string sheet = location.Sheet, address = location.Address;
                 SetBook(fresh, sheet, address);
             }
             List<Cell> selection = flowScope.SelectedIndex == 2 || flowFocus.SelectedIndex == 2 ? FlowSelection() : null;
             IEnumerable<Cell> scope = flowScope.SelectedIndex == 2 ? selection :
-                flowScope.SelectedIndex == 1 ? book.Cells.Values.Where(c => String.Equals(c.Sheet, root.Sheet, StringComparison.OrdinalIgnoreCase)) : book.Cells.Values;
+                flowScope.SelectedIndex == 1 ? book.Cells.Values.Where(c => String.Equals(c.Sheet, FlowRoot.Sheet, StringComparison.OrdinalIgnoreCase)) : book.Cells.Values;
             List<Cell> area = scope.ToList();
             IEnumerable<Cell> focus = flowFocus.SelectedIndex == 2 ? selection :
-                flowFocus.SelectedIndex == 1 ? area.Where(c => String.Equals(c.Sheet, root.Sheet, StringComparison.OrdinalIgnoreCase)) : area;
+                flowFocus.SelectedIndex == 1 ? area.Where(c => String.Equals(c.Sheet, FlowRoot.Sheet, StringComparison.OrdinalIgnoreCase)) : area;
             flowResult = FlowAnalysis.Analyze(engine, area, focus); flowBlocks = FlowBlocks.Build(flowResult); flowExcludedRoles.Clear(); flowActivations.Clear();
             var members = new Dictionary<string, Cell>(StringComparer.OrdinalIgnoreCase);
             foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
@@ -121,6 +136,11 @@ namespace FormulaExplorer
         {
             flowActivations.RemoveAll(a => a.Category == category);
             flowActivations.Add(new FlowActivation(category));
+            foreach (Cell cell in flowResult.Cells(category))
+            {
+                string key = FlowHighlightPlan.RoleKey(category, cell);
+                if (FlowRoleEnabled(category, cell)) flowDirectActivations.Add(key); else flowDirectActivations.Remove(key);
+            }
         }
         bool FlowRoleEnabled(FlowCategory category, Cell cell)
         {
@@ -187,7 +207,8 @@ namespace FormulaExplorer
             foreach (Cell cell in cells)
             {
                 string key = FlowHighlightPlan.RoleKey(category, cell);
-                if (enabled) flowExcludedRoles.Remove(key); else flowExcludedRoles.Add(key);
+                if (enabled) { flowExcludedRoles.Remove(key); flowDirectActivations.Add(key); }
+                else { flowExcludedRoles.Add(key); flowDirectActivations.Remove(key); }
             }
             flowActivations.RemoveAll(a => a.Category == category && a.Cells != null && a.Cells.All(c => keys.Contains(c.Key)));
             flowActivations.Add(FlowActivation.ForCells(category, cells.ToList().AsReadOnly()));
@@ -203,28 +224,22 @@ namespace FormulaExplorer
         void ApplyFlowColors()
         {
             if (bridge == null || flowResult == null) return;
-            IList<FlowCellStyle> styles = FlowHighlightPlan.Build(flowResult, flowPalette, flowView.SelectedIndex == 1, flowActivationOrder, flowExcludedRoles, flowActivations);
-            var highlights = styles.Select(c => new CellHighlight { Cell = c.Cell, FillColor = Ole(c.FillRgb), FontColor = Ole(c.FontRgb) }).ToList();
-            var targets = styles.Select(c => c.Cell.Sheet).Union(bridge.GetHighlightSheets(book, flowLayer), StringComparer.OrdinalIgnoreCase).ToArray();
-            if (!flowConnections.Contains(bridge)) flowConnections.Add(bridge);
-            bridge.ApplyHighlights(book, highlights, flowLayer, targets);
-            flowColorsApplied = true;
-            status.Text += " · " + styles.Count + " cellules colorées (fond et police indépendants)";
+            ApplyFlowDirectColors();
         }
         void RemoveFlowColors()
         {
             if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel pour retirer les flux.");
-            List<string> layers = bridge.HighlightLayers(book).Where(IsFlowLayer).ToList();
-            bridge.RemoveHighlightLayers(book, layers); flowColorsApplied = flowResult != null;
-            if (flowResult != null)
-            {
-                foreach (FlowCategory category in Enum.GetValues(typeof(FlowCategory)))
-                    foreach (Cell cell in flowResult.Cells(category)) flowExcludedRoles.Add(FlowHighlightPlan.RoleKey(category, cell));
-                flowActivations.Clear(); ShowFlowCategories();
-            }
-            status.Text = "Toutes les couleurs de flux Clair retirées du classeur chargé. Carte conservée.";
+            TrackDirectConnection(bridge); bridge.RemoveAllDirectHighlights("flow");
+            status.Text = "Toutes les couleurs directes de flux de cette session Excel retirées. Fenêtres ouvertes conservées.";
         }
         static bool IsFlowLayer(string layer) { return layer == "flow" || layer.StartsWith("flow_", StringComparison.Ordinal); }
+        void RemoveLegacyFlowColors()
+        {
+            if (bridge == null) throw new InvalidOperationException("Chargez un classeur Excel.");
+            bridge.GetDirectHighlightSheetIdentity(book, FlowRoot.Sheet);
+            bridge.RemoveHighlightLayers(book, bridge.HighlightLayers(book).Where(IsFlowLayer));
+            status.Text = "Anciennes couleurs de flux CF de Clair retirées du classeur chargé.";
+        }
         void EditFlowPalette()
         {
             FlowPalette edited = flowPalette.Clone();
@@ -267,16 +282,26 @@ namespace FormulaExplorer
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
-            if (e.Cancel || keepFlowColors.Checked) return;
+            if (e.Cancel) return;
+            if (utilityClipboardBusy && !hostIsClosing && e.CloseReason != CloseReason.WindowsShutDown &&
+                e.CloseReason != CloseReason.ApplicationExitCall)
+            {
+                e.Cancel = true; utilityClosePending = utilityUndoTransferPending = true;
+                if (utilitySumCancellation != null) utilitySumCancellation.Cancel();
+                return;
+            }
+            if (activeComparisonRun != null) activeComparisonRun.Cancel();
             try
             {
+                ReturnFromComparisonTrace(false, false);
+                if (comparisonTrace != null) { e.Cancel = true; return; }
+                var traceFailures = new List<Exception>();
+                ClearTraceHighlightOwners(traceFailures);
                 var failures = new List<Exception>();
                 foreach (ExcelBridge connection in flowConnections)
                     try
                     {
-                        foreach (Book target in connection.FindHighlightBooks(flowLayer))
-                            try { connection.RemoveHighlightLayers(target, new[] { flowLayer }); }
-                            catch (Exception ex) { failures.Add(ex); }
+                        connection.DetachDirectHighlightOwner(flowLayer, keepFlowColors.Checked);
                     }
                     catch (COMException ex)
                     {
@@ -285,13 +310,23 @@ namespace FormulaExplorer
                         if ((uint)ex.ErrorCode != 0x800706BA && (uint)ex.ErrorCode != 0x80010108) failures.Add(ex);
                     }
                     catch (Exception ex) { failures.Add(ex); }
+                foreach (ExcelBridge connection in directConnections.Values)
+                    try { connection.SaveOpenDirectHighlightData(); }
+                    catch (COMException error) { if ((uint)error.ErrorCode != 0x800706BA && (uint)error.ErrorCode != 0x80010108) failures.Add(error); }
+                    catch (Exception error) { failures.Add(error); }
                 if (failures.Count != 0) throw new AggregateException("Retrait incomplet dans une connexion Excel.", failures);
+                CleanupMapDirectColors(true);
+                if (traceFailures.Count != 0) throw new AggregateException("Retrait incomplet des surbrillances de trace.", traceFailures);
+                RestorePaneVisibility(!hostIsClosing && e.CloseReason != CloseReason.WindowsShutDown && e.CloseReason != CloseReason.ApplicationExitCall, failures);
+                if (failures.Count != 0) throw new AggregateException("Masquage temporaire incomplet.", failures);
+                UntrackDirectConnections();
             }
             catch (Exception ex)
             {
-                if (hostIsClosing || e.CloseReason == CloseReason.WindowsShutDown || e.CloseReason == CloseReason.ApplicationExitCall) return;
+                if (hostIsClosing || e.CloseReason == CloseReason.WindowsShutDown || e.CloseReason == CloseReason.ApplicationExitCall)
+                { UntrackDirectConnections(); return; }
                 e.Cancel = true;
-                MessageBox.Show(this, "Couleurs de flux non retirées : " + ex.Message + "\nRetirez la protection ou cochez « Conserver les couleurs à la fermeture » pour fermer en les gardant.", "Clair", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "Restauration Excel incomplète. " + ex.Message + "\nRetirez la protection et réessayez. Pour les flux, vous pouvez aussi cocher « Conserver les couleurs à la fermeture ».", "Clair", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
     }

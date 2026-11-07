@@ -10,13 +10,21 @@ La version 0.6 fournit une application autonome et un complément Excel avec rub
 
 Le chargement COM, le callback du ruban, l'ouverture de plusieurs explorateurs et leur fermeture sont validés localement dans Excel 16.0. Les autres versions et l'architecture 32 bits restent à tester.
 
+Le [relevé Power-user Excel](docs/POWERUSER-EXCEL.md) recense les capacités complémentaires à explorer : qualité de feuille, préparation de données, mesures, bibliothèque et graphiques Excel. Il distingue fonctions testées, déclarées et proposées. Ce catalogue concerne Excel uniquement ; ses lots ne sont pas encore implémentés dans Clair.
+
+Les travaux suivants remplacent les couleurs CF par des formats directs partagés entre cartes et flux, ajoutent retrait/permanence globaux et sauvegarde d'un historique propre à Clair. Leur [validation](docs/VALIDATION.md) reste distincte de la livraison 0.6 ; l'équivalence complète avec Arixcel n'est pas établie. L'historique enregistré décrit base et sommet de chaque propriété, sans recréer les fenêtres d'analyse. Après fermeture de l'application autonome, les modifications structurelles ultérieures ne sont plus suivies ; le complément chargé conserve ce suivi. Les cartes masquent temporairement les fonds des règles CF admissibles de toute leur feuille. Un journal séparé conserve leurs neuf propriétés de fond pour les restaurer, y compris après sauvegarde/réouverture ; conserver les couleurs directes restaure aussi les fonds CF. Les familles non couvertes et les conflits sont détaillés dans la validation.
+
 ## Fonctions disponibles
 
+- Dans **Utilitaires**, réglages de mise en page et huit commandes de formats sur la sélection des feuilles groupées. Formats numériques et décimales, couleurs, styles, bordures, soulignement et disposition du texte partagent la pile d’annulation du volet et son rappel natif Excel. Le [relevé U02](docs/VALIDATION.md) décrit les contrats, les témoins x64 et les limites, notamment la perte de contenu lors de la fusion centrée.
 - Capture du classeur actif et de la cellule sélectionnée, avec lecture groupée des valeurs et formules.
-- Arbre d'antécédents et de dépendants, entre feuilles, avec détection des cycles et historique de navigation.
-- Décomposition syntaxique des formules en fonctions, arguments, opérateurs, références et matrices ; sélection de la portion de formule correspondante.
+- Arbre d'antécédents et de dépendants, entre feuilles et entre classeurs ouverts dans la même instance Excel, avec détection des cycles et historique de navigation. Le volet peut proposer d'ouvrir un classeur fermé quand la référence sélectionnée contient son chemin. Les références non résolues signalent une recherche partielle.
+- Décomposition syntaxique des formules en fonctions, arguments, opérateurs, références et matrices. Le curseur retrouve son composant dans l'arbre. Ctrl et Maj permettent de sélectionner plusieurs composants, soulignés dans le texte et surlignés dans Excel quand leurs plages sont résolues.
+- Navigation vers les feuilles masquées ou très masquées, avec dévoilement des lignes et colonnes activé par défaut. **Remasquer** rétablit la visibilité d'origine. Clair annule l'enregistrement si Excel refuse la restauration du masquage temporaire.
+- **Ctrl+flèches** parcourt les coins et les zones Excel. **Alt+S** rétablit la sélection complète et **Alt+Z** déplie ou replie la branche. **Ctrl+Q** et **Ctrl+Maj+Q** relancent le tracé en amont ou en aval. **Alt+R** actualise le tracé depuis ses cellules sources et retrouve les branches et sélections qui existent encore. **Analyser** démarre un tracé depuis la sélection Excel courante.
+- Dans le volet **Formule**, **Entrée** et **Échap** ferment le tracé courant. Le tracé parent revient dans le même volet s’il existe. Par défaut, la sélection Excel reste en place. Dans **Options**, **Échap revient à la sélection précédente** rétablit la sélection de lancement ou du parent. Pendant l’édition, **Entrée** valide et **Échap** annule.
 - Évaluation des sous-expressions par Excel dans le contexte de la cellule : fonctions anglaises indépendantes de la langue Windows, variables LET, noms relatifs, références structurées de la ligne courante. La sélection Excel est restaurée après calcul.
-- Édition de formule par F2, annulation propre à Clair avec contrôle des modifications externes et restauration du format numérique si celui-ci n'a pas changé. Une édition dans un tableau ne se propage pas à sa colonne.
+- Saisie directe et F2 dans le volet pour les formules, les constantes et l’effacement. L’édition d’une formule matricielle CSE porte sur son bloc entier. Le tracé et son historique restent accessibles après validation ou annulation.
 - Références A1 absolues/relatives, plages rectangulaires, lignes/colonnes entières, noms absolus, intersections de références directes et noms de feuilles contenant des apostrophes.
 - Navigation vers une cellule dans Excel, sans modifier sa valeur ou son format.
 - Carte structurelle : formules uniques, copies vers le bas/la droite/deux directions, références locales/interfeuilles/externes, constantes et validation. Les formules sont comparées en notation R1C1 aux voisins immédiats haut et gauche.
@@ -25,7 +33,7 @@ Le chargement COM, le callback du ruban, l'ouverture de plusieurs explorateurs e
 - Analyse des rôles de calcul et des flux de frontière avec périmètre et zone centrale distincts : entrées, calculs, sorties, formules isolées et quatre rôles de frontière.
 - Flux regroupés en blocs rectangulaires selon le rôle et les formules R1C1, activables par groupe, bloc ou cellule, avec états mixtes. Fond et police indépendants se combinent sur les cellules portant deux rôles. Chaque fenêtre possède sa couche de couleurs, retirée à sa fermeture ou conservée explicitement pour un retrait ultérieur.
 - Arbre de flux par catégorie ou par feuille, ordre des feuilles Excel et émission des blocs conservés, réglages distincts pour les deux vues, navigation clavier et sélection synchronisée avec la grille.
-- Comparaison de deux captures : formules et constantes, ou valeurs calculées avec tolérance numérique absolue.
+- Comparaison Excel de classeurs, feuilles ou plages. Plusieurs feuilles ou blocs cibles par sélection. Formules en R1C1 ou A1, option pour ignorer les entrées et valeurs avec tolérance absolue.
 - Rapport texte local et démonstration intégrée sans Excel.
 
 ## Démarrage
@@ -47,7 +55,13 @@ L'application démarre avec un modèle de démonstration. Pour votre classeur :
 4. Double-cliquez sur un nœud pour naviguer vers Excel. **Explorer ce nœud** change la racine de l'analyse.
 5. Rechargez la sélection après une modification du classeur : l'analyse utilise une capture, pas une synchronisation permanente.
 
-À droite, dépliez les sous-expressions : leur sélection met en évidence le texte et lance leur évaluation dans Excel. Décochez **Évaluer à la sélection** pour travailler manuellement. **Modifier (F2)** ouvre l'éditeur ; **Appliquer** écrit dans le classeur. **Annuler édition** restaure les changements effectués dans cette fenêtre, tant que la cellule n'a pas été modifiée depuis.
+Dépliez les sous-expressions pour repérer leur texte et les évaluer dans Excel. Décochez **Évaluer au clic** pour travailler manuellement. Le volet suit la notation A1 ou R1C1 d’Excel au retour du focus. **Options → Formules dans la langue d’Excel** est activé par défaut. Décochez ce réglage pour retrouver les fonctions et les séparateurs anglais.
+
+Tapez ou collez dans le champ, ou utilisez **F2** ou **Modifier**. **Entrée** applique, **Alt+Entrée** insère un saut de ligne et **Échap** abandonne la saisie. Le champ vide efface le contenu. Excel interprète les valeurs et les formules selon le style affiché et le format de la cellule. Dans un tableau structuré, l’édition reste limitée à la cellule. Pour une matrice CSE, elle couvre tout le bloc dans la limite de 255 caractères. **Ctrl+Z** agit sur le brouillon pendant la saisie et sur la dernière édition Clair hors saisie. Clair contrôle les modifications intervenues entre-temps et restaure le contenu typé et le format numérique généré par l’édition.
+
+Chaque sous-tracé possède sa pile d’annulation. **Ctrl+Z** remonte vers les tracés parents si la pile courante est vide. Fermer un sous-tracé réunit les éditions encore liées en une seule action dans son parent. **Alt+R** conserve les éditions liées si une source de tracé disparaît.
+
+Avec le XLL chargé, le retour à la grille, la fermeture du volet ou le lancement d’une nouvelle analyse depuis la sélection Excel transmet les éditions liées à **Annuler** dans Excel. **Ctrl+Z** ou le bouton **Annuler** inverse le lot du changement le plus récent au plus ancien, puis sélectionne la première cellule ou plage éditée. Si une cellule a changé depuis l’édition, Clair refuse le lot et rétablit les annulations déjà appliquées dans ce lot.
 
 Dans **Flux de calcul**, choisissez un périmètre, une zone centrale puis **Analyser**. Clair actualise le même classeur et calcule les rôles. Une première analyse démarre sans couleurs ; cochez les groupes ou blocs à colorer. Une nouvelle analyse conserve les choix des cellules qui portent encore le même rôle ; les nouveaux rôles restent décochés. Le périmètre classeur/feuille utilise les cellules capturées ; une sélection Excel inclut aussi ses cellules vides. Le menu des vues distingue rôles de calcul et flux traversant la zone centrale. Un avertissement de dépendance rend ces résultats partiels.
 
@@ -61,29 +75,111 @@ Fermer une fenêtre retire ses propres couleurs de flux dans les classeurs encor
 
 Dans **Carte des cellules**, choisissez une feuille ou **Toutes les feuilles**, puis **Colorer dans Excel**. Clair recapture le même classeur avant de classer les cellules. **Retirer couleurs** supprime uniquement ses règles de carte ; les couleurs restent présentes tant que cette commande n'est pas utilisée, y compris après fermeture de Clair et sauvegarde du classeur. Après réouverture, rechargez le classeur dans Clair pour les retirer. Les feuilles protégées sont refusées avant toute modification.
 
-**Palette…** règle les catégories et couleurs ; **Aucun** laisse la propriété existante visible. **Utiliser** change la palette de cette fenêtre ; **Enregistrer par défaut** la conserve dans `%LOCALAPPDATA%\Clair\map-palette.xml`. Les nouvelles couleurs prennent effet au prochain clic **Colorer dans Excel**. Le XML importé/exporté appartient au format Clair, sans compatibilité annoncée avec celui d'Arixcel. **Rapport carte** exporte toutes les catégories et les avertissements de la capture.
+Dans l'archive 0.6, **Palette…** règle les catégories et couleurs. **Aucun** laisse la propriété existante visible. **Utiliser** change la palette de cette fenêtre pour le prochain clic **Colorer dans Excel**. **Enregistrer par défaut** la conserve dans `%LOCALAPPDATA%\Clair\map-palette.xml`. Le XML importé/exporté utilise le format Clair. **Rapport carte** exporte toutes les catégories et les avertissements de la capture.
 
+Sur la branche de développement en brouillon, **Carte → Palette…** affiche les couleurs dans le volet latéral. Chaque modification s'applique aux cartes actives et s'enregistre pour les prochaines sessions. Désactiver **Analyser les formules uniques** regroupe leurs sous-types tout en gardant les directions de copie. Un style de validation actif déclenche son analyse. **Plus…** permet de rétablir les couleurs d'origine et d'échanger des profils JSON Arixcel. Pour conserver aussi les polices et les catégories propres à Clair, utilisez le format XML Clair. [Registre de parité](docs/PARITY.md)
 
 Pour ajouter le ruban à Excel :
 
 ```powershell
+.\build.ps1 -WithExcelShortcut
 .\install-addin.ps1
 # Ouvrir ensuite une nouvelle instance d'Excel.
 # Pour désinstaller : .\install-addin.ps1 -Uninstall
 ```
 
-Le ruban ouvre plusieurs explorateurs indépendants ; **Tout fermer** les ferme ensemble. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier : ne le déplacez pas sans réinstaller.
+`-WithExcelShortcut` compile le XLL natif pour Excel 32 et 64 bits avec Visual Studio Build Tools, les outils MSVC x86/x64 et le SDK Windows. L'archive Windows de CI contient les deux fichiers. Ils se placent dans `bin` à côté de `Clair.AddIn.dll`.
 
-Pour comparer : chargez le premier état, ouvrez **Comparaison**, puis **Mémoriser référence**. Modifiez le classeur ou activez un autre classeur dans Excel, puis cliquez sur **Comparer classeur Excel actif**. Les cellules sont appariées par nom de feuille et adresse. En mode formules, un changement de résultat calculé seul n'est pas une différence ; activez **Valeurs calculées** pour le comparer.
+Sur la branche de développement, **Clair → Antécédents** ouvre le volet **Formule**, ancré à droite de la feuille. **Dépendants** change le sens dans le même volet. Les onglets **Carte**, **Flux** et **Comparer** donnent accès aux autres analyses. Le bouton principal **Carte des cellules** bascule les couleurs sur la grille. Sa flèche donne accès à **Ouvrir le volet Carte** et **Couleurs de carte**. Redimensionnez le volet à la souris ou fermez-le avec sa croix pour retrouver toute la largeur de la feuille.
+
+Dans **Formule**, Clair met en gras l'argument retenu par `IF`, `IFS`, `CHOOSE`, `SWITCH`, `IFERROR` ou `IFNA` quand Excel fournit les valeurs nécessaires. `FILTER` et `XLOOKUP` peuvent aussi marquer leur valeur de secours. Tous les arguments restent consultables. **Évaluer** actualise ce repère quand l'évaluation au clic est désactivée. Le graphe des références continue de couvrir toute la formule.
+
+Pour `INDEX`, `OFFSET`, `INDIRECT` et les recherches prises en charge, l'arbre affiche l'adresse effectivement trouvée devant la fonction. `MATCH` et `XMATCH` affichent toujours leur résultat numérique dans l'aperçu. Utilisez **Aller à la cible dans Excel** dans le menu contextuel pour recalculer et sélectionner la plage.
+
+Pour `SUMIF`, `COUNTIF`, `AVERAGEIF` et leurs variantes à plusieurs critères, le volet affiche les zones retenues. Les groupes **Filtre** montrent les cellules de chaque critère et gardent la plage et le critère consultables. `FILTER` distingue la plage renvoyée de la source d'un masque issu d'une comparaison directe. `MIN`, `MAX`, `MINA`, `MAXA`, `MINIFS`, `MAXIFS`, `SMALL`, `LARGE` et certains modes de `SUBTOTAL` et `AGGREGATE` peuvent pointer vers la cellule du résultat. L'aperçu de la formule affiche la valeur calculée par Excel. [Validation](docs/VALIDATION.md)
+
+`MIN`, `MAX`, `MINA`, `MAXA`, ainsi que `SUBTOTAL` et `AGGREGATE` en modes 4 et 5, mettent en gras le premier argument qui correspond au résultat. Une plage peut être en gras pendant que la fonction affiche l'adresse de la cellule correspondante. [Validation des arguments retenus](docs/VALIDATION.md)
+
+Une référence 3D comme `Jan:Mar!B2` se développe par feuille dans **Formule**. L'aperçu calcule le résultat de l'argument seul pour les agrégats pris en charge. Pour un extrémum, le gras distingue aussi la première feuille qui correspond au résultat. Le menu contextuel de chaque feuille permet d'ouvrir sa plage. Les feuilles masquées restent consultables dans l'arbre et doivent être affichées dans Excel pour y naviguer. [Validation des références 3D](docs/VALIDATION.md)
+
+**Antécédents**, **Dépendants** et **Flux** suivent les plages 3D du classeur capturé. Ils incluent les feuilles intermédiaires et les cellules référencées par les arguments écartés au calcul. Le Flux limite ces liens à son périmètre.
+
+Sélectionnez plusieurs cellules dans Excel, même disjointes, puis cliquez sur **Antécédents** ou **Dépendants** dans le ruban Clair. L'arbre occupe la majorité du volet et compte les plages de résultat. **Grouper par feuille** affiche leurs sous-totaux.
+
+Dans l'arbre, **Ctrl+clic** ajoute ou retire un résultat et **Maj+clic** sélectionne un intervalle de lignes visibles. Dans le volet Excel, la grille suit la sélection et combine les plages de la feuille du résultat courant. **Voir cellule** permet aussi de rejoindre explicitement cette sélection. **Ctrl+Q** trace les antécédents de toutes les plages retenues et **Ctrl+Maj+Q** leurs dépendants. La vue **Sélection multiple** sépare les sources et les résultats, avec leurs compteurs. **Retour** retrouve les sources, les résultats sélectionnés et la ligne active. [Validation](docs/VALIDATION.md)
+
+**Surligner dans Excel** affiche les sources en rose, les antécédents sélectionnés en bleu et les dépendants sélectionnés en vert, y compris sur plusieurs feuilles. Chaque tracé de l'historique conserve sa propre couche. **Retour** retire la couche du tracé quitté. Désactiver la case ou fermer le volet retire les couches de trace. Elles partagent les fonds directs de Carte et Flux. [Validation](docs/VALIDATION.md)
+
+Chaque fenêtre de classeur possède son propre volet. **Tout fermer** ferme les volets de la session Excel. L'installation concerne le compte Windows courant et conserve le chemin de ce dossier. Après une mise à jour depuis l'archive 0.6, relancez `install-addin.ps1` pour enregistrer aussi le contrôle du volet, puis ouvrez une nouvelle instance d'Excel.
+
+Avec le XLL chargé, **Ctrl+Retour arrière** rend le focus à la grille depuis le volet **Formule** et garde le tracé ouvert. Depuis la grille, le raccourci réactive et actualise un tracé encore ouvert ou restaure une sélection de lancement. L'historique garde jusqu'à 100 entrées dans cette instance Excel. Quand Arixcel est déjà connecté dans l'instance, Clair lui laisse la touche.
+
+Dans **Comparer**, choisissez **Classeur**, **Feuille** ou **Plage**, puis **Définir référence**. Activez le comparateur dans Excel et cliquez sur **Comparer**. La référence et les options sont partagées entre les volets de la même session Excel. Pour les feuilles, vous pouvez grouper plusieurs onglets cibles. Pour une plage, sélectionnez le coin supérieur gauche de chaque bloc cible ou une sélection contenant les blocs complets. Les plages sont comparées par décalage. Les feuilles et classeurs utilisent les coordonnées Excel.
+
+Le mode **R1C1** reconnaît une formule recopiée à un autre emplacement. **Ignorer les entrées** masque les écarts entre deux cellules sans formule. **Valeurs calculées** compare les résultats avec une tolérance absolue initiale de 0,000001.
+
+Pour les feuilles et classeurs, **Détecter les décalages** est activé par défaut. Quand des repères concordants se sont déplacés, le volet affiche d’abord les lignes ou colonnes en plus, avec le côté et la position proposés pour l’insertion. **Comparer sans aligner** ouvre les écarts de la même capture.
+
+Sélectionnez une proposition, ou cochez celles à appliquer, puis choisissez **Aligner**. **Tout aligner** traite les propositions affichées dans l’ordre du volet. Clair insère les axes du côté le plus court, reprend les hauteurs ou les largeurs du côté excédentaire et recalcule la comparaison. **Annuler l’alignement** ou **Ctrl+Z** dans le volet annule le dernier lot. Avec le XLL chargé, le passage à la grille rend aussi les insertions récentes accessibles par **Annuler** dans Excel. **Retirer les axes du classeur** retrouve les axes Clair dans le classeur actif, y compris après réouverture. Les axes occupés ou protégés restent en place.
+
+Les écarts apparaissent en blocs dépliables. Sélectionner un bloc ou un sous-écart surligne les plages des deux côtés. **Voir référence** et **Voir comparateur** sélectionnent la plage dans Excel. Depuis l’arbre, **Ctrl+Tab** change de côté et **Ctrl+S** inverse leur présentation. Désactiver la surbrillance ou quitter le volet restaure les fonds. Le mode **Instantané** mémorise l’état d’un classeur pour le comparer à une capture ultérieure.
+
+Avec le raccourci XLL actif, **Ctrl+Retour arrière** passe du comparateur à la grille et l’historique permet de retrouver le même volet. Le retour conserve la sélection Excel et les résultats affichés. **Actualiser (Alt+R)** relit les feuilles ou plages d’origine avec les options du relevé courant. Si le comparateur reste dans la même phase, les lignes et coches encore présentes sont retrouvées et l’annulation reste disponible.
+
+Quand Excel déplace une plage, le volet suit sa référence physique pour la navigation, la surbrillance et le rapport. Les formules et valeurs affichées restent celles du relevé. Une plage supprimée est signalée comme indisponible. **Copier** utilise les adresses déplacées quand les deux tailles concordent. **F2** ouvre le contenu actuel du côté choisi, y compris si son bloc a été agrandi. Si le périmètre d’une comparaison par plages a changé, sélectionnez de nouveau les plages pour relancer le relevé.
+
+Pour une comparaison longue, les commandes de progression apparaissent dans le volet après environ deux secondes. Pendant la préparation, **Annuler** conserve le relevé précédent. Pendant l’analyse, **Ignorer** passe à la tâche ou au bloc suivant et **Arrêter** garde les écarts déjà produits. **Annuler** après une demande d’arrêt, ou **Échap**, abandonne le nouveau relevé. Clair et le rapport indiquent les résultats partiels.
+
+Le détail colore en rouge les segments différents de chaque côté. Il suit la notation et la préférence de langue de l’explorateur Excel. L’option **R1C1** du comparateur continue de décider quelles formules sont équivalentes.
+
+En mode Formules, **Modifier (F2)** ouvre un brouillon pour le côté actif. Pour choisir un côté depuis le détail, placez le curseur dans sa section avant F2. **Entrée** applique, **Échap** abandonne et **Alt+Entrée** insère un saut de ligne. Sur un bloc, la saisie s’applique à toute la plage, avec translation des références relatives. **Ctrl+Z** annule la dernière opération du comparateur.
+
+**Ctrl+Q** ouvre les antécédents et **Ctrl+Maj+Q** les dépendants du côté actif dans le même volet. Les lignes cochées priment sur la ligne courante. Un bloc de formules part de sa cellule en haut à gauche. Une plage de données reste entière. Dans le détail, le curseur peut choisir l’expression de départ et le double-clic trace la ligne courante. **Retour** ou **Entrée** à la racine retrouve la comparaison. **Échap** rétablit aussi la sélection Excel de départ.
+
+Si le tracé reprend la formule affichée dans le détail, **F2** à sa racine modifie tout le bloc comparé, même déplacé ou redimensionné. Le rattachement suit la feuille renommée. Si la racine bouge pendant le tracé, actualisez celui-ci avant de l’éditer. **Ctrl+Z** annule une édition à la fois dans le tracé. Au retour, les éditions restantes forment une seule action du comparateur.
+
+Les écarts résolus par une copie restent grisés dans le volet. Ils restent navigables et le compteur les distingue des écarts ouverts. Annuler la copie rouvre les écarts correspondants. **Comparer** démarre un nouveau relevé.
+
+Depuis les résultats, **Rapport Excel (Alt+X)** ouvre un nouveau classeur filtrable. Clair fige les cinq premières lignes lorsque la fenêtre Excel le permet. Si Excel refuse le gel, le rapport reste ouvert et le volet l’indique. Le rapport détaille les écarts par feuille ou tâche et par bloc. Il conserve les deux côtés physiques dans leurs colonnes, même après **Ctrl+S**. Les formules sont exportées comme texte avec leurs segments différents en rouge. En mode Valeurs, les nombres, booléens et erreurs restent typés. Les tâches omises portent leur motif et le total d’une comparaison partielle indique le minimum d’écarts trouvés.
+
+En mode formules, sélectionnez ou cochez les blocs et utilisez **Copier** pour appliquer leur contenu et leur format numérique depuis le côté actif. Dans l’arbre, **Ctrl+L** et **Ctrl+R** ciblent respectivement les côtés visibles gauche et droit. R1C1 recale les références relatives. A1 conserve les adresses. **Annuler la copie** ou **Ctrl+Z** annule le dernier lot. Le XLL permet aussi d’annuler depuis la grille Excel.
+
+**Copier les formats** est coché par défaut. Le volet reprend l’alignement, les fusions entièrement comprises, la police et le texte enrichi, les bordures, les fonds, les motifs et la protection des cellules. Les règles conditionnelles et les validations de destination sont conservées. Décochez l’option pour copier le contenu et le format numérique.
+
+Dans une comparaison de classeurs, **Copier** peut aussi créer les onglets manquants, y compris les feuilles masquées et les onglets graphiques. Clair utilise les onglets communs pour placer les copies et rend locales les références de cellules dont l’onglet existe à destination. Les références vers des onglets toujours absents gardent leur lien externe. Quand une carte Clair masque un fond conditionnel source, l’onglet copié reçoit le fond d’origine. Une seule annulation peut retirer les onglets et restaurer les cellules copiées dans le même lot.
 
 Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle exposée par `GetActiveObject`. Le nom du classeur capturé est affiché en haut. Les noms de classeurs non enregistrés ne constituent pas une identité durable entre plusieurs instances.
+
+## Utilitaires de mise en page
+
+Le bouton **Mise en page** du ruban ouvre l’onglet **Utilitaires** du volet. Choisissez la commande, son axe ou son périmètre, puis **Appliquer**. Les paramètres sont enregistrés dans les préférences locales de Clair. Le périmètre initial correspond aux feuilles sélectionnées, le zoom initial à 100 et l’ajustement initial aux colonnes.
+
+- **Aligner les largeurs sur la référence** utilise la feuille définie dans Comparer et cible les autres feuilles sélectionnées. Chaque colonne reçoit sa propre largeur de référence, jusqu’à XFD. L’annulation restaure les largeurs individuelles des cibles. Ce choix explicite de l’utilisateur remplace l’uniformisation observée dans Arixcel. Les colonnes masquées sont lues sans les réafficher ; leur état de masquage n’est pas copié séparément.
+- **Ajuster automatiquement** traite les colonnes ou lignes de la sélection, sur les feuilles groupées. Le contenu de l’axe entier participe au calcul, y compris hors de la sélection.
+- **Régler le zoom** accepte un niveau invariant, avec un point décimal, pour les feuilles sélectionnées ou toutes les feuilles visibles du classeur.
+- **Basculer le quadrillage** applique l’inverse de la vue active aux feuilles ciblées. Comme Arixcel, son annulation applique un inverse uniforme aux mêmes cibles.
+- **Masquer les sauts de page** retire les pointillés d’affichage des feuilles ciblées et conserve les sauts d’impression définis.
+- **Nouvelle fenêtre avec les mêmes vues** reprend les réglages des feuilles visibles, leurs sélections et défilements, puis la feuille active et le groupe d’onglets.
+
+Le bouton d’annulation indique la dernière commande réversible. **Ctrl+Z** fonctionne aussi dans le volet et conserve l’annulation du texte dans le champ de zoom. Les reçus quittant le volet sont transmis au rappel d’annulation Excel. Le masquage des pointillés et la création d’une fenêtre suivent les commandes sans reçu d’annulation d’Arixcel. Le gestionnaire complet de variantes et de cycles de raccourcis reste à porter.
+
+## Copie et collage
+
+Dans **Utilitaires → Copie et collage**, **Copier la somme** additionne les valeurs des cellules visibles de la sélection courante, textes numériques compris selon la culture Windows. Dates typées et booléens sont exclus. Le résultat reste lisible dans le volet. Les zones qui se chevauchent reproduisent le parcours Arixcel : elles peuvent doubler ou exclure certaines cellules. La progression peut être arrêtée avant écriture du presse-papiers.
+
+Après une copie de cellules dans Excel, choisissez **Formules**, **Valeurs**, **Formats**, **Validation des données** ou **Formats numériques**, puis **Coller la propriété**. Les reçus utilisent la même annulation que les formats et la mise en page. La source doit appartenir à un classeur ouvert dans la même instance Excel.
+
+Pour **Dupliquer**, choisissez **Conserver les références internes** ou **Copie A1 exacte**, puis l’option **Copier aussi les formats**. Le premier mode déplace les références internes avec le bloc, même absolues ou mixtes, et conserve les liens vers les cellules extérieures. Le second conserve le texte A1 des formules. Une source d’une cellule répète la même formule A1 dans les deux modes. Les données passent par l’interprétation d’Excel selon le format cible : sous **Texte**, elles restent du texte, en notation R1C1 pour un bloc en mode Références internes, en A1 pour une source d’une cellule ou une copie exacte. Par exemple, une formule interne peut apparaître comme `=RC[1]` ; un nombre devient une chaîne. Les textes sans apostrophe peuvent être interprétés par Excel. La commande traite les blocs répétés et les feuilles groupées ; elle partage la pile d’annulation des utilitaires et restaure aussi le groupe de feuilles après annulation. Progression et bouton **Arrêter** restent dans le volet.
+
+La duplication et les collages restent en développement U03. Le véritable presse-papiers Windows et le parcours complet des collages natifs ne sont pas encore validés de bout en bout. Les cas couverts et les limites sont détaillés dans les [preuves U03](docs/CLIPBOARD-EVIDENCE.md) et les [résultats de validation](docs/VALIDATION.md).
 
 ## Tests
 
 ```powershell
 .\test.ps1          # moteur, syntaxe, flux, carte et palette (sans Excel)
+.\test.ps1 -WithExcelShortcut  # build et test du pont natif
 .\test.ps1 -Excel   # sessions Excel isolées, expressions, édition, couleurs et restauration
-.\test-addin.ps1    # démarrage Excel /x, ruban, fenêtres, nettoyage registre
+.\test-addin.ps1    # démarrage Excel /x, ruban, volet natif et nettoyage du registre
 ```
 
 Le test Excel crée des instances et classeurs jetables. Il vérifie aussi les évaluations en français/anglais, les noms et tableaux, les sélections de plages/formes, l'édition, l'annulation, les conflits et les formats. Le test de couleurs enregistre une copie temporaire, la rouvre, retire la carte et contrôle les formats effectifs, l'ordre relatif et `StopIfTrue` des règles préexistantes ; le fichier est ensuite supprimé. Le test COM installe temporairement les clés propres à Clair, lance son propre processus Excel identifié, vérifie le chargement puis supprime les clés. Il refuse de remplacer une installation Clair existante.
@@ -91,14 +187,15 @@ Le test Excel crée des instances et classeurs jetables. Il vérifie aussi les �
 ## Limites explicites de la version 0.6
 
 - Le graphe de cellules utilise toujours une extraction lexicale distincte du nouvel arbre syntaxique. Toutes les branches conditionnelles y sont considérées ; l'évaluation d'une expression ne corrige pas automatiquement ce graphe.
-- `INDIRECT`, `OFFSET`, `LET`, `LAMBDA`, références externes, références 3D, tables structurées, noms relatifs et plages déversées signalés comme incomplets ou non résolus. Un avertissement signifie que le graphe peut manquer des cellules ou en inclure trop.
+- `INDIRECT`, `OFFSET`, `LET`, `LAMBDA`, références externes, tables structurées, noms relatifs et plages déversées signalés comme incomplets ou non résolus. Les références 3D requièrent deux feuilles résolues et un ordre capturé. Un avertissement signifie que le graphe peut manquer des cellules ou en inclure trop.
 - Intersections directes de références prises en charge. Les intersections impliquant des noms ou expressions plus complexes nécessitent encore un analyseur syntaxique complet.
-- L'arbre syntaxique prend en charge la notation A1 invariante. Notation R1C1, DDE et paramètres LAMBDA non liés ne sont pas évalués. Excel Evaluate limite l'expression contextualisée à 255 caractères ; les tableaux affichent un aperçu de 10 lignes × 5 colonnes, jusqu'à 8 zones. Les fonctions volatiles sont recalculées lors de l'évaluation.
+- Excel fournit une formule A1 invariante pour l’analyse, y compris quand le volet affiche une autre notation. Les positions de surlignage nécessitent une correspondance entre les deux textes. L’évaluation des liens DDE et des paramètres LAMBDA non liés reste hors couverture. Excel Evaluate limite l'expression contextualisée à 255 caractères. Les tableaux affichent un aperçu de 10 lignes × 5 colonnes, jusqu'à 8 zones. Les fonctions volatiles sont recalculées lors de l'évaluation.
 - Édition des cellules fusionnées et matrices CSE refusée. Une formule déversée s'édite uniquement à son origine. L'annulation propre à Clair est limitée à la session de sa fenêtre ; l'historique natif d'Excel n'est pas préservé par les écritures COM.
 - Les plages sont représentées par leurs cellules renseignées. Une référence simple vers une cellule vide reste visible ; les cellules vides d'une grande plage ne sont pas énumérées.
 - Carte : cellules capturées renseignées ou avec validation ; les autres cellules vides restent inchangées. Classification `Indéterminée` en cas d'informations insuffisantes, désactivée dans la palette initiale. La désactivation des analyses uniques/validation d'Arixcel n'est pas reproduite : désactiver une catégorie Clair exclut seulement sa couleur.
 - Couleurs par règles conditionnelles propres à Clair : formats directs et règles préexistantes conservés. L'ordre relatif des règles est conservé ; Excel peut laisser des trous dans leurs numéros de priorité. Le retrait restaure leur effet, sans promettre une identité binaire du fichier. Les écritures de formatage affectent l'historique natif d'Excel. Si Excel interrompt une transaction et empêche sa restauration, Clair signale explicitement l'échec.
-- Flux : géométrie et arbre reconstruits depuis les chemins statiques observés, sans comparaison runtime contre Arixcel. Les formules sans R1C1 disponible restent séparées. L'ordre interne de blocs émis dans un même lot de collections originales n'est pas établi. Les libellés R1C1, périmètres multi-classeurs, commandes globales de couleurs, permanence, progression et annulation restent à reconstruire. Les rôles analytiques restent issus du graphe lexical. Comparaison sans surbrillance, formats, alignement de lignes/colonnes ou renommage automatique des feuilles.
+- Flux : géométrie et arbre reconstruits depuis les chemins statiques observés. Six blocs 3D ont été comparés dans Excel. Les formules sans R1C1 disponible restent séparées. L'ordre interne de blocs émis dans un même lot de collections originales n'est pas établi. Les libellés R1C1, périmètres multi-classeurs, commandes globales de couleurs, permanence, progression et annulation restent à reconstruire. Les rôles analytiques restent issus du graphe lexical.
+- Comparaison. La capture est limitée à 250 000 cellules par côté. Les axes traversant le corps d’un tableau, d’un filtre ou d’un tableau croisé sont protégés. La copie de contenu reste disponible pour les plages avec dégradé. Le surlignage des segments de formule reste à reconstruire.
 - Lecture des valeurs telles qu'Excel les expose. Mode de calcul manuel ou calcul en cours signalé ; aucune recalculation forcée.
 - Lecture limitée à 250 000 cellules dans les zones utilisées. Arbre d'exploration : 500 relations par nœud, profondeur 32. Parcours transitif : 2 000 cellules. Listes de carte/flux : 20 000 lignes affichées ; arbre de flux : 20 000 nœuds visibles. Coloration des groupes et rapports utilisent l'analyse complète. Limites signalées lors de leur atteinte.
 - Capture et analyse synchrones ; de gros modèles peuvent bloquer temporairement l'interface.

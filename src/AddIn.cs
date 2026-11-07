@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -28,11 +27,9 @@ namespace FormulaExplorer
     // Keep COM callbacks on the creating Excel STA. The CLR's default
     // free-threaded marshaler can otherwise create a WinForms window on an RPC
     // thread while Excel's UI waits for that window's synchronous messages.
-    public sealed class ExcelAddIn : StandardOleMarshalObject, IDTExtensibility2, IRibbonExtensibility
+    public sealed partial class ExcelAddIn : StandardOleMarshalObject, IDTExtensibility2, IRibbonExtensibility, ICustomTaskPaneConsumer
     {
         object application;
-        readonly List<MainForm> windows = new List<MainForm>();
-        MainForm currentWindow;
         bool ribbonLoaded;
         public string GetCustomUI(string ribbonId)
         {
@@ -43,66 +40,54 @@ namespace FormulaExplorer
                 "<button id=\"ClairBack\" label=\"Retour\" imageMso=\"GoBack\" onAction=\"GoBack\"/>" +
                 "<button id=\"ClairClose\" label=\"Tout fermer\" imageMso=\"CloseAll\" onAction=\"CloseAll\"/>" +
                 "</group><group id=\"ClairAnalysis\" label=\"Analyse\">" +
-                "<button id=\"ClairMap\" label=\"Carte des cellules\" size=\"large\" imageMso=\"ConditionalFormattingColorScalesGallery\" onAction=\"ShowMap\"/>" +
+                "<splitButton id=\"ClairMapSplit\" size=\"large\"><button id=\"ClairMap\" label=\"Carte des cellules\" imageMso=\"ConditionalFormattingColorScalesGallery\" onAction=\"ShowMap\"/>" +
+                "<menu id=\"ClairMapMenu\"><button id=\"ClairMapPane\" label=\"Ouvrir le volet Carte\" onAction=\"ShowMapPane\"/>" +
+                "<button id=\"ClairMapPalette\" label=\"Couleurs de carte\" onAction=\"ShowMapPalette\"/></menu></splitButton>" +
                 "<button id=\"ClairFlow\" label=\"Flux de calcul\" size=\"large\" imageMso=\"TracePrecedents\" onAction=\"ShowFlow\"/>" +
                 "<button id=\"ClairCompare\" label=\"Comparer\" size=\"large\" imageMso=\"CompareAndMergeWorkbooks\" onAction=\"ShowComparison\"/>" +
-                "</group></tab></tabs></ribbon></customUI>";
+                "</group><group id=\"ClairColors\" label=\"Couleurs directes\">" +
+                "<menu id=\"ClairFlowColors\" label=\"Flux\"><button id=\"ClairFlowRemove\" label=\"Retirer tous les flux\" onAction=\"RemoveFlowColors\"/><button id=\"ClairFlowKeep\" label=\"Rendre les flux permanents…\" onAction=\"KeepFlowColors\"/></menu>" +
+                "<menu id=\"ClairMapColors\" label=\"Cartes\"><button id=\"ClairMapRemove\" label=\"Retirer toutes les cartes\" onAction=\"RemoveMapColors\"/><button id=\"ClairMapKeep\" label=\"Rendre les cartes permanentes…\" onAction=\"KeepMapColors\"/></menu>" +
+                "<button id=\"ClairRestoreColors\" label=\"Couleurs enregistrées…\" onAction=\"RestoreSavedColors\"/>" +
+                "</group><group id=\"ClairUtilities\" label=\"Utilitaires\"><button id=\"ClairLayoutUtilities\" label=\"Mise en page\" size=\"large\" imageMso=\"PageSetupDialog\" onAction=\"ShowUtilities\"/></group></tab></tabs></ribbon></customUI>";
         }
         public void OnConnection(object app, int connectMode, object addIn, ref Array custom)
         {
             application = app; ((dynamic)addIn).Object = this;
+            ConnectColorEvents();
+            if (connectMode == 1) EnsureWorksheetShortcut();
         }
-        public void OnDisconnection(int removeMode, ref Array custom) { CloseWindows(true); application = null; ribbonLoaded = false; }
+        public void OnDisconnection(int removeMode, ref Array custom)
+        {
+            try { DisconnectWorksheetShortcut(); ClosePanes(true); }
+            finally
+            {
+                try { DisconnectColorEvents(); }
+                finally { ReleasePaneFactory(); application = null; ribbonLoaded = false; }
+            }
+        }
         public void OnAddInsUpdate(ref Array custom) { }
-        public void OnStartupComplete(ref Array custom) { }
-        public void OnBeginShutdown(ref Array custom) { CloseWindows(true); }
+        public void OnStartupComplete(ref Array custom) { EnsureWorksheetShortcut(); }
+        public void OnBeginShutdown(ref Array custom) { DisconnectWorksheetShortcut(); ClosePanes(true); }
         public string Status() { return application == null ? "Disconnected" : "Clair 0.6 connected"; }
         public void RibbonOnLoad([MarshalAs(UnmanagedType.IDispatch)] object ribbon) { ribbonLoaded = true; }
         public bool IsRibbonLoaded() { return ribbonLoaded; }
-        public int OpenWindowCount() { return windows.Count; }
-        public void Explore([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("precedents"); }
-        public void ExploreDependents([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("dependents"); }
-        public void ShowMap([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("map"); }
-        public void ShowFlow([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("flow"); }
-        public void ShowComparison([MarshalAs(UnmanagedType.IDispatch)] object control) { Open("compare"); }
-        public void CloseAll([MarshalAs(UnmanagedType.IDispatch)] object control) { CloseWindows(); }
-        public void GoBack([MarshalAs(UnmanagedType.IDispatch)] object control)
-        {
-            if (currentWindow != null && !currentWindow.IsDisposed) { currentWindow.ExecuteRibbonCommand("back"); currentWindow.Activate(); }
-        }
-        void Open(string command)
+        public void Explore([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("precedents"); }
+        public void ExploreDependents([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("dependents"); }
+        public void ShowMap([MarshalAs(UnmanagedType.IDispatch)] object control)
         {
             try
             {
                 if (application == null) throw new InvalidOperationException("Excel déconnecté.");
-                MainForm window = new MainForm(new ExcelBridge(application));
-                windows.Add(window); currentWindow = window;
-                window.Activated += delegate { currentWindow = window; };
-                window.FormClosed += delegate
-                {
-                    windows.Remove(window);
-                    if (currentWindow == window) currentWindow = windows.Count == 0 ? null : windows[windows.Count - 1];
-                };
-                window.Show(new ExcelWindow((int)((dynamic)application).Hwnd));
-                window.ExecuteRibbonCommand(command);
+                MainForm.ToggleExcelMap(colorBridge ?? new ExcelBridge(application));
             }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Clair"); }
+            catch (Exception error) { MessageBox.Show(error.Message, "Clair"); }
         }
-        void CloseWindows(bool hostClosing = false)
-        {
-            foreach (MainForm window in windows.ToArray())
-            {
-                if (hostClosing) window.CloseFromHost(); else window.Close();
-                // FormClosed maintains the list. A failed color cleanup can cancel
-                // an ordinary close; keep that window alive for corrective action.
-                if (window.IsDisposed) window.Dispose();
-            }
-        }
-        sealed class ExcelWindow : IWin32Window
-        {
-            readonly IntPtr handle;
-            public ExcelWindow(int hwnd) { handle = new IntPtr(hwnd); }
-            public IntPtr Handle { get { return handle; } }
-        }
+        public void ShowMapPane([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("map"); }
+        public void ShowMapPalette([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("map-palette"); }
+        public void ShowFlow([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("flow"); }
+        public void ShowComparison([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("compare"); }
+        public void ShowUtilities([MarshalAs(UnmanagedType.IDispatch)] object control) { OpenPane("utilities"); }
+        public void CloseAll([MarshalAs(UnmanagedType.IDispatch)] object control) { ClosePanes(false); }
     }
 }

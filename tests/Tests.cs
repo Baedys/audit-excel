@@ -21,6 +21,12 @@ static class Tests
     }
     static void Core()
     {
+        Check("utility number format semantics", delegate { UtilityNumberFormatsTests.Run(); });
+        Check("format utility settings", FormatUtilitySettingsTests.Run);
+        Check("utility undo cleanup retry", UtilityUndoReleaseTests.Run);
+        Check("utility duplicate formula contracts", delegate { Console.WriteLine("UTILITY_DUPLICATE_FORMULA_ASSERTIONS " + UtilityDuplicateFormulasTests.Run()); });
+        Check("utility clipboard contracts", delegate { Console.WriteLine("UTILITY_CLIPBOARD_ASSERTIONS " + UtilityClipboardTests.Run()); });
+        Check("utility duplicate geometry", delegate { Console.WriteLine("UTILITY_DUPLICATE_GEOMETRY_ASSERTIONS " + UtilityDuplicateGeometryTests.Run()); });
         Check("absolute and mixed references", delegate { var p = Parse("=$B$1+B$2+$B3"); Equal(p.References.Count, 3); Equal(p.References[0].FirstRow, 1); });
         Check("cross-sheet quoted apostrophe", delegate { var p = Parse("='O''Brien'!B2"); Equal(p.References[0].Sheet, "O'Brien"); });
         Check("cross-sheet unquoted unicode", delegate { Equal(Parse("=Hypothèses!B2").References[0].Sheet, "Hypothèses"); });
@@ -32,6 +38,7 @@ static class Tests
         Check("reversed range normalized", delegate { var r = Parse("=SUM(C8:A2)").References[0]; Equal(r.FirstColumn, 1); Equal(r.FirstRow, 2); });
         Check("external reference not local", delegate { var p = Parse("='[Other.xlsx]S1'!A1+B2"); Equal(p.References.Count, 1); Assert(p.Warnings.Count > 0, "missing warning"); });
         Check("external unquoted reference", delegate { var p = Parse("=[Other.xlsx]S1!A1+B2"); Equal(p.References.Count, 1); Equal(p.References[0].FirstRow, 2); });
+        Check("open workbook reference parsing", ExternalFormulaParserTests.Run);
         Check("3D reference explicit unknown", delegate { var p = Parse("=SUM(S1:S3!A1)+B2"); Equal(p.References.Count, 1); Assert(p.Warnings.Count > 0, "missing warning"); });
         Check("structured reference explicit unknown", delegate { var p = Parse("=SUM(Table1[[#Data],[A1]])+B2"); Equal(p.References.Count, 1); Assert(p.Warnings.Count > 0, "missing warning"); });
         Check("dynamic reference warning", delegate { var p = Parse("=INDIRECT(\"A1\")+OFFSET(B1,1,0)"); Equal(p.References.Count, 1); Equal(p.Warnings.Count, 2); });
@@ -151,16 +158,87 @@ static class Tests
     {
         Core();
         Check("Excel formula syntax and source spans", delegate { Console.WriteLine("SYNTAX_ASSERTIONS " + FormulaSyntaxTests.Run()); });
+        Check("Conditional formula branches and operand coercion", delegate { FormulaBranchesTests.Run(); });
         Check("Calculation flow scope and focus", delegate { Console.WriteLine("FLOW_ASSERTIONS " + FlowAnalysisTests.Run()); });
+        Check("Direct dependencies of cell ranges", delegate { DependencyRangeTests.Run(); });
+        Check("Navigation corner transitions", ExcelNavigationShortcutTests.RunGeometry);
+        Check("Explorer worksheet shortcut history", delegate { ExplorerShortcutHistoryTests.Run(); });
+        if (WorksheetShortcutTests.NativeBinaryPresent) Check("Explorer native shortcut bridge", WorksheetShortcutTests.RunNativeBridge);
         Check("Formula map categories and reference priorities", delegate { Console.WriteLine("MAP_ASSERTIONS " + FormulaMapTests.Run()); });
+        Check("Formula map analysis options", delegate { FormulaMapOptionsTests.Run(); });
+        Check("Formula criterion matching", delegate { FormulaCriterionTests.Run(); });
+        Check("Formula map global toggle targets", delegate { Console.WriteLine("MAP_TARGET_ASSERTIONS " + FormulaMapTargetsTests.Run()); });
         Check("Highlight palette serialization and validation", delegate { Console.WriteLine("PALETTE_ASSERTIONS " + HighlightPaletteTests.Run()); });
+        Check("Map palette analysis option editor", delegate { MapPaletteEditorTests.Run(); });
+        Check("Arixcel map profiles", delegate { ArixcelMapProfileTests.Run(); });
+        Check("Docked live map palette", delegate { LiveMapPalettePaneTests.Run(); });
         Check("Flow palette serialization and validation", delegate { Console.WriteLine("FLOW_PALETTE_ASSERTIONS " + FlowPaletteTests.Run()); });
         Check("Flow highlight composition and role activation", delegate { Console.WriteLine("FLOW_HIGHLIGHT_ASSERTIONS " + FlowHighlightPlanTests.Run()); });
         Check("Flow rectangles and block activation", delegate { Console.WriteLine("FLOW_BLOCK_ASSERTIONS " + FlowBlocksTests.Run()); });
         Check("Flow tree structure, ordering and visibility", delegate { Console.WriteLine("FLOW_TREE_ASSERTIONS " + FlowTreeTests.Run()); });
         Check("Flow view preference persistence", delegate { Console.WriteLine("FLOW_VIEW_SETTINGS_ASSERTIONS " + FlowViewSettingsTests.Run()); });
         Check("Flow tree window interaction", delegate { Console.WriteLine("FLOW_TREE_UI_ASSERTIONS " + FlowTreePanelTests.Run()); });
-        if (args.Contains("--excel")) { Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run); Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run); }
+        Check("Direct color layer history and permanence", delegate { Console.WriteLine("DIRECT_COLOR_LAYER_ASSERTIONS " + DirectColorLayersTests.Run()); });
+        Check("Direct color transactions and repair", delegate { Console.WriteLine("DIRECT_COLOR_TRANSACTION_ASSERTIONS " + DirectColorTransactionTests.Run()); });
+        Check("Direct color document and XML recovery", delegate { Console.WriteLine("DIRECT_XML_ASSERTIONS " + DirectHighlightDataTests.Run()); });
+        Check("Conditional fill snapshots and XML", delegate { Console.WriteLine("CONDITIONAL_FILL_XML_ASSERTIONS " + ConditionalFillDataTests.Run()); });
+        Check("Conditional rule reference mode witnesses", delegate { Console.WriteLine("CONDITIONAL_WITNESS_ASSERTIONS " + ConditionalRuleWitnessTests.Run()); });
+        Check("Combined highlight XML journal replacement", delegate { Console.WriteLine("COMBINED_XML_ASSERTIONS " + CombinedHighlightXmlStorageTests.Run()); });
+        Check("Formula presentation spans across Excel styles", delegate { Console.WriteLine("FORMULA_PRESENTATION_ASSERTIONS " + ExcelFormulaStyleTests.RunMapping()); });
+        Check("Sparse comparison block geometry", ExcelComparisonTests.RunGeometry);
+        Check("Comparison text spans and display", ComparisonTextDifferenceTests.Run);
+        Check("Comparison alignment and matching", ComparisonAlignmentTests.Run);
+        Check("Comparison sheet formula relinking", ExcelComparisonSheetTests.RunLocalization);
+        Check("Layout utility settings", ExcelLayoutUtilityTests.RunSettings);
+        Check("Invariant A1 to R1C1 data notation", delegate { UtilityFormulaNotationTests.Run(); });
+        if (args.Contains("--excel"))
+        {
+            Check("Excel layout utilities", ExcelLayoutUtilityTests.Run);
+            Check("Excel format utilities", ExcelFormatUtilityTests.Run);
+            Check("Excel paste property utilities", ExcelPasteSpecialUtilityTests.Run);
+            Check("Excel duplicate copied cells", ExcelDuplicateUtilityTests.Run);
+            Check("Excel duplicate side pane and undo handoff", ExcelDuplicatePanelTests.Run);
+            Check("Excel new window view preservation", ExcelUtilityWindowTests.Run);
+            Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
+            Check("Excel comparison formula editing", ExcelComparisonEditingTests.Run);
+            Check("Excel comparison formula traces", ExcelComparisonTraceTests.Run);
+            Check("Excel comparison workbook report", ExcelComparisonReportTests.Run);
+            Check("Excel comparison worksheet shortcuts", ExcelComparisonShortcutTests.Run);
+            Check("Excel comparison interruption and progress", ExcelComparisonProgressTests.Run);
+            Check("Excel comparison live geometry", ExcelComparisonGeometryTests.Run);
+            Check("Excel conditional formula branch rendering", delegate { ExcelFormulaBranchesTests.Run(); });
+            Check("Excel 3D worksheet spans and expression pane", delegate { ExcelSheetSpanTests.Run(); });
+            Check("Excel multi-area direct dependency traces", delegate { ExcelDependencyRangesTests.Run(); });
+            Check("Excel direct dependencies across workbooks", ExcelExternalDependencyTests.Run);
+            Check("Excel formula text, tree and cell selection", ExcelFormulaSelectionTests.Run);
+            Check("Excel in-pane formula editing", ExcelFormulaEditingPanelTests.Run);
+            Check("Excel in-pane legacy array editing", ExcelFormulaEditingPanelTests.RunArrays);
+            Check("Excel local and R1C1 formula display and editing", ExcelFormulaStyleTests.Run);
+            Check("Excel temporary navigation visibility", ExcelNavigationVisibilityTests.Run);
+            Check("Excel navigation corner shortcuts", ExcelNavigationShortcutTests.Run);
+            Check("Excel worksheet shortcut locations", WorksheetShortcutTests.RunExcel);
+            Check("Excel worksheet formula undo transfer", ExcelWorksheetFormulaUndoTests.Run);
+            Check("Excel live comparison scopes and offsets", ExcelComparisonTests.Run);
+            Check("Excel comparison sheet copy, relinking and undo", ExcelComparisonSheetTests.Run);
+            Check("Excel alignment insertion, undo and persistent removal", ExcelAlignmentEditsTests.Run);
+            Check("Excel explorer exit shortcuts", ExcelExplorerExitTests.Run);
+            Check("Excel rectangular trace colors and recovery", delegate { ExcelTraceHighlightsTests.Run(); });
+            Check("Excel reversible highlights session", ExcelHighlightsTests.Run); Check("Excel flow window lifecycle session", FlowPanelTests.Run);
+            Check("Excel direct color port session", delegate { ExcelDirectColorCellTests.Run(); });
+            Check("Excel direct highlight lifecycle session", delegate { ExcelDirectHighlightsTests.Run(); });
+            Check("Excel effective expression targets", delegate { ExcelExpressionTargetTests.Run(); });
+            Check("Excel criteria and filter targets", delegate { ExcelCriteriaTargetTests.Run(); });
+            Check("Excel direct map window session", delegate { MapDirectPanelTests.Run(); });
+            Check("Excel retained map areas", delegate { ExcelMapRangesTests.Run(); });
+            Check("Excel map selection geometry", delegate { ExcelMapSelectionTests.Run(); });
+            Check("Excel native map toggle", delegate { MapSelectionPanelTests.Run(); });
+            Check("Excel map analysis option lifecycle", delegate { MapAnalysisOptionsExcelTests.Run(); });
+            Check("Excel conditional fill port", delegate { ExcelConditionalFillTests.Run(); });
+            Check("Excel conditional fill lifecycle and persistence", delegate { ExcelConditionalFillSessionTests.Run(); });
+            Check("Excel direct flow window regressions", delegate { FlowDirectPanelTests.Run(); });
+            Check("Excel direct color persistence session", delegate { ExcelDirectHighlightPersistenceTests.Run(); });
+            Check("Excel direct color event callbacks", delegate { ExcelDirectEventTests.Run(); });
+        }
         Console.WriteLine("RESULT " + passed + " passed; " + failed + " failed");
         return failed == 0 ? 0 : 1;
     }
