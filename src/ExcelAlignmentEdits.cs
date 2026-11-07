@@ -57,7 +57,7 @@ namespace FormulaExplorer
                 return result;
             });
 
-            return WithAlignmentMutation(() => AtDirectSheet(target.Workbook, target.Sheet, sheet =>
+            return WithComparisonMutation(() => AtDirectSheet(target.Workbook, target.Sheet, sheet =>
             {
                 if ((bool)((dynamic)sheet).ProtectContents) throw new InvalidOperationException("La feuille à aligner est protégée.");
                 object workbook = null, names = null, range = null;
@@ -112,7 +112,7 @@ namespace FormulaExplorer
             AlignmentReceipt[] batch = receipts.ToArray();
             // Validate the whole undo batch before deleting the first marked axis.
             foreach (AlignmentReceipt receipt in batch) ValidateAlignmentMarkers(receipt.Workbook, receipt.Markers, true);
-            WithAlignmentMutation(() =>
+            WithComparisonMutation(() =>
             {
                 foreach (AlignmentReceipt receipt in batch) RemoveAlignmentMarkers(receipt.Workbook, receipt.Markers, true);
                 return true;
@@ -122,7 +122,7 @@ namespace FormulaExplorer
         internal AlignmentRemoval RemoveActiveComparisonAlignment()
         {
             Book book = ActiveDirectHighlightBook();
-            return WithAlignmentMutation(() => WithDirectSnapshotWorkbook(book, workbook =>
+            return WithComparisonMutation(() => WithDirectSnapshotWorkbook(book, workbook =>
             {
                 object names = null;
                 try
@@ -272,7 +272,7 @@ namespace FormulaExplorer
                 throw new InvalidOperationException("L’axe traverse le corps d’un tableau, d’un filtre ou d’un tableau croisé.");
         }
 
-        T WithAlignmentMutation<T>(Func<T> action)
+        T WithComparisonMutation<T>(Func<T> action)
         {
             dynamic app = application;
             bool screen = app.ScreenUpdating, events = app.EnableEvents;

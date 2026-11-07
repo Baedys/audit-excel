@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Copie directionnelle — 7 novembre 2026
+
+Le CIL de `CompareForm.CopyData` 229328 limite la copie au mode formules. `KeyDownHandler` 229608 traduit les côtés affichés pour Ctrl+L et Ctrl+R. `Model.CopyData` 253168 trie la sélection par position et écarte les descendants déjà couverts. 255092 et 374268 copient le rectangle entier du bloc, dont les cellules vides, en appliquant le format numérique et le contenu A1 ou R1C1. Common 90940 et 91544 traitent les préfixes et les matrices CSE. 277840 restaure les propriétés stockées lors de l’annulation. Les formats supplémentaires et les feuilles manquantes suivent des chemins distincts. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Clair applique le contenu typé et les formats numériques. Le bouton copie depuis le côté actif et les raccourcis ciblent le côté affiché. Le recalcul garde les blocs comparateurs initiaux même si la sélection Excel change. Si une insertion déplace un bloc comparateur, Clair demande une nouvelle comparaison. Une destination répétée est écartée. Une annulation protège les modifications ultérieures du contenu ou des formats numériques et rétablit les copies déjà annulées si un conflit interrompt le lot de copie. Après une annulation mixte partielle, le volet garde les opérations restantes. Le volet recalcule sa liste après la copie. Arixcel conserve et grise les écarts résolus.
+
 ## Alignement groupé — 7 novembre 2026
 
 Le CIL de `Model.Align` 252772 développe la sélection aux descendants, déduplique les propositions et les trie par position dans l’arbre. La boucle 372908 garde les réussites malgré une erreur COM ou métier et crée une seule entrée d’annulation. `ApplyDelta` 214412 décale les propositions du même axe dans la tâche modifiée. Lorsque plusieurs tâches partagent une feuille de référence, une insertion de ce côté invalide le modèle. Le callback 241452 traite cette invalidation à la fin du lot.

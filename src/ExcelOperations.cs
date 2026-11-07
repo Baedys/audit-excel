@@ -609,10 +609,15 @@ namespace FormulaExplorer
                 OfficeCall(range, "NumberFormat", BindingFlags.SetProperty, format);
         }
 
-        static FormulaCellContent ReadFormulaContent(object range)
+        static FormulaCellContent ReadFormulaContent(object range, FormulaDisplayStyle style = null)
         {
             dynamic cell = range;
-            if ((bool)cell.HasFormula) return new FormulaCellContent { Formula = Convert.ToString(ReadFormula(range), FormulaCulture) };
+            if ((bool)cell.HasFormula)
+            {
+                string property;
+                object formula = style == null ? ReadFormula(range) : ReadFormulaInStyle(range, style, out property);
+                return new FormulaCellContent { Formula = Convert.ToString(formula, FormulaCulture) };
+            }
             object value = cell.Value2;
             return new FormulaCellContent { Value = value, TextPrefix = value is string ? Convert.ToString((object)cell.PrefixCharacter, FormulaCulture) : null };
         }

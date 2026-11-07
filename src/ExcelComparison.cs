@@ -2,11 +2,54 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace FormulaExplorer
 {
     public sealed partial class ExcelBridge
     {
+        internal sealed class ComparisonRangeTargets : IDisposable
+        {
+            readonly string[] addresses;
+            readonly object[] ranges;
+
+            internal ComparisonRangeTargets(ExcelBridge bridge, Reference[] targets)
+            {
+                addresses = targets.Select(target => target.Address).ToArray();
+                ranges = new object[targets.Length];
+                try
+                {
+                    for (int i = 0; i < targets.Length; i++)
+                        ranges[i] = bridge.RetainDependencyRange(targets[i].Workbook, targets[i]);
+                }
+                catch { Dispose(); throw; }
+            }
+
+            internal Reference[] Read(ExcelBridge bridge, Book workbook)
+            {
+                var targets = new Reference[ranges.Length];
+                for (int i = 0; i < ranges.Length; i++)
+                {
+                    Reference target = ranges[i] == null ? null : bridge.ReadRetainedDependencyRange(workbook, ranges[i]);
+                    if (target == null || target.Address != addresses[i])
+                        throw new InvalidOperationException("Une plage comparée a changé. Lancez une nouvelle comparaison.");
+                    targets[i] = target;
+                }
+                return targets;
+            }
+
+            public void Dispose()
+            {
+                for (int i = 0; i < ranges.Length; i++)
+                {
+                    object range = ranges[i];
+                    ranges[i] = null;
+                    try { Release(range); }
+                    catch (InvalidComObjectException) { }
+                }
+            }
+        }
+
         Book comparisonBook;
         Reference comparisonArea;
         object comparisonRange;
@@ -58,37 +101,53 @@ namespace FormulaExplorer
             return CompareSelectionFor(ActiveDirectHighlightBook(), ReferenceScope == ComparisonScope.Worksheet ? ActiveComparisonSheets(true) : null);
         }
 
-        ComparisonResult CompareSelectionFor(Book right, string[] selectedSheets)
+        ComparisonResult CompareSelectionFor(Book right, string[] selectedSheets, ComparisonRangeTargets retainedTargets = null)
         {
             Book savedReference = comparisonBook;
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
             bool valuesOnly = ComparisonOptions.ValuesOnly, relative = ComparisonOptions.Relative, ignoreInputs = ComparisonOptions.IgnoreInputs;
             double tolerance = (double)ComparisonOptions.Tolerance;
-            var result = new ComparisonResult();
+            var result = new ComparisonResult { ValuesOnly = valuesOnly, Relative = relative };
             if (ReferenceScope == ComparisonScope.Range)
             {
                 Reference source = ReadRetainedDependencyRange(left, comparisonRange);
                 if (source == null || source.Address != comparisonArea.Address)
                     throw new InvalidOperationException("La plage de référence a changé. Définissez-la de nouveau.");
-                var areas = ReadSelectionRangeBounds(right, false, true);
-                int height = source.LastRow - source.FirstRow + 1, width = source.LastColumn - source.FirstColumn + 1;
-                areas = areas.Select(area =>
+                Reference[] rangeTargets;
+                if (retainedTargets == null)
                 {
-                    Reference clipped = ComparisonUsedRange(right, area.Sheet, area);
-                    int rows = clipped.LastRow - clipped.FirstRow + 1, columns = clipped.LastColumn - clipped.FirstColumn + 1;
-                    return clipped.Single || (height == 1 && columns == 1) || (width == 1 && rows == 1)
-                        ? LiveComparison.Expand(clipped, Math.Max(height, rows), Math.Max(width, columns)) : clipped;
-                }).ToList();
+                    int height = source.LastRow - source.FirstRow + 1, width = source.LastColumn - source.FirstColumn + 1;
+                    var areas = ReadSelectionRangeBounds(right, false, true).Select(area =>
+                    {
+                        Reference clipped = ComparisonUsedRange(right, area.Sheet, area);
+                        int rows = clipped.LastRow - clipped.FirstRow + 1, columns = clipped.LastColumn - clipped.FirstColumn + 1;
+                        return clipped.Single || (height == 1 && columns == 1) || (width == 1 && rows == 1)
+                            ? LiveComparison.Expand(clipped, Math.Max(height, rows), Math.Max(width, columns)) : clipped;
+                    }).ToList();
+                    CaptureComparisonAreas(right, areas);
+                    rangeTargets = areas.SelectMany(area => TileComparisonArea(area, ComparisonTileCells(area), height, width))
+                        .GroupBy(area => area.Address, StringComparer.Ordinal).Select(group => group.First()).ToArray();
+                }
+                else
+                {
+                    rangeTargets = retainedTargets.Read(this, right);
+                    CaptureComparisonAreas(right, rangeTargets);
+                }
                 CaptureComparisonAreas(left, new[] { source });
-                CaptureComparisonAreas(right, areas);
-                var targets = areas.SelectMany(area => TileComparisonArea(area, ComparisonTileCells(area), height, width))
-                    .GroupBy(area => area.Address, StringComparer.Ordinal).Select(group => group.First()).ToList();
-                if (targets.Count == 0) throw new InvalidOperationException("Aucun bloc de cellules comparable dans la sélection.");
-                if (targets.Count == 1 && DependencyWorkbookIdentity(left) == DependencyWorkbookIdentity(right) &&
-                    String.Equals(source.Sheet, targets[0].Sheet, StringComparison.OrdinalIgnoreCase) && source.Address == targets[0].Address)
+                if (rangeTargets.Length == 0) throw new InvalidOperationException("Aucun bloc de cellules comparable dans la sélection.");
+                if (rangeTargets.Length == 1 && DependencyWorkbookIdentity(left) == DependencyWorkbookIdentity(right) &&
+                    String.Equals(source.Sheet, rangeTargets[0].Sheet, StringComparison.OrdinalIgnoreCase) && source.Address == rangeTargets[0].Address)
                     throw new InvalidOperationException("Sélectionnez une autre plage à comparer.");
-                foreach (Reference target in targets)
+                foreach (Reference target in rangeTargets)
                     LiveComparison.Compare(result.Differences, source, left.Cells.Values, target, ComparisonTileCells(target), valuesOnly, relative, ignoreInputs, tolerance);
+                result.RangeTargets = retainedTargets ?? new ComparisonRangeTargets(this, rangeTargets);
+                ComparisonRangeTargets originalTargets = result.RangeTargets;
+                result.Recompare = () =>
+                {
+                    RequireSameComparisonReference(savedReference);
+                    Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
+                    return CompareSelectionFor(current, null, originalTargets);
+                };
                 return result;
             }
 
@@ -157,8 +216,7 @@ namespace FormulaExplorer
             };
             result.Recompare = () =>
             {
-                if (!ReferenceEquals(comparisonBook, savedReference))
-                    throw new InvalidOperationException("La référence a changé. Lancez une nouvelle comparaison.");
+                RequireSameComparisonReference(savedReference);
                 Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
                 string[] sheets = null;
                 if (selectedSheets != null)
@@ -171,6 +229,12 @@ namespace FormulaExplorer
                 return CompareSelectionFor(current, sheets);
             };
             return result;
+        }
+
+        void RequireSameComparisonReference(Book savedReference)
+        {
+            if (!ReferenceEquals(comparisonBook, savedReference))
+                throw new InvalidOperationException("La référence a changé. Lancez une nouvelle comparaison.");
         }
 
         KeyValuePair<Reference, Reference> SheetPair(Book left, string before, Book right, string after)

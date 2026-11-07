@@ -134,8 +134,42 @@ public static class ExcelComparisonTests
                 Invoke(targetView, "NavigateComparison", rows[0], true);
                 Equal((string)keep(app.ActiveCell).Address, "$F$6", "navigation activates the comparator");
 
+                keep(left.Range["C3"]).NumberFormat = "0.00";
+                keep(right.Range["F6"]).NumberFormat = "0";
+                keep(right.Range["J20"]).Select();
+                Invoke(targetView, "CopyComparisonSelection", true);
+                Equal((string)keep(right.Range["F6"]).Formula2, "=E6+2", "R1C1 translates a formula to the pinned target");
+                Equal((string)keep(right.Range["F6"]).NumberFormat, "0.00", "copy includes source number format");
+                Equal((string)keep(app.ActiveCell).Address, "$J$20", "copy preserves the independent worksheet selection");
+                Equal(Leaves(groups()).Count, 0, "copy refreshes the same comparison");
+                Invoke(targetView, "UndoLastComparisonChange");
+                Equal((string)keep(right.Range["F6"]).Formula2, "=E6+3", "comparison undo restores the formula");
+                Equal((string)keep(right.Range["F6"]).NumberFormat, "0", "comparison undo restores the number format");
+                Invoke(targetView, "CopyComparisonSelection", false);
+                Equal((string)keep(left.Range["C3"]).Formula2, "=B3+3", "directional copy also writes the reference side");
+                Invoke(targetView, "UndoLastComparisonChange");
+                Equal((string)keep(left.Range["C3"]).Formula2, "=B3+2", "undo restores the reference formula");
+
+                dynamic insertedRow = keep(right.Range["6:6"]);
+                insertedRow.Insert(-4121, 0);
+                try
+                {
+                    keep(right.Range["F6"]).Formula2 = "=100";
+                    bool shifted = false;
+                    try { Invoke(targetView, "CopyComparisonSelection", true); }
+                    catch (InvalidOperationException error) { shifted = error.Message.Contains("plage comparée a changé"); }
+                    Equal(shifted, true, "a physically shifted comparator requires a fresh comparison");
+                    Equal((string)keep(right.Range["F6"]).Formula2, "=100", "the old address is untouched after a comparator moves");
+                }
+                finally { keep(right.Range["6:6"]).Delete(-4162); }
+
                 keep(right.Range["E5"]).Select(); relative.Checked = false;
                 Equal(compare().Count, 2, "A1 compares the literal coordinates");
+                tree.SelectedNode = tree.Nodes.Cast<TreeNode>().SelectMany(node => new[] { node }.Concat(node.Nodes.Cast<TreeNode>()))
+                    .Single(node => Text(node.Tag, "Comparateur").EndsWith("Audit!F6"));
+                Invoke(targetView, "CopyComparisonSelection", true);
+                Equal((string)keep(right.Range["F6"]).Formula2, "=B3+2", "A1 preserves the source formula coordinates");
+                Invoke(targetView, "UndoLastComparisonChange");
                 relative.Checked = true;
                 keep(right.Range["E5"]).Value2 = 99d;
                 Equal(compare().Count, 2, "a changed constant is visible in formula mode");
@@ -151,6 +185,21 @@ public static class ExcelComparisonTests
                     "F6,I6,F9,I9", "range tiles retain row-major order");
                 keep(app.Union(keep(right.Range["E5"]), keep(right.Range["H5"]))).Select();
                 Equal(compare().Count, 2, "disjoint anchors each expand to one comparator");
+                foreach (TreeNode node in tree.Nodes) node.Checked = true;
+                Invoke(targetView, "CopyComparisonSelection", true);
+                Equal((string)keep(right.Range["F6"]).Formula2, "=E6+2", "one copy applies the first checked destination");
+                Equal((string)keep(right.Range["I6"]).Formula2, "=H6+2", "one copy applies the second checked destination");
+                keep(right.Range["F6"]).Formula2 = "=999";
+                bool copyConflict = false;
+                try { Invoke(targetView, "UndoLastComparisonChange"); }
+                catch (InvalidOperationException) { copyConflict = true; }
+                Equal(copyConflict, true, "a post-copy edit prevents the batch undo");
+                Equal((string)keep(right.Range["F6"]).Formula2, "=999", "undo preserves the changed cell");
+                Equal((string)keep(right.Range["I6"]).Formula2, "=H6+2", "a failed batch undo restores copies it already reversed");
+                keep(right.Range["F6"]).Formula2 = "=E6+2";
+                Invoke(targetView, "UndoLastComparisonChange");
+                Equal((string)keep(right.Range["F6"]).Formula2, "=E6+3", "one undo restores the first checked destination");
+                Equal((string)keep(right.Range["I6"]).Formula2, "=H6+3", "one undo restores the second checked destination");
                 keep(right.Range["E5:E6"]).Select();
                 bool rejected = false;
                 try { compare(); }
@@ -164,6 +213,7 @@ public static class ExcelComparisonTests
                 Equal(compare().Count, 0, "values mode uses the default absolute tolerance");
                 keep(right.Range["F6"]).Formula2 = "=E6+2+2/1000000";
                 Equal(compare().Count, 1, "larger calculated differences remain visible");
+                Equal(Field<Button>(targetView, "copyComparison").Enabled, false, "values mode disables directional copying");
                 keep(right.Range["E5"]).Value2 = 90d;
                 Equal(compare().Count, 3, "ignore inputs has no effect in values mode");
                 values.Checked = false; ignore.Checked = false;
@@ -334,6 +384,7 @@ public static class ExcelComparisonTests
                 var boundaries = (IEnumerable<Rectangle>)Invoke(bridge, "ComparisonAlignmentBoundaries", descriptor, "Décalages");
                 Equal(boundaries.Contains(new Rectangle(7, 11, 2, 2)), true, "Excel table body is excluded without its header");
                 Equal(boundaries.Contains(new Rectangle(10, 11, 2, 3)), true, "worksheet filter body is excluded without its header");
+                RunContentCopy(bridge, before, after, left, right, keep);
             }
             Console.WriteLine("EXCEL_COMPARISON_ASSERTIONS " + checks);
         }
@@ -345,6 +396,80 @@ public static class ExcelComparisonTests
             if (application != null) try { ((dynamic)application).Quit(); } catch { }
             for (int i = retained.Count - 1; i >= 0; i--) ExcelBridge.Release(retained[i]);
             ExcelBridge.Release(after); ExcelBridge.Release(before); ExcelBridge.Release(application);
+        }
+    }
+
+    static object CopyRow(Book before, Book after, string leftSheet, string rightSheet, string source, string target)
+    {
+        Reference a = Reference.Parse(leftSheet, source), b = Reference.Parse(rightSheet, target);
+        FieldInfo workbook = typeof(Reference).GetField("Workbook", Members);
+        workbook.SetValue(a, before); workbook.SetValue(b, after);
+        Type type = typeof(ExcelBridge).Assembly.GetType("FormulaExplorer.ComparisonRow", true);
+        object row = Activator.CreateInstance(type, true);
+        type.GetField("Left", Members).SetValue(row, a);
+        type.GetField("Right", Members).SetValue(row, b);
+        return row;
+    }
+
+    static void RunContentCopy(ExcelBridge bridge, object before, object after, dynamic left, dynamic right, Func<object, dynamic> keep)
+    {
+        Book leftBook = bridge.DirectHighlightBook(before), rightBook = bridge.DirectHighlightBook(after);
+        string leftSheet = left.Name, rightSheet = right.Name;
+        Func<string, string, object> copy = (a, b) => Invoke(bridge, "CopyComparisonContent",
+            CopyRow(leftBook, rightBook, leftSheet, rightSheet, a, b), true, true);
+
+        keep(left.Range["B20"]).Value2 = "'=literal";
+        keep(left.Range["B21"]).Value2 = 17.5d;
+        keep(left.Range["B21"]).NumberFormat = "0.00";
+        keep(left.Range["C21"]).Value2 = true;
+        keep(right.Range["H20:I21"]).Value2 = 99d;
+        string oldFormat = (string)keep(right.Range["H21"]).NumberFormat;
+        dynamic fill = keep(keep(right.Range["H20"]).Interior);
+        fill.Color = 65535;
+        dynamic conditional = keep(keep(right.Range["H20:I21"]).FormatConditions);
+        keep(conditional.Add(1, 5, "1", Type.Missing));
+        using (var receipt = (IDisposable)copy("B20:C21", "H20:I21"))
+        {
+            Equal((string)keep(right.Range["H20"]).Value2, "=literal", "typed text with a formula prefix is copied as text");
+            Equal((bool)keep(right.Range["H20"]).HasFormula, false, "a literal leading equals remains text");
+            Equal((object)keep(right.Range["I20"]).Value2, null, "a source blank clears an existing target");
+            Equal((double)keep(right.Range["H21"]).Value2, 17.5d, "numeric content survives the copy");
+            Equal((string)keep(right.Range["H21"]).NumberFormat, "0.00", "mixed source formats are copied per cell");
+            Equal((bool)keep(right.Range["I21"]).Value2, true, "boolean content keeps its type");
+            Equal(Convert.ToInt32(fill.Color), 65535, "copy preserves the destination direct fill");
+            Equal((int)conditional.Count, 1, "copy preserves the destination conditional format rule");
+            Invoke(receipt, "Restore", true);
+            Equal((double)keep(right.Range["I20"]).Value2, 99d, "undo restores the cleared constant");
+            Equal((string)keep(right.Range["H21"]).NumberFormat, oldFormat, "undo restores uniform destination formats");
+        }
+
+        keep(left.Range["D24:E25"]).Value2 = 4d;
+        keep(right.Range["J24:K25"]).Value2 = 4d;
+        keep(left.Range["B24:C25"]).FormulaArray = "=D24:E25";
+        Equal((bool)keep(left.Range["C25"]).HasArray, true, "fixture sets a full legacy array");
+        keep(right.Range["H24:I25"]).Value2 = 9d;
+        using (var receipt = (IDisposable)copy("B24:C25", "H24:I25"))
+        {
+            Equal((bool)keep(right.Range["I25"]).HasArray, true, "the full legacy array remains one Excel array");
+            Equal((double)keep(right.Range["I25"]).Value2, 4d, "the copied array recalculates on the target");
+            bool partialRefused = false;
+            try { using ((IDisposable)copy("B20", "H24")) { } }
+            catch (InvalidOperationException) { partialRefused = true; }
+            Equal(partialRefused, true, "a partial destination array is refused before the copy");
+            Equal((double)keep(right.Range["I25"]).Value2, 4d, "the original array stays intact after refusal");
+            Invoke(receipt, "Restore", true);
+            Equal((bool)keep(right.Range["H24"]).HasArray, false, "undo removes the copied legacy array");
+            Equal((double)keep(right.Range["I25"]).Value2, 9d, "undo restores the array destination contents");
+        }
+
+        keep(left.Range["B28"]).Formula2 = "=SEQUENCE(2)";
+        keep(right.Range["H28:H29"]).Value2 = 9d;
+        using (var receipt = (IDisposable)copy("B28:B29", "H28:H29"))
+        {
+            Equal((string)keep(right.Range["H28"]).Formula2, "=SEQUENCE(2)", "the spill origin retains its formula");
+            Equal((double)keep(right.Range["H29"]).Value2, 2d, "spill output is generated by Excel");
+            Invoke(receipt, "Restore", true);
+            Equal((double)keep(right.Range["H29"]).Value2, 9d, "undo clears the spill and restores the old value");
         }
     }
 }

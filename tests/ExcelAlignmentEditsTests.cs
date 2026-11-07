@@ -129,7 +129,7 @@ public static class ExcelAlignmentEditsTests
                 Equal(Math.Abs((double)keep(left.Range["3:3"]).RowHeight - targetHeight) < 0.25d, true,
                     "row height follows the surplus axis within Excel's rounding");
                 Equal((int)keep(((dynamic)reference).Names).Count, 2, "one durable name per inserted axis");
-                Invoke(view, "UndoLastComparisonAlignment");
+                Invoke(view, "UndoLastComparisonChange");
                 Equal((string)keep(left.Range["B3"]).Value2, "Alpha", "local undo restores only the latest axis");
                 Equal((string)keep(left.Range["D2"]).Value2, "Revenue", "local undo keeps the previous column insertion");
                 Invoke(view, "ApplySelectedComparisonAlignment");
@@ -146,16 +146,41 @@ public static class ExcelAlignmentEditsTests
                 Invoke(view, "ApplySelectedComparisonAlignment");
                 Equal((string)keep(left.Range["C2"]).Value2, "Revenue", "a checked subset excludes the selected column");
                 Equal((string)keep(left.Range["B4"]).Value2, "Alpha", "the checked row is inserted");
-                Invoke(view, "UndoLastComparisonAlignment");
+                Invoke(view, "UndoLastComparisonChange");
                 Invoke(view, "ApplyAllComparisonAlignments");
                 Equal((int)keep(((dynamic)reference).Names).Count, 2, "one action inserts both axes");
-                Invoke(view, "UndoLastComparisonAlignment");
+                Invoke(view, "UndoLastComparisonChange");
                 Equal((int)keep(((dynamic)reference).Names).Count, 0, "one local undo removes the full batch");
                 Invoke(view, "ApplyAllComparisonAlignments");
                 Invoke(control, "TransferFormulaUndo");
                 Equal(registered.Count, 2, "the grouped action publishes one additional worksheet undo");
                 Invoke(addIn, "DispatchWorksheetFormulaUndo");
                 Equal((int)keep(((dynamic)reference).Names).Count, 0, "one dispatched undo removes the full batch");
+
+                ((CheckBox)Field(view, "highlightComparison").GetValue(view)).Checked = false;
+                Invoke(view, "ApplyAllComparisonAlignments");
+                ((dynamic)comparator).Activate(); right.Select(true);
+                keep(right.Range["F1"]).Formula2 = "=999";
+                Invoke(view, "CompareSelection");
+                tree.SelectedNode = tree.Nodes.Cast<TreeNode>().SelectMany(node => new[] { node }.Concat(node.Nodes.Cast<TreeNode>()))
+                    .First(node => node.Text.Contains("!F1 ·"));
+                Invoke(view, "CopyComparisonSelection", true);
+                Equal((string)keep(right.Range["F1"]).Formula2, "=D2", "a copy can follow a pending alignment");
+                left.Protect();
+                try
+                {
+                    Invoke(control, "TransferFormulaUndo");
+                    Invoke(addIn, "DispatchWorksheetFormulaUndo");
+                    string partial = ((Label)Field(view, "status").GetValue(view)).Text;
+                    Equal((string)keep(right.Range["F1"]).Formula2, "=999", "mixed undo restores the newer copy first · " + partial);
+                    Equal((int)keep(((dynamic)reference).Names).Count, 2, "protected alignment remains in place");
+                    Equal(partial.Contains("Annulation partielle"), true, "partial undo is reported");
+                }
+                finally { left.Unprotect(); }
+                Invoke(view, "UndoLastComparisonChange");
+                Equal((int)keep(((dynamic)reference).Names).Count, 0, "the refused alignment remains available in the pane");
+                keep(right.Range["F1"]).Formula2 = "=D2";
+                Invoke(view, "CompareSelection");
                 Invoke(view, "ApplyAllComparisonAlignments");
                 Equal((int)keep(((dynamic)reference).Names).Count, 2, "two axes are marked for persistence");
             }
@@ -233,7 +258,7 @@ public static class ExcelAlignmentEditsTests
                 Equal((string)keep(decoy.Range["B6"]).Value2, "Echo", "an unselected comparator is untouched");
                 Equal(((Label)Field(view, "status").GetValue(view)).Text.Contains("Propositions écartées · 1"), true,
                     "the duplicate proposal is reported as skipped");
-                Invoke(view, "UndoLastComparisonAlignment");
+                Invoke(view, "UndoLastComparisonChange");
                 Equal((int)keep(workbook.Names).Count, 0, "one undo restores both physical sheets");
                 Equal((string)keep(left.Range["B3"]).Value2, "Bravo", "the reference is restored");
                 Equal((string)keep(second.Range["B6"]).Value2, "Echo", "the local comparator is restored");
@@ -272,7 +297,7 @@ public static class ExcelAlignmentEditsTests
                 Equal((string)keep(blocked.Range["B3"]).Value2, "Bravo", "the protected worksheet is untouched");
                 Equal((string)keep(allowedMatch.Range["B7"]).Value2, "Delta", "second insertion uses the shifted row coordinate");
                 Equal(status.Contains("Échecs · 1") && status.Contains("protégée"), true, "partial outcome includes the first failure");
-                Invoke(view, "UndoLastComparisonAlignment");
+                Invoke(view, "UndoLastComparisonChange");
                 Equal((int)keep(after.Names).Count, 0, "one undo removes both successful insertions");
                 Equal((string)keep(allowedMatch.Range["B5"]).Value2, "Delta", "undo restores the original row positions");
 

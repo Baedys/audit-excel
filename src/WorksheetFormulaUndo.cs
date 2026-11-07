@@ -39,8 +39,8 @@ namespace FormulaExplorer
             }, report);
         }
 
-        internal bool PublishAlignment(long revision, int count, Action undo, Action<int, string> report)
-        { return PublishAction(revision, "Annuler l’alignement Clair", count, undo, null, report); }
+        internal bool PublishComparison(long revision, string label, int count, Action undo, Action release, Action<int, string> report)
+        { return PublishAction(revision, label, count, undo, release, report); }
 
         bool PublishAction(long revision, string nextLabel, int count, Action undo, Action release, Action<int, string> report)
         {

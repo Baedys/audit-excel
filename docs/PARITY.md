@@ -211,6 +211,8 @@ P05 ajoute deux passes de regroupement, un arbre de blocs et sous-écarts, la s�
 
 P03 ajoute la phase de détection avant les écarts des feuilles et classeurs. Clair recherche les correspondances de colonnes puis de lignes et montre le côté excédentaire, la position et le nombre d’axes proposés. P04 couvre l’insertion des propositions sélectionnées ou affichées, la reprise des dimensions, le retrait des axes Clair après réouverture et l’annulation du lot dans le volet ou depuis Excel. Le volet utilise des cases à cocher pour choisir un sous-ensemble. [Validation](VALIDATION.md)
 
+P06 couvre la copie directionnelle du contenu et du format numérique de plages comparées. Le volet applique la sélection ou les blocs cochés, prend en compte l’inversion des côtés et conserve les plages cibles lors du recalcul. La copie des autres formats, celle des feuilles absentes et l’affichage persistant des écarts résolus restent ouverts. [Validation](VALIDATION.md)
+
 | ID | Exigence | État initial | Acceptation requise |
 | --- | --- | --- | --- |
 | P01 | Référence et comparateurs aux trois échelles, plusieurs cibles. | Partiel : deux captures classeur par nom de feuille/adresse. | Feuille renommée, plages décalées, comparateurs multiples et sélection de coin supérieur gauche ; appariement explicite. |

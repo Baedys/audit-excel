@@ -19,9 +19,10 @@ namespace FormulaExplorer
     {
         internal readonly List<ComparisonRow> Differences = new List<ComparisonRow>();
         internal readonly List<ComparisonRow> Alignment = new List<ComparisonRow>();
-        internal bool AlignmentLimited, SharedAlignmentReference;
+        internal bool AlignmentLimited, SharedAlignmentReference, ValuesOnly, Relative;
         internal Action<List<ComparisonRow>> CompareSheets;
         internal Func<ComparisonResult> Recompare;
+        internal ExcelBridge.ComparisonRangeTargets RangeTargets;
 
         internal List<ComparisonRow> ReadDifferences()
         {
