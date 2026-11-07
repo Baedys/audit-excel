@@ -77,7 +77,7 @@ namespace FormulaExplorer
                 bool all = action == 2 ? layoutOptions.ZoomAllSheets : action == 3 ? layoutOptions.GridlinesAllSheets : layoutOptions.PageBreaksAllSheets;
                 layoutScope.SelectedIndex = all ? 1 : 0; layoutAxis.SelectedIndex = layoutOptions.AutoFitRows ? 1 : 0;
                 layoutZoom.Text = layoutOptions.Zoom;
-                layoutHint.Text = action == 0 ? "Applique les largeurs capturées sur la feuille définie dans Comparer. Sur ce poste, le relevé Arixcel retient la première largeur et uniformise les colonnes cibles. La référence est conservée." :
+                layoutHint.Text = action == 0 ? "Copie chaque largeur de colonne de la référence sur les feuilles sélectionnées. L’annulation restaure les largeurs initiales de chaque colonne cible." :
                     action == 1 ? "Ajuste les colonnes ou lignes de la sélection sur les feuilles groupées. Le contenu de l’axe entier participe à l’ajustement." :
                     action == 2 ? "Niveau de zoom en pourcentage, avec un point décimal. Les feuilles masquées sont conservées." :
                     action == 3 ? "Applique à toutes les cibles l’inverse du quadrillage de la feuille active. L’annulation applique l’inverse à ces mêmes cibles." :

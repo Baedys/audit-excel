@@ -154,7 +154,7 @@ Si plusieurs instances Excel sont ouvertes, la connexion autonome utilise celle 
 
 Le bouton **Mise en page** du ruban ouvre l’onglet **Utilitaires** du volet. Choisissez la commande, son axe ou son périmètre, puis **Appliquer**. Les paramètres sont enregistrés dans les préférences locales de Clair. Le périmètre initial correspond aux feuilles sélectionnées, le zoom initial à 100 et l’ajustement initial aux colonnes.
 
-- **Aligner les largeurs sur la référence** utilise la feuille définie dans Comparer et cible les autres feuilles sélectionnées. Toutes les colonnes sont concernées. Le capteur Arixcel exécuté sur le poste de validation retient la première largeur d’une bande hétérogène et uniformise ses cibles. Cette version reproduit ce comportement, signalé dans le volet.
+- **Aligner les largeurs sur la référence** utilise la feuille définie dans Comparer et cible les autres feuilles sélectionnées. Chaque colonne reçoit sa propre largeur de référence, jusqu’à XFD. L’annulation restaure les largeurs individuelles des cibles. Ce choix explicite de l’utilisateur remplace l’uniformisation observée dans Arixcel. Les colonnes masquées sont lues sans les réafficher ; leur état de masquage n’est pas copié séparément.
 - **Ajuster automatiquement** traite les colonnes ou lignes de la sélection, sur les feuilles groupées. Le contenu de l’axe entier participe au calcul, y compris hors de la sélection.
 - **Régler le zoom** accepte un niveau invariant, avec un point décimal, pour les feuilles sélectionnées ou toutes les feuilles visibles du classeur.
 - **Basculer le quadrillage** applique l’inverse de la vue active aux feuilles ciblées. Comme Arixcel, son annulation applique un inverse uniforme aux mêmes cibles.

@@ -84,8 +84,13 @@ public static class ExcelLayoutUtilityTests
             dynamic spare = keep(sheets.Add(Type.Missing, target)); spare.Name = "Autre cible";
             source.Select(true);
             keep(source.Range["A:A"]).ColumnWidth = 7d; keep(source.Range["B:B"]).ColumnWidth = 18d;
+            keep(source.Range["C:C"]).ColumnWidth = 13d;
             keep(keep(source.Range["C:C"]).EntireColumn).Hidden = true; keep(source.Range["XFD:XFD"]).ColumnWidth = 21d;
-            keep(target.Range["A:A"]).ColumnWidth = 25d; keep(spare.Range["A:A"]).ColumnWidth = 30d;
+            object sourceHiddenWidth = keep(source.Range["C1"]).ColumnWidth;
+            keep(target.Range["A:A"]).ColumnWidth = 25d; keep(target.Range["B:B"]).ColumnWidth = 6d;
+            keep(target.Range["C:C"]).ColumnWidth = 12d; keep(target.Range["XFD:XFD"]).ColumnWidth = 9d;
+            keep(spare.Range["A:A"]).ColumnWidth = 30d; keep(spare.Range["B:B"]).ColumnWidth = 11d;
+            keep(spare.Range["C:C"]).ColumnWidth = 14d; keep(spare.Range["XFD:XFD"]).ColumnWidth = 16d;
             bridge = new ExcelBridge(application);
             app.Goto(keep(source.Range["A1"]), false);
             Type scope = typeof(ExcelBridge).Assembly.GetType("FormulaExplorer.ComparisonScope", true);
@@ -106,7 +111,7 @@ public static class ExcelLayoutUtilityTests
                 var axis = Field<ComboBox>(view, "layoutAxis");
                 var sheetScope = Field<ComboBox>(view, "layoutScope");
                 var status = Field<Label>(view, "status");
-                Console.WriteLine("LAYOUT_SOURCE_WIDTHS A=" + keep(source.Range["A:A"]).ColumnWidth + " B=" + keep(source.Range["B:B"]).ColumnWidth +
+                Console.WriteLine("LAYOUT_SOURCE_WIDTHS A=" + keep(source.Range["A:A"]).ColumnWidth + " B=" + keep(source.Range["B:B"]).ColumnWidth + " C_HIDDEN_GETTER=" + sourceHiddenWidth +
                     " AB=" + keep(source.Range["A:B"]).ColumnWidth + " ALL=" + keep(keep(source.Range["A:XFD"]).EntireColumn).ColumnWidth);
                 Equal((int)keep(keep(app.ActiveWindow).SelectedSheets).Count, 3, "the width fixture starts with three selected sheets");
                 Action<int> run = index =>
@@ -117,14 +122,25 @@ public static class ExcelLayoutUtilityTests
                 run(0);
                 Console.WriteLine("LAYOUT_WIDTH_TARGETS " + Field<ICollection>(Field<ICollection>(view, "layoutUndo").Cast<object>().First(), "targets").Count);
                 Equal(keep(target.Range["A:A"]).ColumnWidth, 7d, "reference widths reach the first target");
-                Equal(keep(spare.Range["B:B"]).ColumnWidth, 7d, "the native whole-band width reaches every grouped sheet");
-                Equal(keep(target.Range["XFD:XFD"]).ColumnWidth, 7d, "the native whole-band width includes the final column");
-                Equal(keep(target.Range["C:C"]).ColumnWidth, 7d, "the native whole-band width also reaches a hidden source column");
+                Equal(keep(target.Range["B:B"]).ColumnWidth, 18d, "each target column receives its corresponding reference width");
+                Equal(keep(spare.Range["B:B"]).ColumnWidth, 18d, "distinct reference widths reach every grouped target");
+                Equal(keep(target.Range["XFD:XFD"]).ColumnWidth, 21d, "the reference width includes the final column");
+                Equal(keep(spare.Range["XFD:XFD"]).ColumnWidth, 21d, "the final width reaches every grouped target");
+                Equal(keep(target.Range["C:C"]).ColumnWidth, sourceHiddenWidth, "hidden source column copies its observable width");
+                Equal(keep(spare.Range["C:C"]).ColumnWidth, sourceHiddenWidth, "hidden source observable width reaches each target");
                 Equal(keep(source.Range["B:B"]).ColumnWidth, 18d, "a grouped reference is never overwritten");
+                Equal(keep(keep(source.Range["C:C"]).EntireColumn).Hidden, true, "reading source widths never unhides the reference column");
+                Equal(keep(source.Range["C:C"]).ColumnWidth, sourceHiddenWidth, "reading preserves the hidden column observable width");
                 Equal((int)keep(keep(app.ActiveWindow).SelectedSheets).Count, 3, "width alignment preserves the sheet group");
                 Invoke(view, "UndoLayoutUtility");
                 Equal(keep(target.Range["A:A"]).ColumnWidth, 25d, "width undo restores the first target");
+                Equal(keep(target.Range["B:B"]).ColumnWidth, 6d, "width undo restores heterogeneous target B");
+                Equal(keep(target.Range["C:C"]).ColumnWidth, 12d, "width undo restores heterogeneous target C");
+                Equal(keep(target.Range["XFD:XFD"]).ColumnWidth, 9d, "width undo restores heterogeneous target final column");
                 Equal(keep(spare.Range["A:A"]).ColumnWidth, 30d, "width undo preserves distinct original widths");
+                Equal(keep(spare.Range["B:B"]).ColumnWidth, 11d, "width undo restores the other target B");
+                Equal(keep(spare.Range["C:C"]).ColumnWidth, 14d, "width undo restores the other target C");
+                Equal(keep(spare.Range["XFD:XFD"]).ColumnWidth, 16d, "width undo restores the other target final column");
 
                 target.Select(true); keep(target.Range["B:B"]).ColumnWidth = 2d;
                 keep(target.Range["B9"]).Value2 = "Long text outside the selected cell, still inside its column";

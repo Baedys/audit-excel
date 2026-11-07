@@ -23,7 +23,7 @@ namespace FormulaExplorer
             internal int First, Last;
             internal bool Rows;
             internal object Before, After, UndoValue;
-            internal List<DimensionRun> BeforeRuns, OriginalRuns, WrittenRuns, AfterRuns;
+            internal List<DimensionRun> BeforeRuns, OriginalRuns, AfterRuns;
 
             internal object Read(ExcelBridge bridge)
             {
@@ -50,16 +50,7 @@ namespace FormulaExplorer
             internal void ReadAfter(ExcelBridge bridge)
             {
                 if (Range == null) After = Read(bridge);
-                else if (WrittenRuns == null) AfterRuns = ReadExactDimensions(Sheet, Rows, First, Last);
-                else
-                {
-                    AfterRuns = new List<DimensionRun>();
-                    foreach (DimensionRun run in WrittenRuns)
-                    {
-                        double value = ReadDimensions(Sheet, Rows, run.First, run.First)[0].Value;
-                        AppendDimensionRun(AfterRuns, run.First, run.Last, value);
-                    }
-                }
+                else AfterRuns = ReadExactDimensions(Sheet, Rows, First, Last);
             }
 
             internal void Validate(ExcelBridge bridge)
@@ -197,7 +188,7 @@ namespace FormulaExplorer
             });
         }
 
-        LayoutTarget CaptureDimensionTarget(object sheet, bool rows, int first, int last)
+        LayoutTarget CaptureDimensionTarget(object sheet, bool rows, int first, int last, bool exactBefore = false)
         {
             object range = DimensionRange(sheet, rows, first, last);
             try
@@ -208,8 +199,9 @@ namespace FormulaExplorer
                 {
                     target.Sheet = ((dynamic)target.Range).Worksheet;
                     target.Address = (string)((dynamic)target.Range).Address;
-                    target.BeforeRuns = ReadDimensions(sheet, rows, first, last);
+                    if (!exactBefore) target.BeforeRuns = ReadDimensions(sheet, rows, first, last);
                     target.OriginalRuns = ReadExactDimensions(sheet, rows, first, last);
+                    if (exactBefore) target.BeforeRuns = target.OriginalRuns;
                 }
                 catch { target.Dispose(); throw; }
                 return target;
@@ -273,15 +265,16 @@ namespace FormulaExplorer
                             object columns = ((dynamic)source).Columns;
                             int count;
                             try { count = (int)((dynamic)columns).Count; } finally { Release(columns); }
-                            var widths = ReadDimensions(source, false, 1, count);
+                            // A multi-column getter can return only the first
+                            // width. Read each column without changing Hidden.
+                            var widths = ReadExactDimensions(source, false, 1, count);
                             foreach (object sheet in sheets.Where(sheet => DirectSession.Identity(sheet) != identity))
-                                receipt.targets.Add(CaptureDimensionTarget(sheet, false, 1, count));
+                                receipt.targets.Add(CaptureDimensionTarget(sheet, false, 1, count, exactBefore: true));
                             if (receipt.targets.Count == 0)
                                 throw new InvalidOperationException("Sélectionnez une feuille cible différente de la référence.");
                             ApplyLayoutTargets(receipt, target =>
                             {
                                 WriteDimensions(target.Sheet, false, widths);
-                                target.WrittenRuns = widths;
                             });
                             return true;
                         }
