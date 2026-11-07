@@ -322,6 +322,7 @@ namespace FormulaExplorer
             comparisonTraceDraft = null;
             comparisonTraceDraftRow = null;
             comparisonTraceDraftResult = null;
+            comparisonTraceDraftMoved = false;
         }
 
         void ApplyFormulaEdit()

@@ -17,7 +17,9 @@ namespace FormulaExplorer
             internal ComparisonRow Row;
             internal bool Right, Delegates;
             internal long Workbook, Sheet;
-            internal string Address, Title, CounterpartA1, CounterpartR1C1;
+            internal string Title, CounterpartA1, CounterpartR1C1;
+            internal Reference Target;
+            internal object Range;
             internal FormulaDisplayStyle DisplayStyle;
             internal Control Focus;
         }
@@ -27,6 +29,7 @@ namespace FormulaExplorer
         EditTarget comparisonTraceDraft;
         ComparisonRow comparisonTraceDraftRow;
         ComparisonResult comparisonTraceDraftResult;
+        bool comparisonTraceDraftMoved;
         Button traceComparison;
 
         void ConfigureComparisonTrace(FlowLayoutPanel bar)
@@ -104,9 +107,14 @@ namespace FormulaExplorer
                     new TraceLocation(sources, sources.Count > 1 ? rootArea.Sheet : null, captured);
                 var frame = new ComparisonTraceSession { Row = launchRow, Right = right, Run = comparisonRun,
                     Workbook = bridge.DependencyWorkbookIdentity(captured), Sheet = bridge.DependencyWorksheetIdentity(first.Workbook, first.Sheet),
-                    Address = rootAddress, Focus = fromDetails ? (Control)comparisonDetails : comparisonTree };
+                    Focus = fromDetails ? (Control)comparisonDetails : comparisonTree };
                 child = new MainForm(bridge, true, explorerWindow);
                 frame.Child = child;
+                child.Disposed += delegate
+                {
+                    object range = frame.Range; frame.Range = null;
+                    ExcelBridge.Release(range);
+                };
                 child.explorerOptionsKey = explorerOptionsKey;
                 child.LeaveExplorerForWorksheet = LeaveExplorerForWorksheet;
                 child.SelectExplorerTab(downstream);
@@ -121,8 +129,15 @@ namespace FormulaExplorer
                 frame.DisplayStyle = child.formulaCellStyle;
                 bool selectedFormula = ReferenceEquals(selected, launchRow) && !downstream && location == null && anchor.IsFormula;
                 string shown = right ? comparisonRightPayload : comparisonLeftPayload;
-                frame.Delegates = selectedFormula && !launchRow.GeometryChangedOnEitherSide && !launchRow.Interrupted && !currentComparison.ValuesOnly &&
+                frame.Delegates = selectedFormula && !launchRow.Interrupted && !currentComparison.ValuesOnly &&
                     String.Equals(child.formulaDisplayContent, NormalizeComparisonTraceText(shown), StringComparison.Ordinal);
+                if (frame.Delegates)
+                {
+                    Reference area = ComparisonTraceArea(launchRow, right);
+                    frame.Target = Reference.FromBounds(rootArea.Sheet, area.FirstRow, area.FirstColumn,
+                        area.LastRow, area.LastColumn, captured);
+                    frame.Range = bridge.RetainDependencyRange(captured, frame.Target);
+                }
                 if (frame.Delegates && !launchRow.Resolved)
                     CaptureComparisonCounterpart(frame);
                 int caret = fromDetails && frame.Delegates ? comparisonDetails.SelectionStart -
@@ -215,15 +230,15 @@ namespace FormulaExplorer
             bool rootEdit = frame.Delegates && IsComparisonTraceRoot(frame, cell);
             if (rootEdit && owner.currentComparison != null && owner.comparisonRun == frame.Run)
             {
-                owner.currentComparison.RequireReference();
-                Reference original = frame.Right ? frame.Row.Right : frame.Row.Left;
-                Book side = frame.Right ? owner.currentComparison.RightWorkbook : owner.currentComparison.LeftWorkbook;
-                var tabs = frame.Right ? owner.currentComparison.RightTabs : owner.currentComparison.LeftTabs;
-                string sheet = tabs.FirstOrDefault(entry => entry.Value == frame.Sheet).Key;
-                if (sheet == null) throw new InvalidOperationException("La feuille comparée n’est plus accessible.");
-                target = Reference.FromBounds(sheet, original.FirstRow, original.FirstColumn, original.LastRow, original.LastColumn, side);
+                owner.currentComparison.RequireSession();
+                target = bridge.RefreshRetainedDependencyRange(frame.Target.Workbook, frame.Range);
+                if (target == null) throw new InvalidOperationException("La plage comparée n’est plus accessible.");
+                if (cell.Address != Coordinates.Address(target.FirstRow, target.FirstColumn))
+                    throw new InvalidOperationException("La cellule du tracé a été déplacée. Actualisez le tracé avant de l’éditer.");
                 comparisonTraceDraftRow = frame.Row;
                 comparisonTraceDraftResult = owner.currentComparison;
+                comparisonTraceDraftMoved = frame.Row.GeometryChangedOnEitherSide ||
+                    !ExcelBridge.ComparisonGeometry.Position.Same(frame.Right ? frame.Row.Right : frame.Row.Left, target);
             }
             else if (formulaDisplayKind == FormulaEditorKind.LegacyArray)
             {
@@ -236,12 +251,13 @@ namespace FormulaExplorer
                 }
                 finally { ExcelBridge.Release(array); ExcelBridge.Release(cellRange); }
             }
-            comparisonTraceDraft = EditTarget.Open(bridge, target, formulaCellStyle, false);
+            comparisonTraceDraft = EditTarget.Open(bridge, target, formulaCellStyle, false,
+                verifyCaptured: comparisonTraceDraftResult == null);
         }
 
         bool IsComparisonTraceRoot(ComparisonTraceSession frame, Cell cell)
         {
-            if (cell == null || cell.Address != frame.Address) return false;
+            if (cell == null || capturedRoot == null || cell.Address != capturedRoot.Address) return false;
             Book owner = cell.Workbook ?? book;
             return bridge.DependencyWorkbookIdentity(owner) == frame.Workbook &&
                 bridge.DependencyWorksheetIdentity(owner, cell.Sheet) == frame.Sheet;
@@ -255,17 +271,36 @@ namespace FormulaExplorer
             {
                 if (!ReferenceEquals(owner.currentComparison, comparisonTraceDraftResult))
                     throw new InvalidOperationException("La comparaison a changé. Rouvrez l’édition.");
-                comparisonTraceDraftResult.RequireReference();
+                comparisonTraceDraftResult.RequireSession();
             }
             owner.ClearComparisonHighlights();
             ClearTraceHighlightOwners();
             var receipt = comparisonTraceDraft.Apply(draft);
             if (receipt == null) { CloseFormulaEdit("Formule inchangée."); return; }
+            Book previous = book;
+            try { RefreshExplorerModelCore(null, false, true); }
+            catch (Exception refreshError)
+            {
+                try
+                {
+                    receipt.Restore(true);
+                    if (book != previous) RefreshExplorerModelCore(null, false, true);
+                }
+                catch (Exception rollbackError)
+                {
+                    throw new AggregateException("L’édition du tracé et sa restauration ont échoué.", refreshError, rollbackError);
+                }
+                finally { receipt.Dispose(); }
+                throw;
+            }
             owner.PushComparisonUndo(new ComparisonUndo { Copies = new[] { receipt }, Edit = true, Trace = frame });
-            if (comparisonTraceDraftRow != null) owner.RememberResolvedRanges(comparisonTraceDraftResult, comparisonTraceDraftRow);
+            if (comparisonTraceDraftRow != null && !comparisonTraceDraftMoved &&
+                comparisonTraceDraftResult.LeftTabs.ContainsKey(comparisonTraceDraftRow.Left.Sheet) &&
+                comparisonTraceDraftResult.RightTabs.ContainsKey(comparisonTraceDraftRow.Right.Sheet))
+                owner.RememberResolvedRanges(comparisonTraceDraftResult, comparisonTraceDraftRow);
             CloseFormulaEdit("Cellule modifiée.", caret + formulaDisplayPrefix);
             owner.RefreshAfterComparison(owner.currentComparison, "Formule modifiée depuis le tracé", true);
-            RefreshComparisonChildModel("Cellule modifiée depuis le tracé");
+            status.Text = "Cellule modifiée depuis le tracé";
         }
 
         bool CanUndoComparisonTrace()

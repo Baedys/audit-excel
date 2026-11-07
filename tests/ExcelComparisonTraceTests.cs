@@ -205,6 +205,80 @@ public static class ExcelComparisonTraceTests
                 Equal(ranges.Count, 2, "checked rows launch a multi-source trace");
                 Equal(ranges.All(range => !range.Single), true, "non-formula rows keep their whole ranges");
                 Invoke(trace, "Back");
+
+                reference.Formula2 = "=10+1";
+                keep(right.Range["E5:E6"]).Formula2 = "=100+2";
+                compare(reference, first);
+                Invoke(parent, "HandleComparisonKey", Keys.Control | Keys.Q);
+                trace = Child(parent);
+                left.Name = "Référence renommée";
+                edit(trace, "=100+3");
+                edit(trace, "=100+4");
+                Invoke(trace, "HandleFormulaEditingKey", Keys.Control | Keys.Z, null);
+                Invoke(trace, "HandleFormulaEditingKey", Keys.Control | Keys.Z, null);
+                Equal(first.Formula2, "=100+2", "repeated trace edits survive a rename on the opposite side");
+                Equal(second.Formula2, "=100+2", "both undo actions still restore the full block after the opposite rename");
+                Invoke(trace, "Back");
+                compare(reference, first);
+                keep(right.Range["4:4"]).Insert(-4121, 0);
+                right.Name = "Comparateur déplacé";
+                keep(right.Range["E5"]).Value2 = 999d;
+                Invoke(parent, "RefreshComparisonOnFocus");
+                tree.SelectedNode = tree.Nodes[0];
+                Equal(Invoke(parent, "HandleComparisonKey", Keys.Control | Keys.Q), true, "a moved formula block opens its trace");
+                trace = Child(parent);
+                Equal(Get<bool>(Get<object>(parent, "comparisonTrace"), "Delegates"), true, "the moved block retains its edit delegation");
+                Equal(Get<Cell>(trace, "root").Address, "E6", "the delegated trace starts on the moved block");
+                edit(trace, "=D6+F6+40");
+                Equal(keep(right.Range["E6"]).Formula2, "=D6+F6+40", "delegation edits the current first cell");
+                Equal(keep(right.Range["E7"]).Formula2, "=D7+F7+40", "delegation translates across the moved block");
+                Equal(keep(right.Range["E5"]).Value2, 999d, "delegation preserves the former address");
+                Invoke(trace, "HandleFormulaEditingKey", Keys.Control | Keys.Z, null);
+                Equal(keep(right.Range["E6"]).Formula2, "=100+2", "trace undo restores the moved first cell");
+                Equal(keep(right.Range["E7"]).Formula2, "=100+2", "trace undo restores the full moved block");
+
+                Invoke(trace, "HandleFormulaEditingKey", Keys.F2, null);
+                Get<RichTextBox>(trace, "formulaEditor").Text = "=777";
+                object live = Get<object>(trace, "liveSource");
+                int beforeFailedEdit = stack.Count;
+                Set(trace, "liveSource", null);
+                try
+                {
+                    Invoke(trace, "HandleFormulaEditingKey", Keys.Enter, null);
+                    Equal(keep(right.Range["E6"]).Formula2, "=100+2", "failed child refresh rolls back the delegated first cell");
+                    Equal(keep(right.Range["E7"]).Formula2, "=100+2", "failed child refresh rolls back the entire block");
+                    Equal(Get<Cell>(trace, "formulaEditCell") != null, true, "a failed delegated refresh leaves the draft available");
+                    Equal(stack.Count, beforeFailedEdit, "a rolled-back edit does not enter the comparison undo stack");
+                }
+                finally { Set(trace, "liveSource", live); }
+                Invoke(trace, "HandleFormulaEditingKey", Keys.Escape, null);
+
+                keep(right.Range["7:7"]).Insert(-4121, 0);
+                right.Name = "Renommée depuis le tracé";
+                edit(trace, "=D6+F6+41");
+                Equal(keep(right.Range["E7"]).Formula2, "=D7+F7+41", "delegation includes a new interior cell");
+                Equal(keep(right.Range["E8"]).Formula2, "=D8+F8+41", "delegation follows the resized block and renamed sheet");
+                Invoke(trace, "HandleFormulaEditingKey", Keys.Control | Keys.Z, null);
+                Equal(keep(right.Range["E7"]).Value2, null, "undo restores the inserted blank");
+                Equal(keep(right.Range["E8"]).Formula2, "=100+2", "undo restores the last cell of the enlarged block");
+
+                keep(right.Range["4:4"]).Insert(-4121, 0);
+                Invoke(trace, "HandleFormulaEditingKey", Keys.F2, null);
+                Equal(Get<Cell>(trace, "formulaEditCell"), null, "a stale trace cannot edit the former anchor after another move");
+                Equal(Get<Label>(trace, "status").Text.Contains("Actualisez"), true, "the stale trace requests a refresh");
+                Invoke(trace, "RefreshExplorerModelCore", null, false, false);
+                Equal(Get<Cell>(trace, "capturedRoot").Address, "E7", "refresh follows the original trace anchor");
+                edit(trace, "=D7+F7+42");
+                Equal(keep(right.Range["E9"]).Formula2, "=D9+F9+42", "the refreshed trace still delegates to the whole physical block");
+                Invoke(trace, "HandleFormulaEditingKey", Keys.Control | Keys.Z, null);
+                Equal(keep(right.Range["E8"]).Value2, null, "the refreshed trace undo restores the interior blank");
+
+                keep(right.Range["E7:E9"]).Delete(-4162);
+                Invoke(trace, "HandleFormulaEditingKey", Keys.F2, null);
+                Equal(Get<Cell>(trace, "formulaEditCell"), null, "a deleted block cannot redirect a delegated edit");
+                Equal(Get<Label>(trace, "status").Text.Contains("n’est plus accessible"), true, "a deleted delegated block is reported");
+                Equal(keep(right.Range["E6"]).Value2, 999d, "the surviving sentinel is unchanged after deletion refusal");
+                Invoke(trace, "Back");
             }
             Console.WriteLine("EXCEL_COMPARISON_TRACE_ASSERTIONS " + checks);
         }

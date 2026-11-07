@@ -41,6 +41,17 @@ namespace FormulaExplorer
         internal object RetainDependencyRange(Book book, Reference range)
         { return AtDirectSheet(book, range.Sheet, sheet => RangeAt(sheet, range.Address)); }
 
+        internal Reference RefreshRetainedDependencyRange(Book book, object range)
+        {
+            return WithDirectSnapshotWorkbook(book, workbook =>
+            {
+                Book current = DirectHighlightBook(workbook);
+                Reference area = ReadRetainedDependencyRange(current, range);
+                if (area == null) UnregisterDirectSnapshot(current);
+                return area;
+            });
+        }
+
         internal Reference ReadRetainedDependencyRange(Book book, object range)
         {
             object sheet = null;
