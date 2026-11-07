@@ -59,6 +59,7 @@ namespace FormulaExplorer
             bar.Controls.Add(skipComparisonAlignment); bar.SetFlowBreak(skipComparisonAlignment, true);
             ConfigureAlignmentActions(bar);
             ConfigureComparisonCopy(bar);
+            ConfigureComparisonEditing(bar);
             bar.Controls.Add(copyComparisonFormats);
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
@@ -68,13 +69,13 @@ namespace FormulaExplorer
             if (IsDocked) WrapPaneLabel(bar, referenceLabel);
             PlaceCommandBar(layout, bar, 0);
             var results = new Panel { Dock = DockStyle.Fill };
-            comparisonResults = StackPaneControls(comparisonTree, comparisonDetails, 73);
+            comparisonResults = StackPaneControls(comparisonTree, ComparisonDetailsHost(), 73);
             comparisonResults.Visible = false;
             results.Controls.Add(comparisonResults);
             results.Controls.Add(differences);
             layout.Controls.Add(results, 0, 1);
             comparisonScope.SelectedIndexChanged += delegate { UpdateComparisonOptions(); ShowComparisonReference(); };
-            valuesOnly.CheckedChanged += delegate { UpdateComparisonOptions(); ChangeComparisonOption(options => options.ValuesOnly = valuesOnly.Checked); RefreshComparisonCopy(); };
+            valuesOnly.CheckedChanged += delegate { UpdateComparisonOptions(); ChangeComparisonOption(options => options.ValuesOnly = valuesOnly.Checked); RefreshComparisonCopy(); RefreshComparisonEdit(); };
             compareRelative.CheckedChanged += delegate { ChangeComparisonOption(options => options.Relative = compareRelative.Checked); };
             ignoreComparisonInputs.CheckedChanged += delegate { ChangeComparisonOption(options => options.IgnoreInputs = ignoreComparisonInputs.Checked); };
             tolerance.ValueChanged += delegate { ChangeComparisonOption(options => options.Tolerance = tolerance.Value); };
@@ -83,7 +84,11 @@ namespace FormulaExplorer
             tabs.SelectedIndexChanged += delegate
             {
                 if (tabs.SelectedTab == tab) { RefreshFormulaDisplayStyle(false); ShowComparisonReference(); UpdateComparisonSelection(); }
-                else RemoveTraceHighlightOwner(comparisonHighlightOwner);
+                else
+                {
+                    if (comparisonDraft != null) CloseComparisonEdit("Édition abandonnée.", false);
+                    RemoveTraceHighlightOwner(comparisonHighlightOwner);
+                }
             };
             comparisonTree.AfterSelect += delegate { if (!loadingComparisonRows) UpdateComparisonSelection(); };
             comparisonTree.BeforeCheck += delegate(object sender, TreeViewCancelEventArgs e)
@@ -162,6 +167,7 @@ namespace FormulaExplorer
 
         void SetComparisonReference()
         {
+            if (comparisonDraft != null) CloseComparisonEdit("Édition abandonnée.", false);
             if (SelectedComparisonScope == ComparisonScope.Snapshot)
             {
                 if (book == null) LoadExcel();
@@ -185,6 +191,7 @@ namespace FormulaExplorer
 
         void CompareSelection()
         {
+            if (comparisonDraft != null) CloseComparisonEdit("Édition abandonnée.", false);
             if (SelectedComparisonScope == ComparisonScope.Snapshot)
             {
                 CompareSnapshot();
@@ -322,6 +329,7 @@ namespace FormulaExplorer
             ComparisonRow row = SelectedComparisonRow();
             RefreshAlignmentActions(row);
             RefreshComparisonCopy();
+            RefreshComparisonEdit();
             RenderComparisonDetails(row);
             if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 || bridge == null)
             {
@@ -358,6 +366,15 @@ namespace FormulaExplorer
 
         bool HandleComparisonKey(Keys keyData)
         {
+            if (tabs.SelectedIndex == 3)
+            {
+                if (comparisonDraft != null) return HandleComparisonEditKey(keyData);
+                if (keyData == Keys.F2 && CanEditComparison(SelectedComparisonRow()))
+                { StartComparisonEdit(comparisonDetails.ContainsFocus); return true; }
+                if ((keyData == (Keys.Control | Keys.V) || keyData == (Keys.Shift | Keys.Insert)) &&
+                    comparisonDetails.ContainsFocus && CanEditComparison(SelectedComparisonRow()))
+                { PasteComparisonDraft(); return true; }
+            }
             if (tabs.SelectedIndex == 3 && keyData == (Keys.Control | Keys.Z) && comparisonUndo.Count != 0)
             {
                 Safe(UndoLastComparisonChange);

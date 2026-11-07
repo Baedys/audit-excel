@@ -28,7 +28,7 @@ namespace FormulaExplorer
             internal readonly List<int> SpillOrigins = new List<int>();
         }
 
-        internal sealed class ComparisonCopyReceipt : IDisposable
+        internal sealed partial class ComparisonCopyReceipt : IDisposable
         {
             readonly ExcelBridge bridge;
             readonly Book book;

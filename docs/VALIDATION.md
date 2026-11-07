@@ -1,5 +1,13 @@
 # Revue et validation
 
+## Édition depuis la comparaison
+
+Dans Arixcel, `KeyDownHandler` 229608 et `StartEditing` 231400 ouvrent l’édition du côté actif en mode Formules. `TreeItem.FormulaEditable` 272168 autorise un sous-écart vide et exclut les lignes de tâche. `FormulaChangeAction` 231944 écrit une formule A1 dans le coin du bloc, la relit en R1C1 puis applique cette formule relative à toute la plage. Une saisie R1C1 ou littérale s’applique directement. Common 40180 et 40888 traitent la matrice historique. 232500 valide et 232832 abandonne le brouillon. L’annulation restaure la plage et réactualise les sous-écarts. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Le volet Clair fige la plage physique et le style de saisie à l’ouverture. Avant l’écriture, il vérifie le périmètre de comparaison, les identités et le contenu de la plage. Une erreur laisse le brouillon disponible et s’affiche dans le volet. Le reçu préserve le contenu et les formats numériques et partage la pile de copie et d’alignement. Un écart égalisé est grisé. Le témoin Excel masqué couvre les deux côtés, les blocs A1 et R1C1, la saisie directe, les cellules vides, les données hétérogènes, les refus sur une plage modifiée ou déplacée et l’annulation d’une copie suivie d’une édition.
+
+Les matrices CSE doivent être sélectionnées en entier et restent limitées à 255 caractères. Les fusions et feuilles protégées sont écartées avant l’écriture.
+
 ## Segments du détail de comparaison
 
 `CompareForm.UpdateSides` 224148 appelle `StringMatch.GetUnmatchedParts` 79260 avec une distance maximale de 2 000. `FormulaString` 244396 et 244640 considère deux caractères de mot égaux à la même position d’une suite complète et identique de lettres, chiffres ou signes dollar. La ponctuation se compare caractère par caractère. La casse compte. Les indices sont UTF-16. 273948 utilise le style d’affichage, séparé du style de comparaison. 224148 colore en rouge les segments et décale leur début lorsqu’il ajoute des guillemets autour d’une entrée littérale égale au libellé des données hétérogènes. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

@@ -429,6 +429,7 @@ namespace FormulaExplorer
 
         internal void TransferFormulaUndo()
         {
+            if (comparisonDraft != null) return;
             TransferComparisonUndo();
             WorksheetFormulaUndo session = CurrentFormulaUndoSession();
             if (session == null) return;

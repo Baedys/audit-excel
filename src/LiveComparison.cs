@@ -26,6 +26,7 @@ namespace FormulaExplorer
         internal readonly List<KeyValuePair<Reference, Reference>> ComparedAreas = new List<KeyValuePair<Reference, Reference>>();
         internal Action<List<ComparisonRow>> CompareSheets;
         internal Func<ComparisonResult> Recompare;
+        internal Action RequireReference;
         internal ExcelBridge.ComparisonRangeTargets RangeTargets;
 
         internal List<ComparisonRow> ReadDifferences()

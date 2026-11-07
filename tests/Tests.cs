@@ -186,6 +186,7 @@ static class Tests
         if (args.Contains("--excel"))
         {
             Check("Excel integration session", Excel); Check("Excel expression and editing session", ExcelOperationsTests.Run);
+            Check("Excel comparison formula editing", ExcelComparisonEditingTests.Run);
             Check("Excel conditional formula branch rendering", delegate { ExcelFormulaBranchesTests.Run(); });
             Check("Excel 3D worksheet spans and expression pane", delegate { ExcelSheetSpanTests.Run(); });
             Check("Excel multi-area direct dependency traces", delegate { ExcelDependencyRangesTests.Run(); });

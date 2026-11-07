@@ -9,6 +9,8 @@ namespace FormulaExplorer
 {
     public sealed partial class MainForm
     {
+        int comparisonSecondSide, comparisonLeftText, comparisonRightText;
+
         void RenderComparisonDetails(ComparisonRow row)
         {
             if (row == null)
@@ -41,17 +43,21 @@ namespace FormulaExplorer
             if (comparisonSwapped)
             {
                 rightStart = AppendComparisonSide(text, row, true, after, right.Mixed);
+                comparisonSecondSide = text.Length;
                 text.Append("\n\n");
                 leftStart = AppendComparisonSide(text, row, false, before, left.Mixed);
             }
             else
             {
                 leftStart = AppendComparisonSide(text, row, false, before, left.Mixed);
+                comparisonSecondSide = text.Length;
                 text.Append("\n\n");
                 rightStart = AppendComparisonSide(text, row, true, after, right.Mixed);
             }
 
             comparisonDetails.Text = text.ToString();
+            comparisonLeftText = leftStart;
+            comparisonRightText = rightStart;
             comparisonDetails.SelectAll();
             comparisonDetails.SelectionColor = SystemColors.WindowText;
             comparisonDetails.AccessibleDescription = "";

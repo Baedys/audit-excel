@@ -123,6 +123,8 @@ Les écarts apparaissent en blocs dépliables. Sélectionner un bloc ou un sous-
 
 Le détail colore en rouge les segments différents de chaque côté. Il suit la notation et la préférence de langue de l’explorateur Excel. L’option **R1C1** du comparateur continue de décider quelles formules sont équivalentes.
 
+En mode Formules, **Modifier (F2)** ouvre un brouillon pour le côté actif. Pour choisir un côté depuis le détail, placez le curseur dans sa section avant F2. **Entrée** applique, **Échap** abandonne et **Alt+Entrée** insère un saut de ligne. Sur un bloc, la saisie s’applique à toute la plage, avec translation des références relatives. **Ctrl+Z** annule la dernière opération du comparateur.
+
 Les écarts résolus par une copie restent grisés dans le volet. Ils restent navigables et le compteur les distingue des écarts ouverts. Annuler la copie rouvre les écarts correspondants. **Comparer** démarre un nouveau relevé.
 
 En mode formules, sélectionnez ou cochez les blocs et utilisez **Copier** pour appliquer leur contenu et leur format numérique depuis le côté actif. Dans l’arbre, **Ctrl+L** et **Ctrl+R** ciblent respectivement les côtés visibles gauche et droit. R1C1 recale les références relatives. A1 conserve les adresses. **Annuler la copie** ou **Ctrl+Z** annule le dernier lot. Le XLL permet aussi d’annuler depuis la grille Excel.

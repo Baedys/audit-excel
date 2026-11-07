@@ -28,6 +28,13 @@ namespace FormulaExplorer
         internal string FormulaProperty(bool modern)
         { return (modern ? "Formula2" : "Formula") + (R1C1 ? "R1C1" : "") + (Local ? "Local" : ""); }
 
+        internal FormulaDisplayStyle WithNotation(bool r1c1)
+        {
+            if (r1c1 == R1C1) return this;
+            return new FormulaDisplayStyle(r1c1, Local ? Culture : null, DecimalSeparator, ListSeparator, ArrayColumnSeparator,
+                ArrayRowSeparator, RowLetter, ColumnLetter, RelativeOpen, RelativeClose, ArrayOpen, ArrayClose);
+        }
+
         internal bool SameAs(FormulaDisplayStyle other)
         { return R1C1 == other.R1C1 && SameLanguage(other); }
 

@@ -110,7 +110,8 @@ namespace FormulaExplorer
             var result = new ComparisonResult { ValuesOnly = valuesOnly, Relative = relative, IgnoreInputs = ignoreInputs,
                 FullSheets = ReferenceScope != ComparisonScope.Range,
                 LeftWorkbook = left, RightWorkbook = right,
-                LeftTabs = ComparisonWorksheetIdentities(left), RightTabs = ComparisonWorksheetIdentities(right) };
+                LeftTabs = ComparisonWorksheetIdentities(left), RightTabs = ComparisonWorksheetIdentities(right),
+                RequireReference = () => RequireSameComparisonReference(savedReference) };
             if (ReferenceScope == ComparisonScope.Range)
             {
                 Reference source = ReadRetainedDependencyRange(left, comparisonRange);
@@ -148,6 +149,14 @@ namespace FormulaExplorer
                 }
                 result.RangeTargets = retainedTargets ?? new ComparisonRangeTargets(this, rangeTargets);
                 ComparisonRangeTargets originalTargets = result.RangeTargets;
+                result.RequireReference = () =>
+                {
+                    RequireSameComparisonReference(savedReference);
+                    Reference currentSource = ReadRetainedDependencyRange(left, comparisonRange);
+                    if (currentSource == null || currentSource.Address != source.Address)
+                        throw new InvalidOperationException("La plage de référence a changé. Définissez-la de nouveau.");
+                    originalTargets.Read(this, right);
+                };
                 result.Recompare = () =>
                 {
                     RequireSameComparisonReference(savedReference);
