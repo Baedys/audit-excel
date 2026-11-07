@@ -1,5 +1,13 @@
 # Revue et validation
 
+## Retour à la grille et actualisation du comparateur
+
+Dans Arixcel, `ModelessForm.GoBackToExcel` 58303 rend le focus à Excel. `History.GoBack` 64192 réactive une vue disponible. Le retour redessine la comparaison et synchronise les coordonnées de ses plages par 233522 et 273040. Alt+R suit un autre chemin. `CompareForm.Recompare` 223744 vérifie le périmètre, reconstruit le modèle avec ses options, conserve les côtés et tente de retrouver les nœuds dans la même phase. Un changement de phase vide l’annulation locale. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)
+
+Clair inscrit le comparateur dans l’historique partagé, y compris quand aucune formule n’a été explorée dans le volet. Le retour conserve le modèle et la sélection de la grille. Alt+R repart des classeurs et plages capturés avec les mêmes options. Le volet retrouve les lignes, coches et groupes ouverts encore présents et conserve l’annulation dans la même phase. Les nœuds gris sont retirés lors du nouveau relevé. Un changement de phase réinitialise la sélection et l’annulation locale. La synchronisation de la géométrie des sous-écarts déplacés et l’essai de frappe physique restent ouverts.
+
+Le témoin Excel masqué vérifie 41 résultats. Il passe par les gestionnaires clavier du volet et par l’historique du complément. Il couvre deux fenêtres Excel, la sélection de grille, le retour au contrôle de détail, la recapture des formules et la conservation des options, de la sélection et de l’annulation. Il couvre aussi un brouillon actif et une référence remplacée.
+
 ## Rapport Excel du comparateur
 
 `CompareForm.Export` 231112 appelle `Report.Generate` 266068 après la comparaison. Le rapport Arixcel ouvre un classeur à une feuille. Les en-têtes sont à la ligne 5. 375368 choisit cinq colonnes pour un résultat unique de feuille ou de plage et sept lorsque la tâche ou la feuille est indiquée. Les colonnes de contenu gardent leurs côtés physiques après échange visuel. Les chaînes de formule sont protégées par 375551 et colorées par 375592. 250940 produit le total et le préfixe indiquant un résultat partiel. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

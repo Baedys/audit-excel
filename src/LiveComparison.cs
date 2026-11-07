@@ -14,6 +14,7 @@ namespace FormulaExplorer
         internal bool CopyFormats = true;
         internal bool Relative = true;
         internal decimal Tolerance = 0.000001M;
+        internal ComparisonSettings Snapshot() { return (ComparisonSettings)MemberwiseClone(); }
     }
 
     internal sealed class ComparisonResult
@@ -29,6 +30,7 @@ namespace FormulaExplorer
         internal readonly List<KeyValuePair<Reference, Reference>> ComparedAreas = new List<KeyValuePair<Reference, Reference>>();
         internal Action<List<ComparisonRow>> CompareSheets;
         internal Func<ComparisonResult> Recompare;
+        internal Func<ComparisonResult> Rerun;
         internal Action RequireReference;
         internal ExcelBridge.ComparisonRangeTargets RangeTargets;
 

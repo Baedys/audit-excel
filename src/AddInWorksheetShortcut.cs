@@ -91,6 +91,10 @@ namespace FormulaExplorer
         void AttachWorksheetShortcut(DockedExplorer pane)
         {
             pane.Control.FormulaUndoSession = () => worksheetFormulaUndo;
+            pane.Control.RememberWorksheetComparison = delegate
+            {
+                if (shortcutHistory != null && !replayingShortcut) RememberWorksheetView(pane);
+            };
             pane.Control.LeaveExplorerForWorksheet = delegate
             {
                 if (shortcutHistory == null || !WorksheetWindowFocus.Focus(pane.WindowHandle)) return false;

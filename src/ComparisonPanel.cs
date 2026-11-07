@@ -29,12 +29,13 @@ namespace FormulaExplorer
         TableLayoutPanel comparisonResults;
         List<ComparisonRow> comparisonRows;
         ComparisonResult currentComparison;
-        Button skipComparisonAlignment, exportComparison;
+        Button skipComparisonAlignment, exportComparison, rerunComparison;
         bool comparisonRight = true, comparisonSwapped, loadingComparisonRows;
         string liveComparisonReportHeading;
         string comparisonMode;
         bool readingComparisonOptions;
         int renderedComparisonRun;
+        internal Action RememberWorksheetComparison;
 
         void ConfigureComparison(TabPage tab)
         {
@@ -48,7 +49,10 @@ namespace FormulaExplorer
             bar.Controls.Add(comparisonScope);
             bar.Controls.Add(ActionButton("Définir référence", SetComparisonReference));
             var compare = ActionButton("Comparer", CompareSelection);
-            bar.Controls.Add(compare); bar.SetFlowBreak(compare, true);
+            bar.Controls.Add(compare);
+            rerunComparison = ActionButton("Actualiser (Alt+R)", RerunComparison);
+            rerunComparison.Enabled = false;
+            bar.Controls.Add(rerunComparison); bar.SetFlowBreak(rerunComparison, true);
             bar.Controls.Add(valuesOnly);
             bar.Controls.Add(compareRelative);
             bar.Controls.Add(ignoreComparisonInputs);
@@ -215,6 +219,7 @@ namespace FormulaExplorer
             ComparisonResult next = bridge.CompareSelection();
             ResetComparisonHistory();
             ShowComparisonResult(next);
+            if (RememberWorksheetComparison != null) RememberWorksheetComparison();
         }
 
         void SetCurrentComparison(ComparisonResult next)
@@ -227,25 +232,55 @@ namespace FormulaExplorer
             if (previous != null && (next == null || !ReferenceEquals(previous, next.RangeTargets))) previous.Dispose();
         }
 
-        void ShowComparisonResult(ComparisonResult next)
+        bool CanRerunComparison()
+        {
+            return currentComparison != null && currentComparison.Rerun != null && comparisonDraft == null && comparisonTrace == null;
+        }
+
+        void RerunComparison()
+        {
+            if (!CanRerunComparison()) return;
+            try
+            {
+                currentComparison.RequireReference();
+                ClearComparisonHighlights();
+                ComparisonResult next = currentComparison.Rerun();
+                bool nextAlignment = next.Alignment.Count != 0;
+                if (!nextAlignment) next.ReadDifferences();
+                bool samePhase = ShowingAlignment == nextAlignment;
+                if (samePhase) comparisonHistory.Clear();
+                else
+                {
+                    ResetComparisonHistory();
+                    ClearComparisonUndo();
+                }
+                ShowComparisonResult(next, samePhase);
+            }
+            catch (Exception error) { status.Text = "Actualisation indisponible · " + error.Message; }
+        }
+
+        void ShowComparisonResult(ComparisonResult next, bool keepChecks = false)
         {
             if (next.Alignment.Count == 0) next.ReadDifferences();
             SetCurrentComparison(next);
-            comparisonScope.SelectedIndex = (int)bridge.ReferenceScope;
-            comparisonMode = valuesOnly.Checked ? "valeurs · tolérance " + tolerance.Value.ToString(CultureInfo.InvariantCulture) :
-                "formules " + (compareRelative.Checked ? "R1C1" : "A1") + (ignoreComparisonInputs.Checked ? " · entrées ignorées" : "");
+            comparisonScope.SelectedIndex = (int)next.Scope;
+            comparisonMode = next.ValuesOnly ? "valeurs · tolérance " + next.Tolerance.ToString(CultureInfo.InvariantCulture) :
+                "formules " + (next.Relative ? "R1C1" : "A1") + (next.IgnoreInputs ? " · entrées ignorées" : "");
             liveComparisonReportHeading = referenceLabel.Text + Environment.NewLine + comparisonMode;
             differences.DataSource = null;
-            if (currentComparison.Alignment.Count == 0) ShowComparisonDifferences();
+            if (currentComparison.Alignment.Count == 0) ShowComparisonDifferencesCore(keepChecks);
             else
             {
                 skipComparisonAlignment.Enabled = true;
                 status.Text = currentComparison.Alignment.Count + " propositions d’alignement" + ComparisonAlignmentLimit();
-                ShowComparisonRows(currentComparison.Alignment);
+                ShowComparisonRows(currentComparison.Alignment, keepChecks);
             }
         }
 
         void ShowComparisonDifferences()
+        { ShowComparisonDifferencesCore(false); }
+
+        void ShowComparisonDifferencesCore(bool keepChecks)
         {
             if (currentComparison == null) return;
             List<ComparisonRow> rows = currentComparison.ReadDifferences();
@@ -256,7 +291,7 @@ namespace FormulaExplorer
             status.Text = rows.Sum(row => row.Children == null ? 1 : row.Children.Count) + " écarts" +
                 (resolved == 0 ? "" : " · " + resolved + " résolus") + " · " + comparisonMode + ComparisonAlignmentLimit() +
                 (incomplete == 0 ? "" : " · comparaison partielle · tâches non terminées : " + incomplete);
-            ShowComparisonRows(visible);
+            ShowComparisonRows(visible, keepChecks);
         }
 
         string ComparisonAlignmentLimit()
@@ -267,12 +302,15 @@ namespace FormulaExplorer
 
         bool ShowingAlignment { get { return comparisonRows != null && comparisonRows.Count != 0 && comparisonRows[0].Alignment != null; } }
 
-        void ShowComparisonRows(List<ComparisonRow> rows)
+        void ShowComparisonRows(List<ComparisonRow> rows, bool keepChecks = false)
         {
             bool sameRun = comparisonRun == renderedComparisonRun;
             var selected = sameRun ? SelectedComparisonRow() : null;
             var expanded = new HashSet<Tuple<string, string>>(sameRun ? comparisonTree.Nodes.Cast<TreeNode>()
                 .Where(node => node.IsExpanded).Select(node => ComparisonCopyKey((ComparisonRow)node.Tag)) :
+                Enumerable.Empty<Tuple<string, string>>());
+            var checkedRows = new HashSet<Tuple<string, string>>(sameRun && keepChecks ?
+                ComparisonTreeRows().Where(node => node.Checked).Select(node => ComparisonCopyKey((ComparisonRow)node.Tag)) :
                 Enumerable.Empty<Tuple<string, string>>());
             renderedComparisonRun = comparisonRun;
             comparisonRows = rows;
@@ -289,11 +327,12 @@ namespace FormulaExplorer
                 comparisonResults.Visible = rows != null;
                 TreeNode selectedNode = null;
                 foreach (TreeNode node in comparisonTree.Nodes)
-                {
                     if (expanded.Contains(ComparisonCopyKey((ComparisonRow)node.Tag))) node.Expand();
-                    if (selected == null || selectedNode != null) continue;
-                    selectedNode = new[] { node }.Concat(node.Nodes.Cast<TreeNode>())
-                        .FirstOrDefault(candidate => SameComparisonSelection(selected, (ComparisonRow)candidate.Tag));
+                foreach (TreeNode node in ComparisonTreeRows())
+                {
+                    var row = (ComparisonRow)node.Tag;
+                    if (comparisonTree.CheckBoxes && checkedRows.Contains(ComparisonCopyKey(row))) node.Checked = true;
+                    if (selected != null && selectedNode == null && SameComparisonSelection(selected, row)) selectedNode = node;
                 }
                 if (selectedNode == null && comparisonTree.Nodes.Count != 0) selectedNode = comparisonTree.Nodes[0];
                 if (selectedNode != null)
@@ -305,6 +344,9 @@ namespace FormulaExplorer
             finally { comparisonTree.EndUpdate(); loadingComparisonRows = false; }
             UpdateComparisonSelection();
         }
+
+        IEnumerable<TreeNode> ComparisonTreeRows()
+        { return comparisonTree.Nodes.Cast<TreeNode>().SelectMany(node => new[] { node }.Concat(node.Nodes.Cast<TreeNode>())); }
 
         static bool SameComparisonSelection(ComparisonRow previous, ComparisonRow current)
         {
@@ -342,6 +384,7 @@ namespace FormulaExplorer
             RefreshComparisonCopy();
             RefreshComparisonEdit();
             RefreshComparisonTraceCommand();
+            if (rerunComparison != null) rerunComparison.Enabled = CanRerunComparison();
             if (exportComparison != null) exportComparison.Enabled = CanExportComparisonResults();
             RenderComparisonDetails(row);
             if (row == null || row.Alignment != null || !highlightComparison.Checked || tabs.SelectedIndex != 3 ||
@@ -384,6 +427,11 @@ namespace FormulaExplorer
             {
                 if (comparisonTrace != null) return false;
                 if (comparisonDraft != null) return HandleComparisonEditKey(keyData);
+                if (keyData == (Keys.Alt | Keys.R) && CanRerunComparison())
+                {
+                    RerunComparison();
+                    return true;
+                }
                 if (keyData == (Keys.Alt | Keys.X) && CanExportComparisonResults())
                 {
                     Safe(ExportComparisonResults);

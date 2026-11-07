@@ -27,6 +27,7 @@ namespace FormulaExplorer
         internal const string ControlId = "Clair.ExcelTaskPane";
         MainForm explorer;
         internal Action HideClosedExplorerPane;
+        internal Action RememberWorksheetComparison;
         internal Func<bool> LeaveExplorerForWorksheet;
         internal Func<WorksheetFormulaUndo> FormulaUndoSession;
         internal bool HasWorksheetShortcutTrace { get { return explorer != null && explorer.HasWorksheetShortcutTrace; } }
@@ -40,6 +41,7 @@ namespace FormulaExplorer
             {
                 explorer = new MainForm(connection, true, window);
                 explorer.HideClosedExplorerPane = HideClosedExplorerPane;
+                explorer.RememberWorksheetComparison = RememberWorksheetComparison;
                 explorer.LeaveExplorerForWorksheet = LeaveExplorerForWorksheet;
                 explorer.FormulaUndoSession = FormulaUndoSession;
                 Controls.Add(explorer);

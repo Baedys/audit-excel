@@ -101,12 +101,14 @@ namespace FormulaExplorer
             return CompareSelectionFor(ActiveDirectHighlightBook(), ReferenceScope == ComparisonScope.Worksheet ? ActiveComparisonSheets(true) : null);
         }
 
-        ComparisonResult CompareSelectionFor(Book right, string[] selectedSheets, ComparisonRangeTargets retainedTargets = null)
+        ComparisonResult CompareSelectionFor(Book right, string[] selectedSheets, ComparisonRangeTargets retainedTargets = null,
+            ComparisonSettings storedOptions = null)
         {
             Book savedReference = comparisonBook;
             Book left = WithDirectSnapshotWorkbook(comparisonBook, DirectHighlightBook);
-            bool valuesOnly = ComparisonOptions.ValuesOnly, relative = ComparisonOptions.Relative, ignoreInputs = ComparisonOptions.IgnoreInputs;
-            double tolerance = (double)ComparisonOptions.Tolerance;
+            ComparisonSettings options = storedOptions ?? ComparisonOptions.Snapshot();
+            bool valuesOnly = options.ValuesOnly, relative = options.Relative, ignoreInputs = options.IgnoreInputs;
+            double tolerance = (double)options.Tolerance;
             var result = new ComparisonResult { ValuesOnly = valuesOnly, Relative = relative, IgnoreInputs = ignoreInputs,
                 FullSheets = ReferenceScope != ComparisonScope.Range, Scope = ReferenceScope, Tolerance = tolerance,
                 LeftWorkbook = left, RightWorkbook = right,
@@ -158,12 +160,14 @@ namespace FormulaExplorer
                         throw new InvalidOperationException("La plage de référence a changé. Définissez-la de nouveau.");
                     originalTargets.Read(this, right);
                 };
-                result.Recompare = () =>
+                Func<ComparisonSettings, ComparisonResult> repeatRange = settings =>
                 {
                     RequireSameComparisonReference(savedReference);
                     Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
-                    return CompareSelectionFor(current, null, originalTargets);
+                    return CompareSelectionFor(current, null, originalTargets, settings);
                 };
+                result.Recompare = () => repeatRange(null);
+                result.Rerun = () => repeatRange(options);
                 return result;
             }
 
@@ -202,7 +206,7 @@ namespace FormulaExplorer
             CaptureComparisonSheets(result);
             var leftCells = left.Cells.Values.ToLookup(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase);
             var rightCells = right.Cells.Values.ToLookup(cell => cell.Sheet, StringComparer.OrdinalIgnoreCase);
-            if (ComparisonOptions.CheckAlignment)
+            if (options.CheckAlignment)
             {
                 var leftBoundaries = new Dictionary<string, IReadOnlyList<Rectangle>>(StringComparer.OrdinalIgnoreCase);
                 foreach (ComparisonTask task in result.Tasks.Where(item => !item.Ignored && item.Failure == null))
@@ -239,7 +243,7 @@ namespace FormulaExplorer
                         result.ComparedAreas.Remove(new KeyValuePair<Reference, Reference>(task.Left, task.Right));
                 }
             };
-            result.Recompare = () =>
+            Func<ComparisonSettings, ComparisonResult> repeatSheets = settings =>
             {
                 RequireSameComparisonReference(savedReference);
                 Book current = WithDirectSnapshotWorkbook(right, DirectHighlightBook);
@@ -251,8 +255,10 @@ namespace FormulaExplorer
                         throw new InvalidOperationException("Une feuille comparée a été supprimée. Lancez une nouvelle comparaison.");
                     sheets = selectedSheets.Select(sheet => names[sheet]).ToArray();
                 }
-                return CompareSelectionFor(current, sheets);
+                return CompareSelectionFor(current, sheets, null, settings);
             };
+            result.Recompare = () => repeatSheets(null);
+            result.Rerun = () => repeatSheets(options);
             return result;
         }
 

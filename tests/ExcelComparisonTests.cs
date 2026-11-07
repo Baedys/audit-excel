@@ -438,6 +438,8 @@ public static class ExcelComparisonTests
                 Equal(Field<Button>(targetView, "skipComparisonAlignment").Enabled, false, "ordinary comparison leaves the alignment phase");
                 Equal(Field<Button>(targetView, "exportComparison").Enabled, true, "the ordinary differences enable export");
                 Equal(Field<Delegate>(planned, "CompareSheets"), null, "continuing consumes the same comparison snapshot");
+                Equal(Invoke(targetView, "HandleComparisonKey", Keys.Alt | Keys.R), true, "Alt+R refreshes the original comparison");
+                Equal(Field<Button>(targetView, "skipComparisonAlignment").Enabled, true, "rerun returns to alignment when gaps remain");
                 Field<CheckBox>(targetView, "checkComparisonAlignment").Checked = false;
                 Equal(compare().Cast<object>().All(row => Text(row, "Écart") != "Alignement"), true, "disabling detection keeps the ordinary comparison");
 

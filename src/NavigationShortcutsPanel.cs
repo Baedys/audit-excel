@@ -11,11 +11,21 @@ namespace FormulaExplorer
         ExcelNavigationCursor relationNavigationCursor = new ExcelNavigationCursor();
         ExcelNavigationCursor expressionNavigationCursor = new ExcelNavigationCursor();
         ExcelNavigationCursor lastExplorerNavigation;
-        Control shortcutFocus;
+        Control shortcutFocus, comparisonShortcutFocus;
         Func<Control, bool> shortcutControlFocus = control => control.Focus();
         internal Func<bool> LeaveExplorerForWorksheet;
+        bool ComparisonShortcutView
+        { get { return tabs.SelectedIndex == 3 && currentComparison != null; } }
+
         internal bool HasWorksheetShortcutTrace
-        { get { return comparisonTrace != null ? comparisonTrace.Child.HasWorksheetShortcutTrace : IsDocked && book != null && root != null && !IsDisposed; } }
+        {
+            get
+            {
+                if (!IsDocked || IsDisposed || Disposing) return false;
+                return comparisonTrace != null ? comparisonTrace.Child.HasWorksheetShortcutTrace :
+                    ComparisonShortcutView || (book != null && root != null);
+            }
+        }
 
         void ResetExplorerNavigation()
         {
@@ -42,13 +52,18 @@ namespace FormulaExplorer
             Control source = keyData == Keys.Enter || keyData == (Keys.Alt | Keys.Enter) ? Control.FromChildHandle(message.HWnd) : null;
             if (!(keyData == Keys.Enter && source is ButtonBase) && HandleComparisonKey(keyData)) return true;
             if (!(source is ButtonBase) && HandleFormulaEditingKey(keyData, source)) return true;
-            if (formulaEditCell == null && keyData == (Keys.Control | Keys.Back) && tabs.SelectedIndex == 0 &&
-                HasWorksheetShortcutTrace && LeaveExplorerForWorksheet != null)
+            if (keyData == (Keys.Control | Keys.Back) && HasWorksheetShortcutTrace && LeaveExplorerForWorksheet != null &&
+                ((tabs.SelectedIndex == 0 && formulaEditCell == null) ||
+                 (ComparisonShortcutView && comparisonDraft == null && comparisonTrace == null)))
             {
                 Control previous = Control.FromChildHandle(message.HWnd);
                 if (LeaveExplorerForWorksheet())
                 {
-                    if (previous != null && Contains(previous)) shortcutFocus = previous;
+                    if (previous != null && Contains(previous))
+                    {
+                        if (ComparisonShortcutView) comparisonShortcutFocus = previous;
+                        else shortcutFocus = previous;
+                    }
                     return true;
                 }
             }
@@ -70,6 +85,23 @@ namespace FormulaExplorer
         {
             if (comparisonTrace != null) return comparisonTrace.Child.ResumeExplorerFromWorksheet();
             if (!HasWorksheetShortcutTrace || !Visible) return false;
+            if (ComparisonShortcutView)
+            {
+                if (comparisonDraft != null) return shortcutControlFocus(comparisonEditor);
+                Control comparisonDestination = comparisonShortcutFocus;
+                if (comparisonDestination == null || comparisonDestination.IsDisposed || !shortcutControlFocus(comparisonDestination))
+                {
+                    comparisonDestination = comparisonTree;
+                    if (!shortcutControlFocus(comparisonDestination)) return false;
+                }
+                RefreshComparisonOnFocus();
+                if (bridge.ActiveNavigationWindowHandle() != explorerWindow)
+                {
+                    if (!bridge.ActivateExplorerWindow(explorerWindow)) return false;
+                    if (!comparisonDestination.Focused && comparisonDestination.CanFocus) shortcutControlFocus(comparisonDestination);
+                }
+                return true;
+            }
             if (formulaEditCell != null) return shortcutControlFocus(formulaEditor);
             SelectExplorerTab(reverse);
             Control destination = shortcutFocus;
