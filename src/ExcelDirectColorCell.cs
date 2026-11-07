@@ -12,10 +12,10 @@ namespace FormulaExplorer
         readonly long sheetIdentity;
         readonly bool fillBlock;
         bool disposed;
-        sealed class ColorState
+        internal sealed class ColorState
         {
             internal int Index, Rgb;
-            internal int? Theme;
+            internal int? Theme, BaseRgb;
             internal double Tint;
             internal bool Same(ColorState other)
             { return Index == other.Index && Rgb == other.Rgb && Theme == other.Theme && Tint == other.Tint; }
@@ -125,7 +125,7 @@ namespace FormulaExplorer
             if (value == null || value == DBNull.Value) throw new InvalidOperationException("Nuances hétérogènes non prises en charge.");
             return Convert.ToDouble(value);
         }
-        static ColorState ReadState(object format, bool pattern)
+        internal static ColorState ReadState(object format, bool pattern)
         {
             dynamic f = format;
             var state = new ColorState {
@@ -263,7 +263,7 @@ namespace FormulaExplorer
             var source = (FormatState)snapshot;
             return new FormatState { Owner = this, Property = source.Property, Pattern = source.Pattern, Color = source.Color, PatternColor = source.PatternColor };
         }
-        static void RestoreState(object format, ColorState state, bool pattern)
+        internal static void RestoreState(object format, ColorState state, bool pattern)
         {
             dynamic f = format;
             if (state.Theme.HasValue)

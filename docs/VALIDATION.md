@@ -1,5 +1,11 @@
 # Revue et validation
 
+## Copie des formats directs — 7 novembre 2026
+
+Dans Explorer, 247276 active la copie des formats par défaut. 257996 désactive l’option en mode valeurs. 253168 et 374616 appliquent les formats après le contenu et le format numérique. Common 86492 et 87044 traitent fusions et alignement. 89588 et 89724 traitent la police. 81172 découpe les caractères dont le format est hétérogène. 87816 traite les bordures, 92100 et 92800 la couleur et le motif du fond, et 88284 la protection. 21760 et 22544 transmettent le RVB effectif ou les index Automatique et Aucun. [Polices Excel](https://learn.microsoft.com/en-us/office/vba/api/Excel.Font%28object%29) · [Bordures Excel](https://learn.microsoft.com/en-us/office/vba/api/excel.borders)
+
+Clair écrit les propriétés directes de la plage. Les règles conditionnelles et la validation restent dans la destination. L’annulation rétablit la liaison au thème, la nuance et les formats des caractères originaux. Elle protège les modifications ultérieures. Une fusion doit être entièrement comprise dans la plage. Les dégradés donnent lieu à une copie du contenu avec un message dans le volet. Si Excel refuse un format après écriture, Clair rétablit l’état d’origine avant de réessayer le contenu seul.
+
 ## Copier un onglet manquant — 7 novembre 2026
 
 Le CIL `JobItem` 247420 examine les onglets Excel par nom et ne compare les cellules que si les deux objets correspondants sont des feuilles de calcul. Common 46828 accepte aussi les onglets graphiques parmi les onglets manquants. `CopyExtraSheets` 253616 copie avant le prochain onglet commun, après le précédent ou en fin de classeur. Les nouveaux onglets servent de repères aux suivants. `UndoCopySheet` 215696 supprime l’onglet physique copié. [Worksheet.Copy](https://learn.microsoft.com/en-us/office/vba/api/Excel.Worksheet.Copy) · [Chart.Copy](https://learn.microsoft.com/en-us/office/vba/api/excel.chart.copy)

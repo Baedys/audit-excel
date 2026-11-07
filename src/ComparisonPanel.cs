@@ -19,6 +19,7 @@ namespace FormulaExplorer
         readonly Label referenceLabel = new Label { AutoSize = true };
         readonly CheckBox highlightComparison = new CheckBox { Text = "Surligner les écarts", Checked = true, AutoSize = true };
         readonly CheckBox checkComparisonAlignment = new CheckBox { Text = "Détecter les décalages", Checked = true, AutoSize = true };
+        readonly CheckBox copyComparisonFormats = new CheckBox { Text = "Copier les formats", Checked = true, AutoSize = true };
         readonly TreeView comparisonTree = new TreeView { Dock = DockStyle.Fill, HideSelection = false };
         readonly TextBox comparisonDetails = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Vertical };
         readonly string comparisonHighlightOwner = "compare-" + Guid.NewGuid().ToString("N");
@@ -55,6 +56,7 @@ namespace FormulaExplorer
             bar.Controls.Add(skipComparisonAlignment); bar.SetFlowBreak(skipComparisonAlignment, true);
             ConfigureAlignmentActions(bar);
             ConfigureComparisonCopy(bar);
+            bar.Controls.Add(copyComparisonFormats);
             bar.Controls.Add(ActionButton("Voir référence", delegate { NavigateComparison(SelectedComparisonRow(), false); }));
             var target = ActionButton("Voir comparateur", delegate { NavigateComparison(SelectedComparisonRow(), true); });
             bar.Controls.Add(target); bar.SetFlowBreak(target, true);
@@ -74,6 +76,7 @@ namespace FormulaExplorer
             ignoreComparisonInputs.CheckedChanged += delegate { ChangeComparisonOption(options => options.IgnoreInputs = ignoreComparisonInputs.Checked); };
             tolerance.ValueChanged += delegate { ChangeComparisonOption(options => options.Tolerance = tolerance.Value); };
             checkComparisonAlignment.CheckedChanged += delegate { ChangeComparisonOption(options => options.CheckAlignment = checkComparisonAlignment.Checked); };
+            copyComparisonFormats.CheckedChanged += delegate { ChangeComparisonOption(options => options.CopyFormats = copyComparisonFormats.Checked); };
             tabs.SelectedIndexChanged += delegate
             {
                 if (tabs.SelectedTab == tab) { ShowComparisonReference(); UpdateComparisonSelection(); }
@@ -110,6 +113,7 @@ namespace FormulaExplorer
         {
             bool live = SelectedComparisonScope != ComparisonScope.Snapshot;
             compareRelative.Enabled = ignoreComparisonInputs.Enabled = live && !valuesOnly.Checked;
+            copyComparisonFormats.Enabled = live && !valuesOnly.Checked;
             tolerance.Enabled = valuesOnly.Checked || !live;
             checkComparisonAlignment.Enabled = live && SelectedComparisonScope != ComparisonScope.Range;
         }
@@ -133,6 +137,7 @@ namespace FormulaExplorer
                     ignoreComparisonInputs.Checked = options.IgnoreInputs;
                     tolerance.Value = options.Tolerance;
                     checkComparisonAlignment.Checked = options.CheckAlignment;
+                    copyComparisonFormats.Checked = options.CopyFormats;
                 }
                 finally { readingComparisonOptions = false; }
             }

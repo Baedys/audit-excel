@@ -20,7 +20,11 @@ namespace FormulaExplorer
             internal int Rows, Columns;
             internal FormulaCellContent[] Cells;
             internal string[] Formats;
+            internal ComparisonCellFormat[] Visuals;
+            internal ComparisonBorder[] BlockBorders;
+            internal Dictionary<int, List<ComparisonFontRun>> TextRuns;
             internal readonly List<CopiedArray> Arrays = new List<CopiedArray>();
+            internal readonly List<Reference> Merges = new List<Reference>();
             internal readonly List<int> SpillOrigins = new List<int>();
         }
 
@@ -31,6 +35,7 @@ namespace FormulaExplorer
             readonly string sheet;
             readonly ComparedContent before, after;
             object range;
+            internal string FormatWarning;
 
             private ComparisonCopyReceipt(ExcelBridge bridge, Book book, string sheet, object range, ComparedContent before, ComparedContent after)
             { this.bridge = bridge; this.book = book; this.sheet = sheet; this.range = range; this.before = before; this.after = after; }
@@ -64,7 +69,7 @@ namespace FormulaExplorer
             void RestoreFrom(object worksheet, ComparedContent expected, ComparedContent desired)
             {
                 RequireComparisonCopyTarget(worksheet);
-                ComparedContent current = ReadComparedContent(range);
+                ComparedContent current = ReadComparisonCopyTarget(worksheet, range, expected.Visuals != null);
                 if (!SameComparedContent(current, expected))
                     throw new InvalidOperationException("La plage a changé depuis la copie. Annulation refusée.");
                 bridge.ReplaceComparedContent(range, current, desired, FormulaDisplayStyle.Invariant, true);
@@ -77,10 +82,8 @@ namespace FormulaExplorer
                 catch (InvalidComObjectException) { }
             }
 
-            internal static ComparisonCopyReceipt Apply(ExcelBridge bridge, Reference source, Reference target, FormulaDisplayStyle style)
+            internal static ComparisonCopyReceipt Apply(ExcelBridge bridge, Reference source, Reference target, FormulaDisplayStyle style, bool copyFormats)
             {
-                ComparedContent desired = bridge.AtDirectCell(source.Workbook, source.Sheet, source.Address,
-                    (worksheet, range) => ReadComparedContent(range, style));
                 var workbook = new Book { FullName = target.Workbook.FullName };
                 directSnapshots.Add(workbook, RequireDependencySnapshot(target.Workbook));
                 return bridge.AtDirectCell(target.Workbook, target.Sheet, target.Address, (worksheet, range) =>
@@ -89,13 +92,29 @@ namespace FormulaExplorer
                     try { ExcelConditionalFillContext.RunWorksheet(worksheet, () =>
                     {
                         RequireComparisonCopyTarget(worksheet);
-                        ComparedContent before = ReadComparedContent(range);
+                        string warning = null;
                         object retained = bridge.RangeAt(worksheet, target.Address);
                         try
                         {
-                            ComparedContent after = bridge.ReplaceComparedContent(range, before, desired, style);
-                            receipt = new ComparisonCopyReceipt(bridge, workbook, target.Sheet, retained, before, after);
-                            retained = null;
+                            while (true)
+                            {
+                                try
+                                {
+                                    ComparedContent before = ReadComparisonCopyTarget(worksheet, range, copyFormats);
+                                    ComparedContent desired = bridge.ReadComparisonCopySource(source, style, copyFormats);
+                                    if (!copyFormats) PreserveComparisonMerges(desired, before);
+                                    ComparedContent after = bridge.ReplaceComparedContent(range, before, desired, style);
+                                    receipt = new ComparisonCopyReceipt(bridge, workbook, target.Sheet, retained, before, after) { FormatWarning = warning };
+                                    retained = null;
+                                    break;
+                                }
+                                catch (Exception error)
+                                {
+                                    if (!copyFormats || (!(error is NotSupportedException) && !(error is ComparisonFormattingException))) throw;
+                                    warning = error.Message;
+                                    copyFormats = false;
+                                }
+                            }
                         }
                         finally { Release(retained); }
                     }); }
@@ -112,7 +131,26 @@ namespace FormulaExplorer
             }
         }
 
-        internal ComparisonCopyReceipt CopyComparisonContent(ComparisonRow row, bool toRight, bool relative)
+        ComparedContent ReadComparisonCopySource(Reference source, FormulaDisplayStyle style, bool visual)
+        {
+            return AtDirectCell(source.Workbook, source.Sheet, source.Address,
+                (worksheet, range) => ReadComparedContent(range, style, visual, !visual || !(bool)((dynamic)worksheet).ProtectContents));
+        }
+
+        static ComparedContent ReadComparisonCopyTarget(object worksheet, object range, bool visual)
+        {
+            object workbook = ((dynamic)worksheet).Parent;
+            try
+            {
+                bool saved = (bool)((dynamic)workbook).Saved;
+                ComparedContent snapshot = ReadComparedContent(range, visual: visual);
+                if (saved && !(bool)((dynamic)workbook).Saved) ((dynamic)workbook).Saved = true;
+                return snapshot;
+            }
+            finally { Release(workbook); }
+        }
+
+        internal ComparisonCopyReceipt CopyComparisonContent(ComparisonRow row, bool toRight, bool relative, bool copyFormats)
         {
             Reference source = toRight ? row.Left : row.Right, target = toRight ? row.Right : row.Left;
             if (source == null || target == null || source.FirstRow == 0 || target.FirstRow == 0 ||
@@ -120,7 +158,7 @@ namespace FormulaExplorer
                 source.LastColumn - source.FirstColumn != target.LastColumn - target.FirstColumn)
                 throw new InvalidOperationException("Sélectionnez deux plages comparées de même taille.");
             return WithComparisonMutation(() => ComparisonCopyReceipt.Apply(this, source, target,
-                relative ? new FormulaDisplayStyle(true) : FormulaDisplayStyle.Invariant));
+                relative ? new FormulaDisplayStyle(true) : FormulaDisplayStyle.Invariant, copyFormats));
         }
 
         internal static void UndoComparisonCopies(ComparisonCopyReceipt[] newestFirst)
@@ -147,11 +185,9 @@ namespace FormulaExplorer
                 throw new InvalidOperationException("La feuille de destination est protégée.");
         }
 
-        static ComparedContent ReadComparedContent(object range, FormulaDisplayStyle style = null)
+        static ComparedContent ReadComparedContent(object range, FormulaDisplayStyle style = null, bool visual = false,
+            bool protection = true, bool preserveRuns = true)
         {
-            object merged = ((dynamic)range).MergeCells;
-            if (!(merged is bool) || (bool)merged)
-                throw new InvalidOperationException("La plage comparée contient une fusion de cellules.");
             var bounds = Reference.Parse(null, (string)((dynamic)range).Address);
             if (bounds == null) throw new InvalidOperationException("La plage comparée n’est plus accessible.");
             int rows = bounds.LastRow - bounds.FirstRow + 1, columns = bounds.LastColumn - bounds.FirstColumn + 1;
@@ -161,9 +197,11 @@ namespace FormulaExplorer
             string uniform = OfficeCall(range, "NumberFormat", BindingFlags.GetProperty) as string;
             object cells = ((dynamic)range).Cells;
             var arrayMembers = new bool[state.Cells.Length];
+            var mergeChildren = new bool[state.Cells.Length];
             try
             {
                 bool checkSpills = LegacyArrayHasSpill(range);
+                bool checkMerges = !Object.Equals(((dynamic)range).MergeCells, false);
                 for (int index = 0; index < state.Cells.Length; index++)
                 {
                     int row = index / columns, column = index % columns;
@@ -172,7 +210,24 @@ namespace FormulaExplorer
                     try
                     {
                         state.Formats[index] = uniform ?? FormulaNumberFormat(cell);
-                        if (arrayMembers[index]) continue;
+                        if (arrayMembers[index] || mergeChildren[index]) continue;
+                        if (checkMerges && Object.Equals(((dynamic)cell).MergeCells, true))
+                        {
+                            object merged = ((dynamic)cell).MergeArea;
+                            try
+                            {
+                                var block = Reference.Parse(null, (string)((dynamic)merged).Address);
+                                if (!InsideComparedRange(bounds, block))
+                                    throw new InvalidOperationException("La copie doit couvrir toute la plage fusionnée.");
+                                var offset = Reference.FromBounds(null, row + 1, column + 1,
+                                    row + 1 + block.LastRow - block.FirstRow, column + 1 + block.LastColumn - block.FirstColumn);
+                                state.Merges.Add(offset);
+                                for (int y = offset.FirstRow; y <= offset.LastRow; y++)
+                                    for (int x = offset.FirstColumn; x <= offset.LastColumn; x++)
+                                        mergeChildren[(y - 1) * columns + x - 1] = true;
+                            }
+                            finally { Release(merged); }
+                        }
                         if (IsLegacyArrayMember(cell))
                         {
                             group = ((dynamic)cell).CurrentArray;
@@ -205,8 +260,28 @@ namespace FormulaExplorer
                             state.SpillOrigins.Add(index);
                         }
                         state.Cells[index] = ReadFormulaContent(cell, style);
+                        if (!visual && style == null && preserveRuns)
+                        {
+                            List<ComparisonFontRun> runs = ReadComparisonTextRuns(cell, state.Cells[index], false);
+                            if (runs != null)
+                            {
+                                if (state.TextRuns == null) state.TextRuns = new Dictionary<int, List<ComparisonFontRun>>();
+                                state.TextRuns.Add(index, runs);
+                            }
+                        }
                     }
                     finally { Release(arrayAnchor); Release(arrayCells); Release(group); Release(cell); }
+                }
+                if (visual)
+                {
+                    state.BlockBorders = ReadComparisonBlockBorders(range, rows, columns, style != null);
+                    state.Visuals = new ComparisonCellFormat[state.Cells.Length];
+                    for (int i = 0; i < state.Cells.Length; i++)
+                    {
+                        object cell = ((dynamic)cells).Item[i / columns + 1, i % columns + 1];
+                        try { state.Visuals[i] = ReadComparisonCellFormat(cell, style != null, protection, state.Cells[i]); }
+                        finally { Release(cell); }
+                    }
                 }
                 return state;
             }
@@ -217,16 +292,50 @@ namespace FormulaExplorer
         { return inner != null && outer.FirstRow <= inner.FirstRow && outer.FirstColumn <= inner.FirstColumn &&
             outer.LastRow >= inner.LastRow && outer.LastColumn >= inner.LastColumn; }
 
+        static bool SameComparisonMerges(ComparedContent first, ComparedContent second)
+        { return first.Merges.Select(item => item.Address).SequenceEqual(second.Merges.Select(item => item.Address)); }
+
+        static void PreserveComparisonMerges(ComparedContent desired, ComparedContent target)
+        {
+            if (SameComparisonMerges(desired, target)) return;
+            foreach (Reference merge in target.Merges)
+            {
+                if (desired.Arrays.Any(array => array.Bounds.FirstRow <= merge.LastRow && array.Bounds.LastRow >= merge.FirstRow &&
+                    array.Bounds.FirstColumn <= merge.LastColumn && array.Bounds.LastColumn >= merge.FirstColumn))
+                    throw new InvalidOperationException("Une matrice ne peut pas être copiée sur une fusion conservée.");
+                for (int y = merge.FirstRow; y <= merge.LastRow; y++)
+                    for (int x = merge.FirstColumn; x <= merge.LastColumn; x++)
+                    {
+                        if (y == merge.FirstRow && x == merge.FirstColumn) continue;
+                        FormulaCellContent cell = desired.Cells[(y - 1) * desired.Columns + x - 1];
+                        if (cell != null && (cell.Formula != null || cell.Value != null))
+                            throw new InvalidOperationException("La copie écraserait des données sous une fusion conservée.");
+                        desired.Cells[(y - 1) * desired.Columns + x - 1] = null;
+                    }
+            }
+            desired.Merges.Clear();
+            desired.Merges.AddRange(target.Merges);
+        }
+
         static bool SameComparedContent(ComparedContent actual, ComparedContent expected)
         {
             if (actual.Rows != expected.Rows || actual.Columns != expected.Columns || !actual.Formats.SequenceEqual(expected.Formats) ||
-                !actual.SpillOrigins.SequenceEqual(expected.SpillOrigins) || actual.Arrays.Count != expected.Arrays.Count) return false;
+                !actual.SpillOrigins.SequenceEqual(expected.SpillOrigins) || actual.Arrays.Count != expected.Arrays.Count ||
+                !SameComparisonMerges(actual, expected) || (actual.Visuals == null) != (expected.Visuals == null) ||
+                (actual.TextRuns == null) != (expected.TextRuns == null) ||
+                !SameComparisonBlockBorders(actual.BlockBorders, expected.BlockBorders)) return false;
+            if (expected.TextRuns != null && (actual.TextRuns.Count != expected.TextRuns.Count || expected.TextRuns.Any(pair =>
+            {
+                List<ComparisonFontRun> current;
+                return !actual.TextRuns.TryGetValue(pair.Key, out current) || !SameComparisonFontRuns(current, pair.Value);
+            }))) return false;
             for (int i = 0; i < actual.Arrays.Count; i++)
                 if (actual.Arrays[i].Bounds.Address != expected.Arrays[i].Bounds.Address || actual.Arrays[i].Formula != expected.Arrays[i].Formula) return false;
             for (int i = 0; i < actual.Cells.Length; i++)
             {
                 FormulaCellContent a = actual.Cells[i], b = expected.Cells[i];
                 if (a == null || b == null ? a != b : !SameFormulaContent(a, b)) return false;
+                if (actual.Visuals != null && !actual.Visuals[i].Same(expected.Visuals[i])) return false;
             }
             return true;
         }
@@ -237,8 +346,9 @@ namespace FormulaExplorer
                 throw new InvalidOperationException("La plage comparée a changé de taille.");
             try
             {
-                WriteComparedContent(range, current, desired, style);
-                ComparedContent written = ReadComparedContent(range);
+                WriteComparedContent(range, current, desired, style, !verify);
+                ComparedContent written = ReadComparedContent(range, visual: desired.Visuals != null);
+                if (!verify && desired.Visuals != null) VerifyIncomingComparisonBorders(written, desired);
                 if (verify && !SameComparedContent(written, desired))
                     throw new InvalidOperationException("Excel n’a pas restitué le contenu attendu.");
                 return written;
@@ -247,8 +357,8 @@ namespace FormulaExplorer
             {
                 try
                 {
-                    WriteComparedContent(range, ReadComparedContent(range), current, FormulaDisplayStyle.Invariant);
-                    if (!SameComparedContent(ReadComparedContent(range), current))
+                    WriteComparedContent(range, ReadComparedContent(range, preserveRuns: false), current, FormulaDisplayStyle.Invariant);
+                    if (!SameComparedContent(ReadComparedContent(range, visual: current.Visuals != null), current))
                         throw new InvalidOperationException("Le contenu initial n’a pas été restauré à l’identique.");
                 }
                 catch (Exception rollback) { throw new AggregateException("La restauration après l’échec de la copie est incomplète.", error, rollback); }
@@ -256,12 +366,14 @@ namespace FormulaExplorer
             }
         }
 
-        void WriteComparedContent(object range, ComparedContent current, ComparedContent desired, FormulaDisplayStyle style)
+        void WriteComparedContent(object range, ComparedContent current, ComparedContent desired, FormulaDisplayStyle style, bool incoming = false)
         {
             object cells = ((dynamic)range).Cells;
             object worksheet = null;
             try
             {
+                bool changeMerges = !SameComparisonMerges(current, desired);
+                if (changeMerges && current.Merges.Count != 0) ((dynamic)range).UnMerge();
                 foreach (int index in current.SpillOrigins)
                 {
                     object cell = ((dynamic)cells).Item[index / current.Columns + 1, index % current.Columns + 1];
@@ -315,8 +427,63 @@ namespace FormulaExplorer
                     }
                     finally { Release(cell); }
                 }
+                try
+                {
+                    if (changeMerges && desired.Merges.Count != 0)
+                    {
+                        if (worksheet == null) worksheet = ((dynamic)range).Worksheet;
+                        foreach (Reference merge in desired.Merges) ApplyComparisonMerge(cells, worksheet, merge);
+                    }
+                    if (desired.Visuals != null)
+                    {
+                        WriteComparisonBlockBorders(range, desired, incoming);
+                        for (int i = 0; i < desired.Visuals.Length; i++)
+                        {
+                            object cell = ((dynamic)cells).Item[i / desired.Columns + 1, i % desired.Columns + 1];
+                            try { WriteComparisonCellFormat(cell, desired.Visuals[i], incoming); }
+                            finally { Release(cell); }
+                        }
+                    }
+                    if (desired.TextRuns != null)
+                        foreach (var pair in desired.TextRuns)
+                        {
+                            object cell = ((dynamic)cells).Item[pair.Key / desired.Columns + 1, pair.Key % desired.Columns + 1];
+                            try { WriteComparisonFontRuns(cell, pair.Value, false); }
+                            finally { Release(cell); }
+                        }
+                }
+                catch (Exception error)
+                {
+                    if (!incoming || desired.Visuals == null) throw;
+                    throw new ComparisonFormattingException(error);
+                }
             }
             finally { Release(worksheet); Release(cells); }
+        }
+
+        static void ApplyComparisonMerge(object cells, object worksheet, Reference merge)
+        {
+            object first = null, last = null, block = null;
+            try
+            {
+                for (int y = merge.FirstRow; y <= merge.LastRow; y++)
+                    for (int x = merge.FirstColumn; x <= merge.LastColumn; x++)
+                    {
+                        if (y == merge.FirstRow && x == merge.FirstColumn) continue;
+                        object cell = ((dynamic)cells).Item[y, x];
+                        try
+                        {
+                            if (((dynamic)cell).Value2 != null || (bool)((dynamic)cell).HasFormula)
+                                throw new InvalidOperationException("La fusion supprimerait des cellules non vides.");
+                        }
+                        finally { Release(cell); }
+                    }
+                first = ((dynamic)cells).Item[merge.FirstRow, merge.FirstColumn];
+                last = ((dynamic)cells).Item[merge.LastRow, merge.LastColumn];
+                block = ((dynamic)worksheet).Range[first, last];
+                ((dynamic)block).Merge(false);
+            }
+            finally { Release(block); Release(last); Release(first); }
         }
     }
 }

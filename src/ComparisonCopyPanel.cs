@@ -84,7 +84,7 @@ namespace FormulaExplorer
             var sheets = new List<ExcelBridge.ComparisonSheetReceipt>();
             var destinations = new HashSet<Tuple<long, string, string>>();
             string firstError = null;
-            int failed = 0, linkWarnings = 0;
+            int failed = 0, linkWarnings = 0, formatWarnings = 0;
             ExcelBridge connection = bridge;
             try
             {
@@ -114,7 +114,9 @@ namespace FormulaExplorer
                     if (destinations.Contains(key)) { failed++; firstError = firstError ?? "Une destination est sélectionnée plusieurs fois."; continue; }
                     try
                     {
-                        applied.Add(connection.CopyComparisonContent(row, toRight, fresh.Relative));
+                        var receipt = connection.CopyComparisonContent(row, toRight, fresh.Relative, connection.ComparisonOptions.CopyFormats);
+                        applied.Add(receipt);
+                        if (receipt.FormatWarning != null) { formatWarnings++; firstError = firstError ?? receipt.FormatWarning; }
                         destinations.Add(key);
                     }
                     catch (Exception error)
@@ -138,6 +140,7 @@ namespace FormulaExplorer
             if (sheets.Count != 0) summary += " · Onglets copiés · " + sheets.Count;
             if (failed != 0) summary += " · Échecs · " + failed;
             if (linkWarnings != 0) summary += " · Réécriture des liens incomplète · " + linkWarnings;
+            if (formatWarnings != 0) summary += " · Formats non copiés · " + formatWarnings;
             RefreshAfterComparison(fresh, summary + (firstError == null ? "" : " · " + firstError), true);
         }
     }

@@ -11,6 +11,7 @@ namespace FormulaExplorer
     {
         internal bool ValuesOnly, IgnoreInputs;
         internal bool CheckAlignment = true;
+        internal bool CopyFormats = true;
         internal bool Relative = true;
         internal decimal Tolerance = 0.000001M;
     }
