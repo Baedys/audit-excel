@@ -462,8 +462,9 @@ namespace FormulaExplorer
             {
                 var style = explorerFormulaStyle.WithNotation(currentComparison.Relative);
                 var report = new ComparisonReport(currentComparison, comparisonRows, style, comparisonSwapped, ComparisonReportText);
-                bridge.ExportComparisonReport(report);
-                status.Text = "Rapport ouvert dans un nouveau classeur Excel.";
+                bool frozen = bridge.ExportComparisonReport(report);
+                status.Text = "Rapport ouvert dans un nouveau classeur Excel." +
+                    (frozen ? "" : " Excel n’a pas figé les lignes d’en-tête.");
             }
             catch (Exception error) { status.Text = "Rapport indisponible · " + error.Message; }
         }

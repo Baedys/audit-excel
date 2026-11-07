@@ -8,6 +8,8 @@ Clair exporte le résultat capturé dans la feuille `Comparaison`. Le filtre et 
 
 Le témoin Excel masqué vérifie 44 résultats. Il couvre les rapports à cinq et sept colonnes, les côtés inversés dans le volet, la coloration de caractères, une sous-différence résolue au milieu d’une tâche ouverte, les onglets supplémentaires, un graphique ignoré et une capture partielle à cause de la limite. Il vérifie aussi les nombres, les booléens, les erreurs, les textes qui ressemblent à une formule et l’export sans écart.
 
+Dans le témoin x64 embarqué, Excel masqué refuse le gel même après retour à sa boucle d’interface. Le rapport filtrable et ses formules littérales restent disponibles. Le volet signale le gel refusé. Le témoin COM externe vérifie séparément le gel de cinq lignes quand Excel l’applique.
+
 ## Tracé depuis la comparaison
 
 `CompareForm.OpenFormulaExplorerForm` 230148 choisit les plages du côté actif. Pour une formule, il prend le coin haut gauche du bloc. Common 56608 déduplique les rectangles. L’explorateur 193548 reprend le curseur sur la même formule et 195592 délègue l’écriture au comparateur. Le comparateur 231892 contrôle le rattachement au modèle et 231944 écrit sur le bloc d’origine. Le retour groupe les éditions du tracé dans la pile parente. Ce relevé vient de l’inspection statique d’Arixcel. [Guide Arixcel](https://www.arixcel.com/explorer/functions/compare)

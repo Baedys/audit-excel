@@ -1,15 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Runtime.InteropServices;
 
 namespace FormulaExplorer
 {
     public sealed partial class ExcelBridge
     {
-        internal void ExportComparisonReport(ComparisonReport report)
+        internal bool ExportComparisonReport(ComparisonReport report)
         {
             dynamic app = application;
-            object books = null, book = null, sheets = null, sheet = null, window = null;
+            object books = null, book = null, sheets = null, sheet = null;
             bool events = app.EnableEvents, screen = app.ScreenUpdating;
             try
             {
@@ -21,11 +22,7 @@ namespace FormulaExplorer
                 sheet = ((dynamic)sheets)[1];
                 ((dynamic)sheet).Name = "Comparaison";
                 WriteComparisonReport(sheet, report);
-                window = app.ActiveWindow;
-                ((dynamic)window).SplitColumn = 0;
-                ((dynamic)window).SplitRow = ComparisonReport.HeaderRow;
-                ((dynamic)window).FreezePanes = true;
-                UseReportRange(sheet, "A1", range => range.Select());
+                return FreezeComparisonReport(book, sheet);
             }
             catch (Exception error)
             {
@@ -38,13 +35,33 @@ namespace FormulaExplorer
             }
             finally
             {
-                try { Release(window); Release(sheet); Release(sheets); Release(book); Release(books); }
+                try { Release(sheet); Release(sheets); Release(book); Release(books); }
                 finally
                 {
                     try { app.EnableEvents = events; }
                     finally { app.ScreenUpdating = screen; }
                 }
             }
+        }
+
+        bool FreezeComparisonReport(object book, object sheet)
+        {
+            object windows = null, window = null;
+            try
+            {
+                windows = ((dynamic)book).Windows;
+                window = ((dynamic)windows)[1];
+                dynamic view = window;
+                view.Activate();
+                UseReportRange(sheet, "A" + (ComparisonReport.HeaderRow + 1), range => range.Select());
+                view.SplitColumn = 0;
+                view.SplitRow = ComparisonReport.HeaderRow;
+                view.FreezePanes = true;
+                UseReportRange(sheet, "A1", range => range.Select());
+                return (bool)view.FreezePanes && (double)view.SplitRow == ComparisonReport.HeaderRow;
+            }
+            catch (COMException) { return false; }
+            finally { Release(window); Release(windows); }
         }
 
         void WriteComparisonReport(object sheet, ComparisonReport report)
