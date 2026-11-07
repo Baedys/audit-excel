@@ -10,6 +10,8 @@ La version 0.6 fournit une application autonome et un complément Excel avec rub
 
 Le chargement COM, le callback du ruban, l'ouverture de plusieurs explorateurs et leur fermeture sont validés localement dans Excel 16.0. Les autres versions et l'architecture 32 bits restent à tester.
 
+Le [relevé Power-user Excel](docs/POWERUSER-EXCEL.md) recense les capacités complémentaires à explorer : qualité de feuille, préparation de données, mesures, bibliothèque et graphiques Excel. Il distingue fonctions testées, déclarées et proposées. Ce catalogue concerne Excel uniquement ; ses lots ne sont pas encore implémentés dans Clair.
+
 Les travaux suivants remplacent les couleurs CF par des formats directs partagés entre cartes et flux, ajoutent retrait/permanence globaux et sauvegarde d'un historique propre à Clair. Leur [validation](docs/VALIDATION.md) reste distincte de la livraison 0.6 ; l'équivalence complète avec Arixcel n'est pas établie. L'historique enregistré décrit base et sommet de chaque propriété, sans recréer les fenêtres d'analyse. Après fermeture de l'application autonome, les modifications structurelles ultérieures ne sont plus suivies ; le complément chargé conserve ce suivi. Les cartes masquent temporairement les fonds des règles CF admissibles de toute leur feuille. Un journal séparé conserve leurs neuf propriétés de fond pour les restaurer, y compris après sauvegarde/réouverture ; conserver les couleurs directes restaure aussi les fonds CF. Les familles non couvertes et les conflits sont détaillés dans la validation.
 
 ## Fonctions disponibles
